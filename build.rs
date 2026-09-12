@@ -25,6 +25,10 @@ fn build_capture_overlay() {
     println!("cargo:rerun-if-changed=capture-overlay/src/CaptureOverlay_Layout.cpp");
     println!("cargo:rerun-if-changed=capture-overlay/src/CaptureOverlay_Drawing.cpp");
     println!("cargo:rerun-if-changed=capture-overlay/src/CaptureOverlay_Paint.cpp");
+    println!("cargo:rerun-if-changed=capture-overlay/src/CaptureModeToolbar.cpp");
+    println!("cargo:rerun-if-changed=capture-overlay/src/CaptureModeToolbar.h");
+    println!("cargo:rerun-if-changed=capture-overlay/src/CaptureCountdownPill.cpp");
+    println!("cargo:rerun-if-changed=capture-overlay/src/CaptureCountdownPill.h");
     println!("cargo:rerun-if-changed=capture-overlay/src/CaptureOverlay_Audio.cpp");
     println!("cargo:rerun-if-changed=capture-overlay/src/CaptureOverlay_ScrollPopupDrawing.cpp");
     println!("cargo:rerun-if-changed=capture-overlay/src/CaptureOverlay_DropdownDrawing.cpp");
