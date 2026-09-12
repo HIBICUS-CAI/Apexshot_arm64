@@ -6,8 +6,8 @@ mod tests {
         view_point_to_motion_text_position, CardLayout, MotionStage,
     };
     use crate::recording::editor::model::{
-        project_card_corners, MotionBackgroundFillType, MotionState, MotionTransform,
-        DEFAULT_MOTION_ZOOM,
+        project_card_corners, MotionBackgroundFillType, MotionEffectTransformTiming, MotionState,
+        MotionTransform, DEFAULT_MOTION_ZOOM,
     };
     use gtk4::cairo::{Context, Format, ImageSurface};
 
@@ -384,12 +384,13 @@ mod tests {
     fn fast_linear_motion() -> MotionState {
         let mut motion = motion_with_first_clip();
         motion.set_segment_range(0, 0.0, 1.0);
-        motion.set_transform_timing(crate::recording::editor::model::MotionEffectTransformTiming {
+        motion.set_transform_timing(MotionEffectTransformTiming {
             transition_duration: 0.1,
             easing_x1: 0.0,
             easing_y1: 0.0,
             easing_x2: 1.0,
             easing_y2: 1.0,
+            ..MotionEffectTransformTiming::default()
         });
         motion.set_selected_end_scale(4.0);
         motion.appearance.background_fill_type = MotionBackgroundFillType::None;
@@ -490,12 +491,13 @@ mod tests {
         card.flush();
 
         let mut motion = fast_linear_motion();
-        motion.set_transform_timing(crate::recording::editor::model::MotionEffectTransformTiming {
+        motion.set_transform_timing(MotionEffectTransformTiming {
             transition_duration: 0.3,
             easing_x1: 0.0,
             easing_y1: 0.0,
             easing_x2: 1.0,
             easing_y2: 1.0,
+            ..MotionEffectTransformTiming::default()
         });
         let sharp = {
             let mut sharp = motion.clone();
@@ -788,7 +790,7 @@ mod tests {
         // Keep the clip longer than the 1.2s transition so the timing curve
         // is not clamped by the default one-second clip.
         motion.set_segment_range(0, 0.0, 2.0);
-        let timing = motion.transform_timing;
+        let timing = motion.segments[0].timing;
         assert!((timing.transition_duration - 1.2).abs() < f64::EPSILON);
         assert!((timing.easing_x1 - 0.25).abs() < f64::EPSILON);
         assert!((timing.easing_y1 - 1.0).abs() < f64::EPSILON);
@@ -796,15 +798,14 @@ mod tests {
         assert!((timing.easing_y2 - 1.0).abs() < f64::EPSILON);
 
         let default_progress = motion.sample(0.6).scale;
-        motion.set_transform_timing(
-            crate::recording::editor::model::MotionEffectTransformTiming {
-                transition_duration: 1.2,
-                easing_x1: 0.0,
-                easing_y1: 0.0,
-                easing_x2: 1.0,
-                easing_y2: 1.0,
-            },
-        );
+        motion.set_transform_timing(MotionEffectTransformTiming {
+            transition_duration: 1.2,
+            easing_x1: 0.0,
+            easing_y1: 0.0,
+            easing_x2: 1.0,
+            easing_y2: 1.0,
+            ..MotionEffectTransformTiming::default()
+        });
         let linear_progress = motion.sample(0.6).scale;
         assert!(
             default_progress > linear_progress + 0.01,
@@ -815,10 +816,10 @@ mod tests {
     }
 
     #[test]
-    fn transition_ms_slider_drives_the_global_timing() {
+    fn transition_ms_slider_drives_the_selected_clips_timing() {
         let mut motion = motion_with_first_clip();
         motion.set_selected_transition_ms(300);
-        assert!((motion.transform_timing.transition_duration - 0.3).abs() < 1e-9);
+        assert!((motion.segments[0].timing.transition_duration - 0.3).abs() < 1e-9);
         // Inside the shortened window the move has already finished.
         let held = motion.sample(0.35);
         assert!((held.scale - DEFAULT_MOTION_ZOOM).abs() < 1e-6);

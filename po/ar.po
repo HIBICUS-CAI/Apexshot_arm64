@@ -2343,3 +2343,6 @@ msgstr "الطبقة السفلية"
 
 msgid "Undo"
 msgstr "تراجع"
+
+msgid "Bounce"
+msgstr "ارتداد"

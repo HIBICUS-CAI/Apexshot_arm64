@@ -2327,3 +2327,6 @@ msgstr "下地"
 
 msgid "Undo"
 msgstr "元に戻す"
+
+msgid "Bounce"
+msgstr "バウンス"

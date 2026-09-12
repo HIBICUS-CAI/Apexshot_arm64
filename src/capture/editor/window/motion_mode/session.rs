@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn edits_within_the_coalesce_window_share_one_undo_step() {
         let mut runtime = runtime_with_clip();
-        let initial_timing = runtime.motion.transform_timing;
+        let initial_timing = runtime.motion.selected_transform_timing();
 
         runtime.begin_motion_edit();
         runtime.motion.set_selected_transition_ms(120);
@@ -326,11 +326,14 @@ mod tests {
         runtime.motion.set_selected_transition_ms(240);
 
         runtime.undo_motion();
-        assert_eq!(runtime.motion.transform_timing, initial_timing);
+        assert_eq!(runtime.motion.selected_transform_timing(), initial_timing);
 
         runtime.redo_motion();
         assert_eq!(
-            runtime.motion.transform_timing.transition_duration,
+            runtime
+                .motion
+                .selected_transform_timing()
+                .transition_duration,
             240.0 / 1000.0
         );
     }

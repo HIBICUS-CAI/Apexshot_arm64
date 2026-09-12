@@ -2324,3 +2324,6 @@ msgstr "底衬"
 
 msgid "Undo"
 msgstr "撤销"
+
+msgid "Bounce"
+msgstr "回弹"

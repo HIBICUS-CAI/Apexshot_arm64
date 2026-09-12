@@ -151,7 +151,7 @@ impl MotionBlurSettings {
     }
 }
 
-fn cubic_bezier_ease(timing: MotionEffectTransformTiming, progress: f64) -> f64 {
+pub(crate) fn cubic_bezier_ease(timing: MotionEffectTransformTiming, progress: f64) -> f64 {
     let progress = progress.clamp(0.0, 1.0);
     if progress <= f64::EPSILON || (1.0 - progress) <= f64::EPSILON {
         return progress;
@@ -178,7 +178,24 @@ fn cubic_bezier_ease(timing: MotionEffectTransformTiming, progress: f64) -> f64 
 }
 
 pub(super) fn lerp_transform(from: MotionTransform, to: MotionTransform, t: f64) -> MotionTransform {
-    let t = t.clamp(0.0, 1.0);
+    lerp_transform_raw(from, to, t.clamp(0.0, 1.0))
+}
+
+/// Like [`lerp_transform`], but preserves a spring's overshoot: the blend may
+/// pass the target by up to half the move before it settles back.
+pub(super) fn lerp_transform_spring(
+    from: MotionTransform,
+    to: MotionTransform,
+    t: f64,
+) -> MotionTransform {
+    lerp_transform_raw(from, to, t.clamp(-0.5, 1.5))
+}
+
+fn lerp_transform_raw(
+    from: MotionTransform,
+    to: MotionTransform,
+    t: f64,
+) -> MotionTransform {
     MotionTransform {
         scale: from.scale + (to.scale - from.scale) * t,
         rotation_x: from.rotation_x + (to.rotation_x - from.rotation_x) * t,

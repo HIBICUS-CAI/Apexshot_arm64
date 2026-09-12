@@ -1335,6 +1335,85 @@ fn motion_blur_amount_honors_enablement_multiplier_and_cap() {
 }
 
 #[test]
+fn ease_timing_keeps_the_recovered_bezier_and_does_not_overshoot() {
+    let timing = MotionEffectTransformTiming::default();
+    assert_eq!(timing.kind, MotionTimingKind::Ease);
+    assert!((timing.apply(0.35) - cubic_bezier_ease(timing, 0.35)).abs() < 1e-12);
+    let peak = (0..=100)
+        .map(|index| timing.apply(index as f64 / 100.0))
+        .fold(f64::MIN, f64::max);
+    assert!(peak <= 1.0 + f64::EPSILON, "ease must not overshoot: {peak}");
+}
+
+#[test]
+fn spring_timing_settles_by_the_end_of_its_duration() {
+    for bounce in [0.0, DEFAULT_MOTION_SPRING_BOUNCE, MAX_MOTION_SPRING_BOUNCE] {
+        let timing = MotionEffectTransformTiming {
+            kind: MotionTimingKind::Spring,
+            spring_bounce: bounce,
+            ..MotionEffectTransformTiming::default()
+        };
+        assert!(timing.apply(0.0).abs() < 1e-12, "bounce {bounce}");
+        // The held target takes over at the window's end, so the spring must
+        // already have settled there.
+        assert!(
+            (timing.apply(0.999) - 1.0).abs() < 0.02,
+            "bounce {bounce} has not settled: {}",
+            timing.apply(0.999)
+        );
+        assert!((timing.apply(1.0) - 1.0).abs() < f64::EPSILON);
+    }
+}
+
+#[test]
+fn spring_bounce_reads_as_the_first_overshoot() {
+    let response_peak = |bounce: f64| {
+        let timing = MotionEffectTransformTiming {
+            kind: MotionTimingKind::Spring,
+            spring_bounce: bounce,
+            ..MotionEffectTransformTiming::default()
+        };
+        (0..=1000)
+            .map(|index| timing.apply(index as f64 / 1000.0))
+            .fold(f64::MIN, f64::max)
+    };
+    assert!(response_peak(0.0) <= 1.0 + 1e-9, "critically damped overshot");
+    assert!(
+        (response_peak(0.2) - 1.2).abs() < 0.02,
+        "a 20% bounce should peak near 1.2, got {}",
+        response_peak(0.2)
+    );
+}
+
+#[test]
+fn timing_is_per_clip_and_new_clips_inherit_the_selected_curve() {
+    let mut motion = MotionState::default();
+    motion.add_segment_at(0.0).expect("first clip");
+    let mut first = motion.selected_transform_timing();
+    first.transition_duration = 0.9;
+    first.kind = MotionTimingKind::Spring;
+    first.spring_bounce = 0.4;
+    motion.set_transform_timing(first);
+
+    motion.add_segment_at(1.0).expect("second clip");
+    let inherited = motion.selected_transform_timing();
+    assert_eq!(inherited.transition_duration, 0.9);
+    assert_eq!(inherited.kind, MotionTimingKind::Spring);
+    assert_eq!(inherited.spring_bounce, 0.4);
+
+    // Editing the second clip must not touch the first clip's curve.
+    let mut second = inherited;
+    second.transition_duration = 0.2;
+    second.kind = MotionTimingKind::Ease;
+    motion.set_transform_timing(second);
+    assert_eq!(motion.segments[0].timing.transition_duration, 0.9);
+    assert_eq!(motion.segments[0].timing.kind, MotionTimingKind::Spring);
+    assert_eq!(motion.segments[0].timing.spring_bounce, 0.4);
+    assert_eq!(motion.segments[1].timing.transition_duration, 0.2);
+    assert_eq!(motion.segments[1].timing.kind, MotionTimingKind::Ease);
+}
+
+#[test]
 fn motion_blur_uses_recovered_shotbase_setting_bounds() {
     let settings = MotionBlurSettings {
         cursor_strength: 50.0,

@@ -2363,3 +2363,6 @@ msgstr "Подложка"
 
 msgid "Undo"
 msgstr "Отменить"
+
+msgid "Bounce"
+msgstr "Отскок"

@@ -2,7 +2,7 @@ use gtk4::prelude::*;
 use std::rc::Rc;
 
 use crate::i18n::t;
-use crate::recording::editor::model::MotionState;
+use crate::recording::editor::model::{MotionState, MotionTimingKind};
 
 use super::super::widgets::format_duration_label;
 use super::super::{MotionModeParts, MotionSession};
@@ -59,6 +59,11 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let pos_y_value = parts.transform.pos_y_value.clone();
     let ease_slider = parts.transform.ease_slider.clone();
     let ease_value = parts.transform.ease_value.clone();
+    let timing_kind_buttons = parts.transform.timing_kind_buttons.clone();
+    let ease_timing_rows = parts.transform.ease_timing_rows.clone();
+    let spring_timing_rows = parts.transform.spring_timing_rows.clone();
+    let spring_bounce_slider = parts.transform.spring_bounce_slider.clone();
+    let spring_bounce_value = parts.transform.spring_bounce_value.clone();
     let easing_x1_slider = parts.transform.easing_x1_slider.clone();
     let easing_x1_value = parts.transform.easing_x1_value.clone();
     let easing_y1_slider = parts.transform.easing_y1_slider.clone();
@@ -99,7 +104,7 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         let blur = runtime.motion.motion_blur;
         let blur_settings = runtime.motion.motion_blur_settings.clamped();
         let perspective_intensity = runtime.motion.perspective_intensity;
-        let transform_timing = runtime.motion.transform_timing;
+        let transform_timing = runtime.motion.selected_transform_timing();
         drop(runtime);
         syncing.set(true);
         blur_slider.set_value(blur);
@@ -114,6 +119,13 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         easing_x2_value.set_label(&format!("{:.0}%", transform_timing.easing_x2 * 100.0));
         easing_y2_slider.set_value(transform_timing.easing_y2);
         easing_y2_value.set_label(&format!("{:.0}%", transform_timing.easing_y2 * 100.0));
+        for (kind, button) in &timing_kind_buttons {
+            button.set_active(*kind == transform_timing.kind);
+        }
+        ease_timing_rows.set_visible(transform_timing.kind == MotionTimingKind::Ease);
+        spring_timing_rows.set_visible(transform_timing.kind == MotionTimingKind::Spring);
+        spring_bounce_slider.set_value(transform_timing.spring_bounce);
+        spring_bounce_value.set_label(&format!("{:.0}%", transform_timing.spring_bounce * 100.0));
         let has_clip = selected.is_some();
         let has_text = selected_text.is_some();
         reset_timing_btn.set_sensitive(has_clip);

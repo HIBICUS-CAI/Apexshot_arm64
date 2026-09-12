@@ -307,6 +307,6 @@ mod tests {
         let (start, end) = motion_transition_preview_range(&motion, 0.0);
         assert!((start - motion.segments[0].start).abs() < f64::EPSILON);
         assert!((end - motion.segments[0].end).abs() < f64::EPSILON);
-        assert!(end > motion.transform_timing.transition_duration);
+        assert!(end > motion.segments[0].timing.transition_duration);
     }
 }

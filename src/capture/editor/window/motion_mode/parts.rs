@@ -2,7 +2,7 @@ use gtk4::{Box as GtkBox, Button, DrawingArea, Entry, Label, Overlay, ToggleButt
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::recording::editor::model::{MotionTextAnimation, MotionTextScope};
+use crate::recording::editor::model::{MotionTextAnimation, MotionTextScope, MotionTimingKind};
 use crate::recording::editor::window::tool_sidebar::FillSlider;
 
 use super::position_pad::MotionPositionPad;
@@ -104,6 +104,11 @@ pub(in crate::capture::editor::window) struct MotionTransformControlParts {
     pub pos_y_value: Label,
     pub ease_slider: FillSlider,
     pub ease_value: Label,
+    pub timing_kind_buttons: Vec<(MotionTimingKind, ToggleButton)>,
+    pub ease_timing_rows: GtkBox,
+    pub spring_timing_rows: GtkBox,
+    pub spring_bounce_slider: FillSlider,
+    pub spring_bounce_value: Label,
     pub easing_x1_slider: FillSlider,
     pub easing_x1_value: Label,
     pub easing_y1_slider: FillSlider,

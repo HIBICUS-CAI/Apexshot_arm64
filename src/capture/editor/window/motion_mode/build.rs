@@ -8,10 +8,11 @@ use std::rc::Rc;
 use crate::capture::editor::ui_support::EDITOR_TOP_CHROME_HEIGHT;
 use crate::i18n::t;
 use crate::recording::editor::model::{
-    MotionTextAnimation, MotionTextScope, DEFAULT_MOTION_DURATION_SECONDS,
-    DEFAULT_MOTION_TEXT_POS_X, DEFAULT_MOTION_TEXT_POS_Y, DEFAULT_MOTION_TEXT_SIZE,
-    DEFAULT_MOTION_ZOOM, MAX_MOTION_DURATION_SECONDS, MAX_MOTION_TEXT_POS, MAX_MOTION_TEXT_SIZE,
-    MAX_MOTION_YAW, MAX_MOTION_ZOOM, MAX_ZOOM_EASE_MS, MIN_MOTION_DURATION_SECONDS,
+    MotionTextAnimation, MotionTextScope, MotionTimingKind, DEFAULT_MOTION_DURATION_SECONDS,
+    DEFAULT_MOTION_SPRING_BOUNCE, DEFAULT_MOTION_TEXT_POS_X, DEFAULT_MOTION_TEXT_POS_Y,
+    DEFAULT_MOTION_TEXT_SIZE, DEFAULT_MOTION_ZOOM, MAX_MOTION_DURATION_SECONDS,
+    MAX_MOTION_SPRING_BOUNCE, MAX_MOTION_TEXT_POS, MAX_MOTION_TEXT_SIZE, MAX_MOTION_YAW,
+    MAX_MOTION_ZOOM, MAX_ZOOM_EASE_MS, MIN_MOTION_DURATION_SECONDS, MIN_MOTION_SPRING_BOUNCE,
     MIN_MOTION_TEXT_POS, MIN_MOTION_TEXT_SIZE, MIN_MOTION_YAW, MIN_MOTION_ZOOM, MIN_ZOOM_EASE_MS,
 };
 use crate::recording::editor::window::tool_sidebar::FillSlider;
@@ -219,6 +220,32 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     clip_box.append(&position_section);
 
     let timing_section = motion_settings_section("Timing");
+    // Ease keeps Shotbase's recovered cubic-Bézier handles; Spring replaces
+    // them with a physical damped oscillator driven by duration + bounce.
+    let timing_mode_row = GtkBox::new(Orientation::Horizontal, 6);
+    timing_mode_row.add_css_class("recording-editor-zoom-easing");
+    timing_mode_row.set_hexpand(true);
+    timing_mode_row.set_homogeneous(true);
+    let timing_kind_buttons: Vec<(MotionTimingKind, ToggleButton)> = MotionTimingKind::ALL
+        .iter()
+        .map(|&kind| {
+            let button = ToggleButton::with_label(&t(kind.label()));
+            button.add_css_class("recording-editor-zoom-easing-btn");
+            button.set_has_frame(false);
+            button.set_hexpand(true);
+            timing_mode_row.append(&button);
+            (kind, button)
+        })
+        .collect();
+    if let Some((_, first)) = timing_kind_buttons.first() {
+        for (index, (_, button)) in timing_kind_buttons.iter().enumerate() {
+            if index > 0 {
+                button.set_group(Some(first));
+            }
+        }
+    }
+    timing_section.append(&timing_mode_row);
+
     let ease_value = Label::new(Some("1200ms"));
     ease_value.set_visible(false);
     let ease_slider =
@@ -229,22 +256,37 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     timing_section.append(&ease_value);
     timing_section.append(&ease_slider.widget());
 
+    let ease_timing_rows = GtkBox::new(Orientation::Vertical, 0);
     let (easing_x1_header, easing_x1_value, easing_x1_slider) =
         span_slider_row(&t("Ease X1"), 0.25, 0.0, 1.0);
-    timing_section.append(&easing_x1_header);
-    timing_section.append(&easing_x1_slider.widget());
+    ease_timing_rows.append(&easing_x1_header);
+    ease_timing_rows.append(&easing_x1_slider.widget());
     let (easing_y1_header, easing_y1_value, easing_y1_slider) =
         span_slider_row(&t("Ease Y1"), 1.0, 0.0, 1.0);
-    timing_section.append(&easing_y1_header);
-    timing_section.append(&easing_y1_slider.widget());
+    ease_timing_rows.append(&easing_y1_header);
+    ease_timing_rows.append(&easing_y1_slider.widget());
     let (easing_x2_header, easing_x2_value, easing_x2_slider) =
         span_slider_row(&t("Ease X2"), 0.50, 0.0, 1.0);
-    timing_section.append(&easing_x2_header);
-    timing_section.append(&easing_x2_slider.widget());
+    ease_timing_rows.append(&easing_x2_header);
+    ease_timing_rows.append(&easing_x2_slider.widget());
     let (easing_y2_header, easing_y2_value, easing_y2_slider) =
         span_slider_row(&t("Ease Y2"), 1.0, 0.0, 1.0);
-    timing_section.append(&easing_y2_header);
-    timing_section.append(&easing_y2_slider.widget());
+    ease_timing_rows.append(&easing_y2_header);
+    ease_timing_rows.append(&easing_y2_slider.widget());
+    timing_section.append(&ease_timing_rows);
+
+    let spring_timing_rows = GtkBox::new(Orientation::Vertical, 0);
+    let (spring_bounce_header, spring_bounce_value, spring_bounce_slider) = span_slider_row(
+        &t("Bounce"),
+        DEFAULT_MOTION_SPRING_BOUNCE,
+        MIN_MOTION_SPRING_BOUNCE,
+        MAX_MOTION_SPRING_BOUNCE,
+    );
+    spring_timing_rows.append(&spring_bounce_header);
+    spring_timing_rows.append(&spring_bounce_slider.widget());
+    spring_timing_rows.set_visible(false);
+    timing_section.append(&spring_timing_rows);
+
     let reset_timing_btn = Button::with_label(&t("Reset"));
     reset_timing_btn.add_css_class("recording-editor-zoom-easing-btn");
     reset_timing_btn.set_has_frame(false);
@@ -252,8 +294,6 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     timing_section.append(&reset_timing_btn);
     clip_box.append(&timing_section);
 
-    // Shotbase's Motion timing is a single global cubic-Bézier curve — there
-    // are no named easing presets on the Motion track.
     inspector.append(&clip_box);
 
     let text_box = GtkBox::new(Orientation::Vertical, 10);
@@ -462,6 +502,11 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
                 pos_y_value,
                 ease_slider,
                 ease_value,
+                timing_kind_buttons,
+                ease_timing_rows,
+                spring_timing_rows,
+                spring_bounce_slider,
+                spring_bounce_value,
                 easing_x1_slider,
                 easing_x1_value,
                 easing_y1_slider,

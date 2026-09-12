@@ -95,6 +95,13 @@ impl MotionState {
         } else {
             DEFAULT_MOTION_ZOOM
         };
+        // A new clip inherits the curve the user is currently working with;
+        // with no selection it starts from the recovered defaults.
+        let timing = self
+            .selected
+            .and_then(|index| self.segments.get(index))
+            .map(|segment| segment.timing)
+            .unwrap_or_default();
         self.segments.push(MotionSegment {
             start,
             end,
@@ -108,6 +115,7 @@ impl MotionState {
                 scale: target_scale,
                 ..MotionTransform::default()
             },
+            timing,
         });
         self.segments.sort_by(|a, b| a.start.total_cmp(&b.start));
         self.reconcile_effect_segments();
@@ -255,16 +263,27 @@ impl MotionState {
         self.reconcile_effect_segments();
     }
 
-    /// Shotbase stores one transition duration for the whole Motion effects
-    /// track. The inspector's millisecond slider writes through to the global
-    /// timing; there is no per-segment ease.
+    /// Writes the transition duration into the selected clip's timing, so a
+    /// slider nudge no longer rewrites every move on the track.
     pub fn set_selected_transition_ms(&mut self, transition_ms: u32) {
         let transition_ms = transition_ms.clamp(MIN_ZOOM_EASE_MS, MAX_ZOOM_EASE_MS);
-        self.transform_timing.transition_duration = transition_ms as f64 / 1000.0;
+        if let Some(segment) = self.selected_segment_mut() {
+            segment.timing.transition_duration = transition_ms as f64 / 1000.0;
+        }
+    }
+
+    /// The timing of the clip the inspector is editing; falls back to the
+    /// defaults when nothing is selected.
+    pub fn selected_transform_timing(&self) -> MotionEffectTransformTiming {
+        self.selected_segment()
+            .map(|segment| segment.timing)
+            .unwrap_or_default()
     }
 
     pub fn set_transform_timing(&mut self, timing: MotionEffectTransformTiming) {
-        self.transform_timing = timing.clamped();
+        if let Some(segment) = self.selected_segment_mut() {
+            segment.timing = timing.clamped();
+        }
     }
     pub fn set_selected_end_pitch(&mut self, pitch: f64) {
         if let Some(segment) = self.selected_segment_mut() {
@@ -487,7 +506,7 @@ impl MotionState {
             .iter()
             .find(|segment| time >= segment.start && time <= segment.end)
         {
-            segment.sample(time, self.transform_timing)
+            segment.sample(time)
         } else if let Some((index, previous)) = self
             .segments
             .iter()
@@ -496,16 +515,16 @@ impl MotionState {
             .find(|(_, segment)| time > segment.end && !segment.is_disabled)
         {
             // The camera always eases back to the initial framing in a gap.
-            // The gap's length sets the release speed, capped by the track's
-            // transition timing; the following move starts from identity when
-            // the gap ends. Flush moves never enter this branch: they chain
-            // directly through `reconcile_effect_segments`.
+            // The gap's length sets the release speed, capped by the clip's
+            // own transition duration; the following move starts from identity
+            // when the gap ends. Flush moves never enter this branch: they
+            // chain directly through `reconcile_effect_segments`.
             let release_end = self.segments[index + 1..]
                 .iter()
                 .find(|segment| !segment.is_disabled)
                 .map(|segment| segment.start)
                 .unwrap_or(self.duration);
-            previous.release_after(time, self.transform_timing, release_end - previous.end)
+            previous.release_after(time, release_end - previous.end)
         } else {
             MotionTransform::default()
         };

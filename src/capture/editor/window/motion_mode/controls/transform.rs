@@ -409,7 +409,7 @@ pub(super) fn install(
             };
             let mut runtime = session.borrow_mut();
             runtime.begin_motion_edit();
-            let mut timing = runtime.motion.transform_timing;
+            let mut timing = runtime.motion.selected_transform_timing();
             match axis {
                 0 => timing.easing_x1 = value,
                 1 => timing.easing_y1 = value,
@@ -425,6 +425,76 @@ pub(super) fn install(
             }
         });
     }
+
+    for (kind, button) in &parts.transform.timing_kind_buttons {
+        let kind = *kind;
+        button.connect_toggled({
+            let session = session.runtime.clone();
+            let redraw = redraw.clone();
+            let request_transition_preview = request_transition_preview.clone();
+            let request_live_preview = request_live_preview.clone();
+            let syncing = parts.shared.inspector_syncing.clone();
+            move |button| {
+                if syncing.get() || !button.is_active() {
+                    return;
+                }
+                let segment_start = {
+                    let runtime = session.borrow();
+                    runtime
+                        .motion
+                        .selected_segment()
+                        .map(|segment| segment.start)
+                };
+                {
+                    let mut runtime = session.borrow_mut();
+                    runtime.begin_motion_edit();
+                    let mut timing = runtime.motion.selected_transform_timing();
+                    timing.kind = kind;
+                    runtime.motion.set_transform_timing(timing);
+                }
+                // Swap the inspector rows immediately; the preview then
+                // replays the clip on the new curve.
+                redraw();
+                match segment_start {
+                    Some(start) => request_transition_preview(start),
+                    None => request_live_preview(),
+                }
+            }
+        });
+    }
+
+    parts.transform.spring_bounce_slider.connect_value_changed({
+        let session = session.runtime.clone();
+        let value_label = parts.transform.spring_bounce_value.clone();
+        let request_transition_preview = request_transition_preview.clone();
+        let request_live_preview = request_live_preview.clone();
+        let syncing = parts.shared.inspector_syncing.clone();
+        move |slider| {
+            if syncing.get() {
+                return;
+            }
+            let value = slider.value();
+            let segment_start = {
+                let runtime = session.borrow();
+                runtime
+                    .motion
+                    .selected_segment()
+                    .map(|segment| segment.start)
+            };
+            {
+                let mut runtime = session.borrow_mut();
+                runtime.begin_motion_edit();
+                let mut timing = runtime.motion.selected_transform_timing();
+                timing.spring_bounce = value;
+                runtime.motion.set_transform_timing(timing);
+            }
+            value_label.set_label(&format!("{:.0}%", value * 100.0));
+            match segment_start {
+                Some(start) => request_transition_preview(start),
+                None => request_live_preview(),
+            }
+        }
+    });
 
     parts.transform.reset_timing_btn.connect_clicked({
         let session = session.runtime.clone();

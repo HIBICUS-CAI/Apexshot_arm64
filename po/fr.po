@@ -2372,3 +2372,6 @@ msgstr "Sous-couche"
 
 msgid "Undo"
 msgstr "Annuler"
+
+msgid "Bounce"
+msgstr "Rebond"

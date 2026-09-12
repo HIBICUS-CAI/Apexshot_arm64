@@ -2374,3 +2374,6 @@ msgstr "Unterlage"
 
 msgid "Undo"
 msgstr "Rückgängig"
+
+msgid "Bounce"
+msgstr "Federung"

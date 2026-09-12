@@ -2368,3 +2368,6 @@ msgstr "Base"
 
 msgid "Undo"
 msgstr "Deshacer"
+
+msgid "Bounce"
+msgstr "Rebote"
