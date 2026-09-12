@@ -2327,3 +2327,39 @@ msgstr "Saída widescreen 16:9"
 
 msgid "X (Twitter) link-card 1.91:1 output"
 msgstr "Saída de cartão de link do X (Twitter) 1.91:1"
+
+msgid "24 FPS"
+msgstr "24 FPS"
+
+msgid "30 FPS"
+msgstr "30 FPS"
+
+msgid "50 FPS"
+msgstr "50 FPS"
+
+msgid "60 FPS"
+msgstr "60 FPS"
+
+msgid "Needs a background fill to appear in exports"
+msgstr "É necessário preencher o fundo para que apareça nas exportações"
+
+msgid "Quick Capture"
+msgstr "Captura rápida"
+
+msgid "Redo"
+msgstr "Refazer"
+
+msgid "Selected gradient color"
+msgstr "Cor do gradiente selecionada"
+
+msgid "Shade above the card"
+msgstr "Sombra acima do cartão"
+
+msgid "Shade beneath the card"
+msgstr "Sombra sob o cartão"
+
+msgid "Underlay"
+msgstr "Base"
+
+msgid "Undo"
+msgstr "Desfazer"

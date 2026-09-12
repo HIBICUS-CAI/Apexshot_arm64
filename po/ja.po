@@ -2291,3 +2291,39 @@ msgstr "ワイド画面 16:9 出力"
 
 msgid "X (Twitter) link-card 1.91:1 output"
 msgstr "X（Twitter）リンクカード 1.91:1 出力"
+
+msgid "24 FPS"
+msgstr "24 FPS"
+
+msgid "30 FPS"
+msgstr "30 FPS"
+
+msgid "50 FPS"
+msgstr "50 FPS"
+
+msgid "60 FPS"
+msgstr "60 FPS"
+
+msgid "Needs a background fill to appear in exports"
+msgstr "エクスポート時に表示されるように、背景を塗りつぶす必要があります"
+
+msgid "Quick Capture"
+msgstr "クイックキャプチャ"
+
+msgid "Redo"
+msgstr "やり直し"
+
+msgid "Selected gradient color"
+msgstr "選択されたグラデーションの色"
+
+msgid "Shade above the card"
+msgstr "カードの上にある影"
+
+msgid "Shade beneath the card"
+msgstr "カードの下にある日陰"
+
+msgid "Underlay"
+msgstr "下地"
+
+msgid "Undo"
+msgstr "元に戻す"

@@ -2335,3 +2335,40 @@ msgstr "Sortie grand écran 16:9"
 
 msgid "X (Twitter) link-card 1.91:1 output"
 msgstr "Sortie carte de lien X (Twitter) 1.91:1"
+
+msgid "24 FPS"
+msgstr "24 images par seconde"
+
+msgid "30 FPS"
+msgstr "30 images par seconde"
+
+msgid "50 FPS"
+msgstr "50 images par seconde"
+
+msgid "60 FPS"
+msgstr "60 images par seconde"
+
+msgid "Needs a background fill to appear in exports"
+msgstr ""
+"Nécessite un remplissage d'arrière-plan pour apparaître dans les exportations"
+
+msgid "Quick Capture"
+msgstr "Capture rapide"
+
+msgid "Redo"
+msgstr "Refaire"
+
+msgid "Selected gradient color"
+msgstr "Couleur du dégradé sélectionnée"
+
+msgid "Shade above the card"
+msgstr "Ombre au-dessus de la carte"
+
+msgid "Shade beneath the card"
+msgstr "Ombre sous la carte"
+
+msgid "Underlay"
+msgstr "Sous-couche"
+
+msgid "Undo"
+msgstr "Annuler"

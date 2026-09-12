@@ -2326,3 +2326,40 @@ msgstr "Широкоэкранный вывод 16:9"
 
 msgid "X (Twitter) link-card 1.91:1 output"
 msgstr "Вывод карточки ссылки X (Twitter) 1.91:1"
+
+msgid "24 FPS"
+msgstr "24 кадров в секунду"
+
+msgid "30 FPS"
+msgstr "30 кадров в секунду"
+
+msgid "50 FPS"
+msgstr "50 кадров в секунду"
+
+msgid "60 FPS"
+msgstr "60 кадров в секунду"
+
+msgid "Needs a background fill to appear in exports"
+msgstr ""
+"Требуется заливка фона, чтобы элемент отображался в экспортированных файлах"
+
+msgid "Quick Capture"
+msgstr "Быстрая съемка"
+
+msgid "Redo"
+msgstr "Повторить"
+
+msgid "Selected gradient color"
+msgstr "Выбранный цвет градиента"
+
+msgid "Shade above the card"
+msgstr "Тень над карточкой"
+
+msgid "Shade beneath the card"
+msgstr "Тень под карточкой"
+
+msgid "Underlay"
+msgstr "Подложка"
+
+msgid "Undo"
+msgstr "Отменить"

@@ -2288,3 +2288,39 @@ msgstr "宽屏 16:9 输出"
 
 msgid "X (Twitter) link-card 1.91:1 output"
 msgstr "X（Twitter）链接卡片 1.91:1 输出"
+
+msgid "24 FPS"
+msgstr "24帧/秒"
+
+msgid "30 FPS"
+msgstr "30 FPS"
+
+msgid "50 FPS"
+msgstr "50 FPS"
+
+msgid "60 FPS"
+msgstr "60 FPS"
+
+msgid "Needs a background fill to appear in exports"
+msgstr "需要填充背景才能在导出文件中显示"
+
+msgid "Quick Capture"
+msgstr "快速拍摄"
+
+msgid "Redo"
+msgstr "重做"
+
+msgid "Selected gradient color"
+msgstr "选定的渐变色"
+
+msgid "Shade above the card"
+msgstr "卡片上方的阴影"
+
+msgid "Shade beneath the card"
+msgstr "卡片下方的阴影"
+
+msgid "Underlay"
+msgstr "底衬"
+
+msgid "Undo"
+msgstr "撤销"

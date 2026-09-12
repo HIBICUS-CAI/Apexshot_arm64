@@ -2307,3 +2307,39 @@ msgstr "إخراج عريض 16:9"
 
 msgid "X (Twitter) link-card 1.91:1 output"
 msgstr "إخراج بطاقة روابط X (تويتر) 1.91:1"
+
+msgid "24 FPS"
+msgstr "24 إطارًا في الثانية"
+
+msgid "30 FPS"
+msgstr "30 إطارًا في الثانية"
+
+msgid "50 FPS"
+msgstr "50 إطارًا في الثانية"
+
+msgid "60 FPS"
+msgstr "60 إطارًا في الثانية"
+
+msgid "Needs a background fill to appear in exports"
+msgstr "يحتاج إلى ملء الخلفية ليظهر في الملفات المصدرة"
+
+msgid "Quick Capture"
+msgstr "التصوير السريع"
+
+msgid "Redo"
+msgstr "إعادة"
+
+msgid "Selected gradient color"
+msgstr "لون التدرج المحدد"
+
+msgid "Shade above the card"
+msgstr "الظل فوق البطاقة"
+
+msgid "Shade beneath the card"
+msgstr "الظل تحت البطاقة"
+
+msgid "Underlay"
+msgstr "الطبقة السفلية"
+
+msgid "Undo"
+msgstr "تراجع"

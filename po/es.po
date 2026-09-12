@@ -2332,3 +2332,39 @@ msgstr "Salida panorámica 16:9"
 
 msgid "X (Twitter) link-card 1.91:1 output"
 msgstr "Salida de tarjeta de enlace de X (Twitter) 1.91:1"
+
+msgid "24 FPS"
+msgstr "24 fotogramas por segundo"
+
+msgid "30 FPS"
+msgstr "30 FPS"
+
+msgid "50 FPS"
+msgstr "50 FPS"
+
+msgid "60 FPS"
+msgstr "60 FPS"
+
+msgid "Needs a background fill to appear in exports"
+msgstr "Necesita un relleno de fondo para que aparezca en las exportaciones"
+
+msgid "Quick Capture"
+msgstr "Captura rápida"
+
+msgid "Redo"
+msgstr "Rehacer"
+
+msgid "Selected gradient color"
+msgstr "Color del degradado seleccionado"
+
+msgid "Shade above the card"
+msgstr "Sombra sobre la tarjeta"
+
+msgid "Shade beneath the card"
+msgstr "Sombra debajo de la tarjeta"
+
+msgid "Underlay"
+msgstr "Base"
+
+msgid "Undo"
+msgstr "Deshacer"
