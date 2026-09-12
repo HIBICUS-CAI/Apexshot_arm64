@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        draw_motion_backdrop, draw_motion_foreground, draw_motion_frame, motion_pose_differs,
+        draw_motion_backdrop, draw_motion_foreground, draw_motion_frame,
         motion_text_contains_view_point, paint_card_shadow, paint_image_background,
         view_point_to_motion_text_position, CardLayout, MotionStage,
     };
@@ -379,20 +379,138 @@ mod tests {
         assert_eq!(motion.selected, Some(0));
     }
 
+    /// A linear camera move whose exposure window covers real travel: the
+    /// discriminating case for temporal accumulation versus ghost trails.
+    fn fast_linear_motion() -> MotionState {
+        let mut motion = motion_with_first_clip();
+        motion.set_segment_range(0, 0.0, 1.0);
+        motion.set_transform_timing(crate::recording::editor::model::MotionEffectTransformTiming {
+            transition_duration: 0.1,
+            easing_x1: 0.0,
+            easing_y1: 0.0,
+            easing_x2: 1.0,
+            easing_y2: 1.0,
+        });
+        motion.set_selected_end_scale(4.0);
+        motion.appearance.background_fill_type = MotionBackgroundFillType::None;
+        motion.appearance.background_padding = 0.0;
+        motion.set_motion_blur(1.0);
+        motion.motion_blur_settings.shutter_angle = 360.0;
+        motion
+    }
+
+    fn render_blur_frame(card: &ImageSurface, motion: &MotionState, time: f64) -> ImageSurface {
+        let frame = ImageSurface::create(Format::ARgb32, 200, 150).unwrap();
+        {
+            let context = Context::new(&frame).unwrap();
+            draw_motion_frame(
+                &context, 200, 150, card, motion, None, None, time, false, true, false, 1.0,
+            );
+        }
+        frame.flush();
+        frame
+    }
+
+    /// True motion blur averages the exposure, so a fast move leaves a
+    /// continuous gradient at the card's leading edge. The previous trail
+    /// implementation stacked a fully opaque copy of the current pose on top,
+    /// which is the "lagging" look users reported.
     #[test]
-    fn held_pose_does_not_spend_a_motion_blur_sample() {
-        let pose = MotionTransform::default();
-        assert!(!motion_pose_differs(pose, pose, (0.5, 0.5), (0.5, 0.5)));
-        assert!(motion_pose_differs(
-            MotionTransform {
-                scale: 1.001,
-                ..pose
-            },
-            pose,
-            (0.5, 0.5),
-            (0.5, 0.5),
-        ));
-        assert!(motion_pose_differs(pose, pose, (0.51, 0.5), (0.5, 0.5)));
+    fn motion_blur_smears_the_moving_card_instead_of_stacking_copies() {
+        let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 1.0, 1.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let motion = fast_linear_motion();
+        let time = 0.05;
+        let scale = motion.sample(time).scale;
+        assert!((scale - 2.5).abs() < 1e-6, "linear move at half time: {scale}");
+
+        let layout = CardLayout::with_padding(
+            &card,
+            MotionStage::frame(200.0, 150.0),
+            motion.sample(time),
+            motion.zoom_anchor_at(time),
+            0.0,
+        );
+        let edge = layout.project(64.0, 32.0);
+        let probe_x = (edge.0 - 2.0).round() as usize;
+        let probe_y = edge.1.round() as usize;
+        let value_at = |data: &[u8], stride: usize, x: usize, y: usize| data[y * stride + x * 4];
+
+        let sharp = {
+            let mut sharp = motion.clone();
+            sharp.set_motion_blur(0.0);
+            render_blur_frame(&card, &sharp, time)
+        };
+        let mut blurred = render_blur_frame(&card, &motion, time);
+        let stride = blurred.stride() as usize;
+        let blurred_data = blurred.data().unwrap().to_vec();
+        let mut sharp = sharp;
+        let sharp_data = sharp.data().unwrap().to_vec();
+
+        assert_eq!(
+            value_at(&sharp_data, stride, probe_x, probe_y),
+            255,
+            "without blur the current pose is opaque at its leading edge"
+        );
+        let lead = value_at(&blurred_data, stride, probe_x, probe_y);
+        assert!(
+            (1..200).contains(&lead),
+            "the leading edge must be a partial exposure, got {lead}"
+        );
+
+        let row = edge.1.round() as usize;
+        let mut levels = (32..probe_x)
+            .map(|x| value_at(&blurred_data, stride, x, row))
+            .filter(|value| (1..255).contains(value))
+            .collect::<Vec<_>>();
+        levels.dedup();
+        assert!(
+            levels.len() >= 8,
+            "the smear must be continuous, saw {} levels",
+            levels.len()
+        );
+    }
+
+    /// A held pose has no travel during the exposure, so blur must leave the
+    /// frame identical to the sharp render — no lingering trail.
+    #[test]
+    fn motion_blur_leaves_held_poses_sharp() {
+        let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 1.0, 1.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let mut motion = fast_linear_motion();
+        motion.set_transform_timing(crate::recording::editor::model::MotionEffectTransformTiming {
+            transition_duration: 0.3,
+            easing_x1: 0.0,
+            easing_y1: 0.0,
+            easing_x2: 1.0,
+            easing_y2: 1.0,
+        });
+        let sharp = {
+            let mut sharp = motion.clone();
+            sharp.set_motion_blur(0.0);
+            sharp
+        };
+        for time in [0.0, 0.4] {
+            let mut blurred = render_blur_frame(&card, &motion, time);
+            let mut reference = render_blur_frame(&card, &sharp, time);
+            assert_eq!(
+                blurred.data().unwrap().to_vec(),
+                reference.data().unwrap().to_vec(),
+                "held pose at {time}s must not be blurred"
+            );
+        }
     }
 
     #[test]

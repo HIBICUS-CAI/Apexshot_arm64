@@ -13,6 +13,9 @@ pub struct MotionBlurSettings {
     pub zoom_blur_amount_multiplier: f64,
     pub zoom_blur_max_amount: f64,
     pub transform_temporal_exposure_cap: f64,
+    /// Recovered Shotbase trail opacity. The renderer derives blur from the
+    /// exposure window and averages temporal subframes instead of stacking
+    /// ghost copies, so the field is retained for schema compatibility only.
     pub transform_trail_opacity: f64,
 }
 
@@ -34,14 +37,6 @@ impl Default for MotionBlurSettings {
     }
 }
 
-/// A past transform sample contributing to the Motion trail. The current
-/// transform remains sharp; these are composited oldest-first below it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MotionBlurSample {
-    pub offset_seconds: f64,
-    pub opacity: f64,
-}
-
 /// Motion blur quality mode recovered from Shotbase's `MotionBlurBudgetMode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MotionBlurBudgetMode {
@@ -50,18 +45,29 @@ pub enum MotionBlurBudgetMode {
 }
 
 impl MotionBlurBudgetMode {
-    /// ApexShot's raster fallback budget. In the recovered Shotbase compositor,
-    /// `livePreviewPlayback` drives the 3/5 temporal CIColorMatrix path,
-    /// whereas `fullQuality` uses Core Image motion/zoom filters rather than
-    /// the same trail loop. We retain a small export trail here because this
-    /// renderer has no Core Image equivalent.
-    fn apexshot_temporal_sample_limit(self) -> usize {
+    /// Upper bound on temporal subframes accumulated for one output frame.
+    /// Interactive playback stays near the old trail's mesh cost (a subframe
+    /// mesh is lighter), while export spends what it needs for a smooth edge.
+    fn max_samples(self) -> usize {
         match self {
-            Self::LivePreviewPlayback => 5,
-            Self::FullQuality => 3,
+            Self::LivePreviewPlayback => 16,
+            Self::FullQuality => 64,
+        }
+    }
+
+    /// Longest card travel, in output pixels, between two subframes. Denser
+    /// sampling keeps the accumulated edge gradient smooth instead of stepped.
+    fn sample_spacing_px(self) -> f64 {
+        match self {
+            Self::LivePreviewPlayback => 2.0,
+            Self::FullQuality => 1.5,
         }
     }
 }
+
+/// Below this travel the exposure window holds one pose, so there is nothing
+/// to blur.
+const MIN_MOTION_BLUR_TRAVEL_PX: f64 = 0.75;
 
 impl MotionBlurSettings {
     pub fn clamped(self) -> Self {
@@ -99,43 +105,48 @@ impl MotionBlurSettings {
             .min(settings.zoom_blur_max_amount)
     }
 
-    /// Build ApexShot's bounded, past-looking raster fallback. Shotbase uses
-    /// a temporal 3/5-sample path only for `livePreviewPlayback`; its full
-    /// quality path applies `CIMotionBlur` and `CIZoomBlur`, neither of which
-    /// is available to this Cairo renderer.
-    pub fn transform_trail(
-        self,
-        frame_rate: f64,
-        budget: MotionBlurBudgetMode,
-    ) -> Vec<MotionBlurSample> {
+    /// Exposure time of one output frame in seconds: the frame interval scaled
+    /// by the shutter angle, capped by Shotbase's `transform_temporal_exposure_cap`,
+    /// then scaled by the user's blur strength. This is the window a real
+    /// camera would integrate over.
+    pub fn exposure_seconds(self, frame_rate: f64) -> f64 {
         let settings = self.clamped();
-        let amount = settings.effective_zoom_amount();
-        if amount < 0.001 || settings.shutter_angle <= 0.0 || settings.transform_trail_opacity <= 0.0 {
-            return Vec::new();
+        if !settings.enabled || settings.shutter_angle <= 0.0 {
+            return 0.0;
         }
         let frame_duration = 1.0 / frame_rate.max(1.0);
-        let exposure = (frame_duration * settings.shutter_angle / 360.0)
-            .min(settings.transform_temporal_exposure_cap);
-        if exposure <= f64::EPSILON {
+        (frame_duration * settings.shutter_angle / 360.0)
+            .min(settings.transform_temporal_exposure_cap)
+            * settings.effective_zoom_amount()
+    }
+
+    /// Subframe times across the exposure window ending at the current frame,
+    /// newest first. Every instant of the exposure contributes equally, so
+    /// averaging these frames smears the moving card along its path the way a
+    /// camera does. The renderer reports how far the card actually travels in
+    /// pixels; the count is chosen so consecutive subframes stay within the
+    /// budget's spacing, which is what keeps the result a continuous smear
+    /// rather than distinct ghost copies.
+    pub fn temporal_offsets(
+        self,
+        frame_rate: f64,
+        travel_px: f64,
+        budget: MotionBlurBudgetMode,
+    ) -> Vec<f64> {
+        let exposure = self.exposure_seconds(frame_rate);
+        if exposure <= f64::EPSILON
+            || !travel_px.is_finite()
+            || travel_px < MIN_MOTION_BLUR_TRAVEL_PX
+        {
             return Vec::new();
         }
-        let max_samples = budget.apexshot_temporal_sample_limit();
-        let sample_count = if max_samples == 3 || amount <= 0.5 {
-            3
-        } else {
-            max_samples
-        };
-        (1..=sample_count)
-            .rev()
-            .map(|index| {
-                let progress = index as f64 / sample_count as f64;
-                MotionBlurSample {
-                    offset_seconds: -exposure * progress,
-                    // Recent samples are stronger. The sharp current card is
-                    // painted afterwards, matching Shotbase's sharp overlay.
-                    opacity: settings.transform_trail_opacity * amount * (1.0 - progress * 0.65),
-                }
-            })
+        let intervals = (travel_px / budget.sample_spacing_px())
+            .ceil()
+            .clamp(1.0, budget.max_samples() as f64) as usize;
+        let sample_count = (intervals + 1).min(budget.max_samples()).max(2);
+        let last = (sample_count - 1) as f64;
+        (0..sample_count)
+            .map(|index| -exposure * index as f64 / last)
             .collect()
     }
 }

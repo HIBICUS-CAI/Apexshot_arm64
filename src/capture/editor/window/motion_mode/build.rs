@@ -133,15 +133,6 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     blur_shutter_slider.set_increments(5.0, 15.0);
     blur_shutter_slider.set_value(180.0);
     motion_blur_section.append(&blur_shutter_slider.widget());
-
-    let blur_trail_value = Label::new(Some("28%"));
-    let blur_trail_slider = FillSlider::new_with_value_text(&t("Blur trail"), |value, _, _| {
-        format!("{:.0}%", value * 100.0)
-    });
-    blur_trail_slider.set_range(0.0, 0.4);
-    blur_trail_slider.set_increments(0.01, 0.04);
-    blur_trail_slider.set_value(0.28);
-    motion_blur_section.append(&blur_trail_slider.widget());
     inspector.append(&motion_blur_section);
 
     let clip_hint = Label::new(Some(&t(
@@ -431,8 +422,6 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
                 blur_value,
                 blur_shutter_slider,
                 blur_shutter_value,
-                blur_trail_slider,
-                blur_trail_value,
                 clip_hint,
                 delete_btn,
                 inspector_syncing,

@@ -7,14 +7,12 @@ fn draw_transformed_card(
     appearance: &MotionAppearance,
     alpha: f64,
     mesh_div: usize,
-    card_scale: f64,
 ) {
     // The radius rounds the captured image's own corners; the background
     // scene behind it stays a full rectangle. It is expressed in source-card
     // pixels, so a downscaled preview texture scales it to keep the corner
-    // visually identical to the full-resolution export.
-    let rounded = rounded_motion_surface(surface, appearance.border_radius * card_scale);
-    let surface = rounded.as_ref().unwrap_or(surface);
+    // visually identical to the full-resolution export. Callers prepare the
+    // rounded surface once per frame; the blur renderer draws it per subframe.
     let img_w = surface.width() as f64;
     let img_h = surface.height() as f64;
     if img_w < 1.0 || img_h < 1.0 {

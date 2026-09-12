@@ -130,6 +130,35 @@ impl CardLayout {
     }
 }
 
+/// Maximum travel of any card corner between two poses, in stage pixels.
+/// The motion blur renderer sizes its temporal sample count from this so the
+/// smear gradient stays continuous even during fast camera moves.
+pub(super) fn card_corner_travel(
+    surface: &ImageSurface,
+    stage: MotionStage,
+    from: MotionTransform,
+    to: MotionTransform,
+    from_anchor: (f64, f64),
+    to_anchor: (f64, f64),
+    padding: f64,
+) -> f64 {
+    let corners = |transform: MotionTransform, anchor: (f64, f64)| {
+        let layout = CardLayout::with_padding(surface, stage, transform, anchor, padding);
+        [
+            layout.project(0.0, 0.0),
+            layout.project(layout.img_w, 0.0),
+            layout.project(layout.img_w, layout.img_h),
+            layout.project(0.0, layout.img_h),
+        ]
+    };
+    let from = corners(from, from_anchor);
+    let to = corners(to, to_anchor);
+    from.iter()
+        .zip(to.iter())
+        .map(|(a, b)| ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt())
+        .fold(0.0, f64::max)
+}
+
 /// Convert a pointer in the Motion preview back into the source artboard.
 /// A short Newton refinement keeps placement accurate for the non-linear
 /// perspective projection used by the card mesh.

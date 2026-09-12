@@ -62,8 +62,6 @@ pub(in crate::capture::editor::window) struct MotionSharedControlParts {
     pub blur_value: Label,
     pub blur_shutter_slider: FillSlider,
     pub blur_shutter_value: Label,
-    pub blur_trail_slider: FillSlider,
-    pub blur_trail_value: Label,
     pub clip_hint: Label,
     pub delete_btn: Button,
     pub inspector_syncing: Rc<Cell<bool>>,

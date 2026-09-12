@@ -25,8 +25,6 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let blur_value = parts.shared.blur_value.clone();
     let blur_shutter_slider = parts.shared.blur_shutter_slider.clone();
     let blur_shutter_value = parts.shared.blur_shutter_value.clone();
-    let blur_trail_slider = parts.shared.blur_trail_slider.clone();
-    let blur_trail_value = parts.shared.blur_trail_value.clone();
     let clip_box = parts.transform.clip_box.clone();
     let text_box = parts.text.text_box.clone();
     let text_entry = parts.text.text_entry.clone();
@@ -108,11 +106,6 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         blur_value.set_label(&format!("{:.0}%", blur * 100.0));
         blur_shutter_slider.set_value(blur_settings.shutter_angle);
         blur_shutter_value.set_label(&format!("{:.0}°", blur_settings.shutter_angle));
-        blur_trail_slider.set_value(blur_settings.transform_trail_opacity);
-        blur_trail_value.set_label(&format!(
-            "{:.0}%",
-            blur_settings.transform_trail_opacity * 100.0
-        ));
         easing_x1_slider.set_value(transform_timing.easing_x1);
         easing_x1_value.set_label(&format!("{:.0}%", transform_timing.easing_x1 * 100.0));
         easing_y1_slider.set_value(transform_timing.easing_y1);
@@ -244,26 +237,6 @@ pub(super) fn install_shared(
                 runtime.motion.motion_blur_settings.shutter_angle = shutter;
             }
             value_label.set_label(&format!("{shutter:.0}°"));
-            request_live_preview();
-        }
-    });
-
-    parts.shared.blur_trail_slider.connect_value_changed({
-        let session = session.runtime.clone();
-        let value_label = parts.shared.blur_trail_value.clone();
-        let request_live_preview = request_live_preview.clone();
-        let syncing = parts.shared.inspector_syncing.clone();
-        move |slider| {
-            if syncing.get() {
-                return;
-            }
-            let trail = slider.value().clamp(0.0, 1.0);
-            {
-                let mut runtime = session.borrow_mut();
-                runtime.begin_motion_edit();
-                runtime.motion.motion_blur_settings.transform_trail_opacity = trail;
-            }
-            value_label.set_label(&format!("{:.0}%", trail * 100.0));
             request_live_preview();
         }
     });

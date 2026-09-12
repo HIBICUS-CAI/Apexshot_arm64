@@ -1254,26 +1254,57 @@ fn settings_clamp_click_style_and_duration() {
 }
 
 #[test]
-fn motion_blur_uses_shutter_cap_and_apexshot_raster_budget() {
+fn motion_blur_exposure_uses_shutter_angle_and_cap() {
     let settings = MotionBlurSettings {
         enabled: true,
-        zoom_strength: 0.8,
+        zoom_strength: 1.0,
         shutter_angle: 360.0,
         transform_temporal_exposure_cap: 0.02,
-        transform_trail_opacity: 0.4,
         ..MotionBlurSettings::default()
     };
-    let export = settings.transform_trail(30.0, MotionBlurBudgetMode::FullQuality);
-    let preview = settings.transform_trail(30.0, MotionBlurBudgetMode::LivePreviewPlayback);
-    assert_eq!(export.len(), 3);
-    assert!(matches!(preview.len(), 3 | 5));
-    assert!(export.iter().all(|sample| sample.offset_seconds < 0.0));
-    assert!(export
-        .iter()
-        .all(|sample| sample.offset_seconds >= -0.02 - f64::EPSILON));
-    assert!(export
-        .windows(2)
-        .all(|samples| samples[0].opacity <= samples[1].opacity));
+    assert!((settings.exposure_seconds(30.0) - 0.02).abs() < 1e-12);
+
+    // A 180° shutter at 30 fps exposes for half the frame interval.
+    let half = MotionBlurSettings {
+        shutter_angle: 180.0,
+        transform_temporal_exposure_cap: 1.0,
+        ..settings
+    };
+    assert!((half.exposure_seconds(30.0) - 1.0 / 60.0).abs() < 1e-12);
+}
+
+#[test]
+fn motion_blur_samples_span_the_exposure_and_grow_with_travel() {
+    let settings = MotionBlurSettings {
+        enabled: true,
+        zoom_strength: 1.0,
+        transform_temporal_exposure_cap: 1.0,
+        ..MotionBlurSettings::default()
+    };
+    // Below one pixel of travel the pose holds: nothing to blur.
+    assert!(settings
+        .temporal_offsets(30.0, 0.0, MotionBlurBudgetMode::FullQuality)
+        .is_empty());
+
+    let exposure = settings.exposure_seconds(30.0);
+    let slow = settings.temporal_offsets(30.0, 3.0, MotionBlurBudgetMode::FullQuality);
+    let fast = settings.temporal_offsets(30.0, 200.0, MotionBlurBudgetMode::FullQuality);
+    let preview =
+        settings.temporal_offsets(30.0, 200.0, MotionBlurBudgetMode::LivePreviewPlayback);
+    assert!(slow.len() >= 2);
+    assert!(fast.len() > slow.len());
+    assert!(preview.len() < fast.len());
+    for offsets in [&slow, &fast, &preview] {
+        assert!(
+            offsets.windows(2).all(|pair| pair[0] > pair[1]),
+            "subframes must be ordered newest to oldest"
+        );
+        assert!(offsets
+            .iter()
+            .all(|offset| *offset <= 0.0 && *offset >= -exposure - f64::EPSILON));
+        // The newest subframe is the current frame itself.
+        assert!(offsets[0].abs() < f64::EPSILON);
+    }
 }
 
 #[test]
@@ -1284,15 +1315,23 @@ fn motion_blur_amount_honors_enablement_multiplier_and_cap() {
         ..MotionBlurSettings::default()
     };
     assert_eq!(disabled.effective_zoom_amount(), 0.0);
+    assert_eq!(disabled.exposure_seconds(30.0), 0.0);
+    assert!(disabled
+        .temporal_offsets(30.0, 100.0, MotionBlurBudgetMode::FullQuality)
+        .is_empty());
 
     let enabled = MotionBlurSettings {
         enabled: true,
         zoom_strength: 0.8,
         zoom_blur_amount_multiplier: 2.0,
         zoom_blur_max_amount: 0.65,
+        shutter_angle: 360.0,
+        transform_temporal_exposure_cap: 1.0,
         ..MotionBlurSettings::default()
     };
     assert!((enabled.effective_zoom_amount() - 0.65).abs() < 1e-12);
+    // Strength scales the physical exposure window, not a ghost opacity.
+    assert!((enabled.exposure_seconds(30.0) - (1.0 / 30.0) * 0.65).abs() < 1e-12);
 }
 
 #[test]

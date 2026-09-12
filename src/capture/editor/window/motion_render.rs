@@ -1,6 +1,6 @@
 //! Shared Motion preview/export drawing.
 
-use gtk4::cairo::{Context, Filter, Format, ImageSurface, LinearGradient, Matrix};
+use gtk4::cairo::{Context, Filter, Format, ImageSurface, LinearGradient, Matrix, Operator};
 use image::RgbaImage;
 use std::fs;
 use std::path::{Path, PathBuf};
