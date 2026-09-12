@@ -68,8 +68,7 @@ pub(in crate::capture::editor::window) fn wire_motion_controls(
             }
             if last_playing.get() != Some(playing) {
                 last_playing.set(Some(playing));
-                play_btn
-                    .set_tooltip_text(Some(if playing { &pause_text } else { &play_text }));
+                play_btn.set_tooltip_text(Some(if playing { &pause_text } else { &play_text }));
                 if let Some(image) = play_btn
                     .child()
                     .and_then(|child| child.downcast::<gtk4::Image>().ok())

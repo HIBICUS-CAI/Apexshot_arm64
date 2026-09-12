@@ -119,8 +119,7 @@ pub(super) fn install_timer(
                 if stopped {
                     redraw();
                 } else {
-                    let clock =
-                        super::super::super::motion_timeline::format_clock(playhead);
+                    let clock = super::super::super::motion_timeline::format_clock(playhead);
                     if *last_clock.borrow() != clock {
                         *last_clock.borrow_mut() = clock.clone();
                         playhead_clock.set_text(&clock);
