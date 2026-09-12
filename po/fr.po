@@ -2254,3 +2254,121 @@ msgstr "Titre"
 
 msgid "Drag on the preview to place the title"
 msgstr "Glissez sur l’aperçu pour placer le titre"
+
+msgid "Anchor X"
+msgstr "Ancre X"
+msgid "Anchor Y"
+msgstr "Ancre Y"
+msgid "Blur shutter"
+msgstr "Obturateur du flou"
+msgid "Blur trail"
+msgstr "Traînée de flou"
+msgid "Ease X1"
+msgstr "Lissage X1"
+msgid "Ease X2"
+msgstr "Lissage X2"
+msgid "Ease Y1"
+msgstr "Lissage Y1"
+msgid "Ease Y2"
+msgstr "Lissage Y2"
+msgid "Scope"
+msgstr "Portée"
+msgid "Unpin"
+msgstr "Détacher"
+
+msgid "Appearance"
+msgstr "Apparence"
+
+msgid "Border Color"
+msgstr "Couleur de bordure"
+
+msgid "Choose"
+msgstr "Choisir"
+
+msgid "Choose Watermark Image"
+msgstr "Choisir une image de filigrane"
+
+msgid "Choose…"
+msgstr "Choisir…"
+
+msgid "Hex color"
+msgstr "Couleur hexadécimale"
+
+msgid "No image selected"
+msgstr "Aucune image sélectionnée"
+
+msgid "Remove"
+msgstr "Supprimer"
+
+msgid "Show all wallpapers"
+msgstr "Afficher tous les fonds d’écran"
+
+msgid "Wallpapers"
+msgstr "Fonds d’écran"
+
+msgid "Watermark"
+msgstr "Filigrane"
+
+msgid "Double-click to add motion"
+msgstr "Double-cliquez pour ajouter un mouvement"
+
+msgid "Double-click to add text"
+msgstr "Double-cliquez pour ajouter du texte"
+
+msgid "Show all gradients"
+msgstr "Afficher tous les dégradés"
+
+msgid "Instagram"
+msgstr "Instagram"
+
+msgid "YouTube"
+msgstr "YouTube"
+
+msgid "Original canvas aspect"
+msgstr "Format du canevas d'origine"
+
+msgid "Square 1:1 output"
+msgstr "Sortie carrée 1:1"
+
+msgid "Widescreen 16:9 output"
+msgstr "Sortie grand écran 16:9"
+
+msgid "X (Twitter) link-card 1.91:1 output"
+msgstr "Sortie carte de lien X (Twitter) 1.91:1"
+
+msgid "24 FPS"
+msgstr "24 images par seconde"
+
+msgid "30 FPS"
+msgstr "30 images par seconde"
+
+msgid "50 FPS"
+msgstr "50 images par seconde"
+
+msgid "60 FPS"
+msgstr "60 images par seconde"
+
+msgid "Needs a background fill to appear in exports"
+msgstr ""
+"Nécessite un remplissage d'arrière-plan pour apparaître dans les exportations"
+
+msgid "Quick Capture"
+msgstr "Capture rapide"
+
+msgid "Redo"
+msgstr "Refaire"
+
+msgid "Selected gradient color"
+msgstr "Couleur du dégradé sélectionnée"
+
+msgid "Shade above the card"
+msgstr "Ombre au-dessus de la carte"
+
+msgid "Shade beneath the card"
+msgstr "Ombre sous la carte"
+
+msgid "Underlay"
+msgstr "Sous-couche"
+
+msgid "Undo"
+msgstr "Annuler"
