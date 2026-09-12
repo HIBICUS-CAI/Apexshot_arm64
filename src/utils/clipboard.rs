@@ -145,13 +145,28 @@ fn pipe_to_xclip(args: &[&str], data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn on_wayland_session() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty())
+}
+
+/// Whether `copy_bytes_via_external` should offer through `wl-copy` first.
+///
+/// On Wayland `wl-copy` negotiates the offered MIME types through the
+/// compositor, so requests for types it does not hold are refused cleanly.
+/// `xclip` answers every requested target with its single stored type, which
+/// breaks consumers that validate the reply: OpenCode's TUI rejects a
+/// `text/uri-list` property returned for an `image/png` request and fails the
+/// paste with "X11 clipboard property transfer failed". Use `xclip` on X11
+/// sessions and as the Wayland fallback when `wl-copy` is unavailable.
+fn prefer_wl_copy(wayland: bool, has_x11_display: bool) -> bool {
+    wayland || !has_x11_display
+}
+
 /// Offer bytes on the system clipboard via external helpers.
 ///
-/// `xclip` is preferred whenever `DISPLAY` exists, even on Wayland sessions:
-/// XWayland's selection bridge needs no input focus and its window is unmapped,
-/// whereas on GNOME Wayland `wl-copy` maps a focus-seeking surface that blocks
-/// the caller until it is focused (a stray window plus a frozen UI). Helpers
-/// keep serving after the spawning process exits, unlike in-process handles.
+/// Helpers keep serving after the spawning process exits, unlike in-process
+/// handles. On Wayland `wl-copy` forks quickly enough to wait on (verified on
+/// GNOME without wlr-data-control), so the caller still learns about failures.
 fn copy_bytes_via_external(
     mime_type: &str,
     data: &[u8],
@@ -159,26 +174,22 @@ fn copy_bytes_via_external(
 ) -> Result<(), String> {
     let has_display = std::env::var_os("DISPLAY").is_some();
 
-    let xclip_err = if has_display {
+    if prefer_wl_copy(on_wayland_session(), has_display) {
+        return match pipe_to_wl_copy(mime_type, data) {
+            Ok(()) => Ok(()),
+            Err(wl_err) if has_display => pipe_to_xclip(xclip_args, data).map_err(|_| wl_err),
+            Err(wl_err) => Err(wl_err),
+        };
+    }
+
+    if has_display {
         match pipe_to_xclip(xclip_args, data) {
             Ok(()) => return Ok(()),
-            Err(e) => Some(e),
-        }
-    } else {
-        None
-    };
-
-    match pipe_to_wl_copy(mime_type, data) {
-        Ok(()) => Ok(()),
-        Err(wl_err) => {
-            // Surface the error from the session we're actually in.
-            if has_display {
-                Err(xclip_err.unwrap_or(wl_err))
-            } else {
-                Err(wl_err)
-            }
+            Err(xclip_err) => return pipe_to_wl_copy(mime_type, data).map_err(|_| xclip_err),
         }
     }
+
+    pipe_to_wl_copy(mime_type, data)
 }
 
 /// Copy a file URI to the clipboard as `text/uri-list`.
@@ -350,8 +361,9 @@ impl ScreenshotClipboardMode {
 ///
 /// "File & Image" offers both formats when GDK owns the selection in-process
 /// (the image provider is unioned with the file list). `xclip`/`wl-copy` can
-/// only own one format each, so there the file URI is copied last and owns the
-/// selection, matching the daemon's historical behavior.
+/// only own one format each, so the image is copied last and owns the
+/// selection: pasting the bitmap is the point of the mode, and "File Path
+/// Only" remains available when a file reference is wanted.
 pub fn copy_screenshot_with_mode(path: &Path, mode: ScreenshotClipboardMode) -> Result<(), String> {
     match mode {
         ScreenshotClipboardMode::ImageOnly => copy_image_only_to_clipboard(path),
@@ -361,8 +373,10 @@ pub fn copy_screenshot_with_mode(path: &Path, mode: ScreenshotClipboardMode) -> 
                 // GDK's image provider already unions in the file reference.
                 copy_image_to_clipboard(path)
             } else {
-                let image_result = copy_image_only_to_clipboard(path);
+                // Copy the URI first, the image last: the later helper owns
+                // the single-format selection.
                 let uri_result = copy_uri_to_clipboard(path);
+                let image_result = copy_image_only_to_clipboard(path);
                 image_result.and(uri_result)
             }
         }
@@ -445,6 +459,16 @@ mod tests {
             !took_gtk_path,
             "worker thread took GTK clipboard path (display present: {display_present})"
         );
+    }
+
+    #[test]
+    fn wayland_sessions_prefer_wl_copy_for_external_copies() {
+        // xclip on Wayland answers every target with its single stored MIME
+        // type, which makes image paste fail in type-checking consumers.
+        assert!(prefer_wl_copy(true, true), "Wayland session with XWayland");
+        assert!(prefer_wl_copy(true, false), "Wayland session");
+        assert!(!prefer_wl_copy(false, true), "X11-only session");
+        assert!(prefer_wl_copy(false, false), "no display available");
     }
 
     #[test]
