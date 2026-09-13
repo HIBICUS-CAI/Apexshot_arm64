@@ -120,11 +120,11 @@ pub(in crate::recording) async fn get_wayland_source(
             .map_err(|e| RecordError::PortalError(e.to_string()))?;
         let setup_guard = OwnedPortalSession::new(conn, session);
 
-        let source_types = if wants_area_crop {
-            SourceType::Monitor.into()
-        } else {
-            SourceType::Monitor | SourceType::Window
-        };
+        // Recording is monitors-only (quick capture disables Window in Video
+        // mode, and window recording was never a feature), so the system
+        // dialog never offers windows. Area flows additionally crop to the
+        // selected monitor below.
+        let source_types: ashpd::enumflags2::BitFlags<SourceType> = SourceType::Monitor.into();
 
         // PersistMode::DoNot hides GNOME's "Remember this choice" checkbox and
         // never restores a previous window/screen. Pick a source every time.
@@ -145,7 +145,7 @@ pub(in crate::recording) async fn get_wayland_source(
         if wants_area_crop {
             println!("Please select the monitor containing the recording area...");
         } else {
-            println!("Please select a screen or window to record...");
+            println!("Please select a screen to record...");
         }
 
         let response = proxy

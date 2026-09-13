@@ -15,7 +15,6 @@ pub(crate) enum ToolbarIcon {
     Speaker,
 
     Video,
-    Gif,
 }
 
 pub(crate) const TOOLBAR_ICONS: [ToolbarIcon; 6] = [
@@ -192,25 +191,6 @@ pub(crate) fn draw_toolbar_icon(
             context.line_to(cx + 2.4, cy + 2.8);
             context.close_path();
             let _ = context.stroke();
-        }
-        ToolbarIcon::Gif => {
-            rounded_rect_path(context, cx - 9.0, cy - 6.0, 18.0, 12.0, 3.0);
-            context.set_source_rgba(color.0, color.1, color.2, color.3);
-            let _ = context.fill();
-            context.select_font_face(
-                crate::typography::UI_FONT_FAMILY,
-                gtk4::cairo::FontSlant::Normal,
-                gtk4::cairo::FontWeight::Bold,
-            );
-            context.set_font_size(6.5);
-            context.set_source_rgba(0.0, 0.0, 0.0, 180.0 / 255.0);
-            let gif_label = crate::i18n::t("GIF");
-            if let Ok(extents) = context.text_extents(&gif_label) {
-                let text_x = cx - extents.width() / 2.0 - extents.x_bearing();
-                let text_y = cy - extents.height() / 2.0 - extents.y_bearing() + 0.5;
-                context.move_to(text_x, text_y);
-                let _ = context.show_text(&gif_label);
-            }
         }
     }
 

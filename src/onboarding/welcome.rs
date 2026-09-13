@@ -98,7 +98,7 @@ pub fn build(content: &GtkBox, on_language_changed: impl Fn() + 'static) {
     let annotate_title = t("Built-in annotation editor");
     let annotate_body = t("Arrows, blur, text, and crop without leaving the app");
     let record_title = t("Screen recording with audio");
-    let record_body = t("MP4 or GIF with mic and system audio when your desktop allows it");
+    let record_body = t("MP4 with mic and system audio when your desktop allows it");
     let ocr_title = t("OCR text extraction");
     let ocr_body = t("Pull text and QR codes straight from a capture");
     let features = feature_card_list(&[

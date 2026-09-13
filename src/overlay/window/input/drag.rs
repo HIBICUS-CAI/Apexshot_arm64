@@ -223,7 +223,7 @@ pub(in crate::overlay::window) fn wire_selection_drag(
         drawing_area_weak,
         move |_gesture, x, y| {
             let mut st = state_drag.lock().unwrap();
-            if st.recording.gif_slider_dragging.is_some() || st.recording.volume_slider_dragging {
+            if st.recording.volume_slider_dragging {
                 drop(st);
                 return;
             }
@@ -258,19 +258,14 @@ pub(in crate::overlay::window) fn wire_selection_drag(
         background_drag,
         move |_gesture, x, y| {
             let mut st = state_drag.lock().unwrap();
-            if st.recording.gif_slider_dragging.is_some() || st.recording.volume_slider_dragging {
-                let final_volume = if st.recording.volume_slider_dragging {
-                    if st.recording.mic_volume_popup_open {
-                        Some((true, st.recording.mic_volume))
-                    } else if st.recording.speaker_volume_popup_open {
-                        Some((false, st.recording.speaker_volume))
-                    } else {
-                        None
-                    }
+            if st.recording.volume_slider_dragging {
+                let final_volume = if st.recording.mic_volume_popup_open {
+                    Some((true, st.recording.mic_volume))
+                } else if st.recording.speaker_volume_popup_open {
+                    Some((false, st.recording.speaker_volume))
                 } else {
                     None
                 };
-                st.recording.gif_slider_dragging = None;
                 st.recording.volume_slider_dragging = false;
                 st.recording.last_volume_system_write = None;
                 drop(st);
@@ -365,8 +360,7 @@ mod tests {
             "crosshair drag end must deliver selection after releasing the lock"
         );
         assert!(
-            production.contains("volume_slider_dragging")
-                && production.contains("gif_slider_dragging"),
+            production.contains("volume_slider_dragging"),
             "drag must pass through active slider drags"
         );
     }

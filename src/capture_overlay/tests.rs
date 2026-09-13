@@ -224,8 +224,7 @@ mod tests {
                 "countdown":true,
                 "video_format":1,"video_max_res":2,"video_fps":1,
                 "record_mono":true,"open_editor":false,
-                "gif_fps":33,"gif_quality":0.8125,
-                "gif_size_idx":2,"optimize_gif":false,"fullscreen":true
+                "fullscreen":true
             }"#,
         )
         .unwrap();
@@ -250,11 +249,17 @@ mod tests {
         assert_eq!(request.video_fps, 1);
         assert!(request.record_mono);
         assert!(!request.open_editor);
-        assert_eq!(request.gif_fps, 33);
-        assert_eq!(request.gif_quality, 0.8125);
-        assert_eq!(request.gif_size_idx, 2);
-        assert!(!request.optimize_gif);
         assert!(request.fullscreen);
+    }
+
+    #[test]
+    fn legacy_gif_record_type_falls_back_to_video() {
+        // GIF recording is discontinued — old overlays sending "gif" get MP4.
+        let request = parse_recording_json(
+            r#"{"x":1,"y":2,"width":3,"height":4,"mode":"record","record_type":"gif"}"#,
+        )
+        .unwrap();
+        assert_eq!(request.record_type, RecordingType::Video);
     }
 
     #[test]

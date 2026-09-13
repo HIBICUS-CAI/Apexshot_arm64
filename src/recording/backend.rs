@@ -4,7 +4,6 @@ use tokio::sync::mpsc;
 
 mod crop;
 mod ffmpeg_process;
-mod gif;
 mod profile;
 mod session;
 mod source;
@@ -25,10 +24,6 @@ use ffmpeg_process::{
     ffmpeg_error_detail, set_child_stdin_nonblocking, wait_for_ffmpeg_child,
     write_ffmpeg_frame_interruptible,
 };
-pub(super) use gif::{
-    prepare_gif_wayland_recording, record_gif_rust_with_commands,
-    record_prepared_gif_wayland_native, PreparedGifWaylandRecording,
-};
 #[cfg(test)]
 use profile::{ffmpeg_available_encoders, video_encoder_props, PROFILES};
 use profile::{normalize_recording_config_for_profile, select_encoder, EncoderProfile};
@@ -38,7 +33,6 @@ use source::discard_recording_restore_tokens_in;
 pub(super) use source::get_wayland_source;
 use source::WaylandSource;
 pub(super) use wayland::record_wayland_with_ffmpeg_sync;
-pub(super) use x11::get_x11_source;
 use x11::record_x11_with_gstreamer;
 
 #[allow(dead_code)]
@@ -67,7 +61,7 @@ pub(super) async fn prepare_recording_backend(
 
     if config.output_path.extension().is_some_and(|e| e == "gif") {
         return Err(RecordError::UnsupportedBackend(
-            "GIF recording must be prepared through its dedicated backend".into(),
+            "GIF recording is discontinued. Recordings are saved as MP4.".into(),
         ));
     }
 
@@ -168,15 +162,6 @@ async fn build_pipeline(
     })
 }
 
-/// GIF recording on X11 using GStreamer pipeline (preserved from old code).
-#[allow(dead_code)]
-pub(super) async fn record_gif_x11_gstreamer(
-    config: super::RecordingConfig,
-    command_rx: Option<mpsc::UnboundedReceiver<RecordingControlCommand>>,
-) -> super::RecordResult<(PathBuf, super::RecordingTerminalAction)> {
-    gif::record_gif_x11_gstreamer(config, command_rx).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,9 +185,6 @@ mod tests {
             mic_source: None,
             speaker_source: None,
             noise_suppression: false,
-            gif_quality: 0.75,
-            gif_optimize: true,
-            gif_max_width: Some(800),
         }
     }
 

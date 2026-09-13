@@ -52,8 +52,7 @@ public:
 
     enum class RecordType {
         None,
-        Video,
-        Gif
+        Video
     };
 
     explicit CaptureOverlay(const QPixmap& background = QPixmap(),
@@ -123,13 +122,7 @@ public:
     bool recordMono() const { return m_recordMono; }
     bool recordOpenEditor() const { return m_openEditor; }
 
-    // GIF tab settings — accessors
-    int recordGifFps() const { return m_gifFps; }
-    double recordGifQuality() const { return m_gifQuality; }
-    int recordGifSizeIdx() const { return m_gifSizeIdx; }
-    bool recordOptimizeGif() const { return m_optimizeGif; }
-
-    // GIF tab settings — setters for initial config load
+    // Recording setters for initial config load
     void setInitialRecControls(bool v) { m_recControls = v; }
     void setInitialDisplayRecTime(bool v) { m_displayRecTime = v; }
     void setInitialHidpi(bool v) { m_hidpi = v; }
@@ -171,10 +164,6 @@ public:
     void setInitialVideoFps(int v) { m_videoFps = v; }
     void setInitialRecordMono(bool v) { m_recordMono = v; }
     void setInitialOpenEditor(bool v) { m_openEditor = v; }
-    void setInitialGifFps(int v) { m_gifFps = v; }
-    void setInitialGifQuality(double v) { m_gifQuality = v; }
-    void setInitialGifSizeIdx(int v) { m_gifSizeIdx = v; }
-    void setInitialGifOptimize(bool v) { m_optimizeGif = v; }
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -202,7 +191,7 @@ private:
         None,
         Controls, Size, Crop,
         Mic, Speaker,
-        RecordVideo, RecordGif
+        RecordVideo
     };
 
     enum class ToolbarActionCard {
@@ -381,7 +370,7 @@ private:
     // Recording panel state
     bool m_recordingPanelOpen;
     bool m_settingsOpen; // new: true when Settings/Sliders icon clicked
-    int  m_settingsTab;  // new: 0=General, 1=Video, 2=GIF
+    int  m_settingsTab;  // 0=General, 1=Video
     // Dropdown popup state
     int m_dropdownOpen;      // -1 = none, else index in m_settingsClickableRects
     QRectF m_dropdownAnchor; // rect of the button that opened the dropdown
@@ -406,23 +395,12 @@ private:
     bool m_dimScreen;          // "Dim screen while recording"
     bool m_showCountdown;      // "Show countdown"
 
-    bool   m_gifFpsDragging;       // true while dragging GIF FPS slider
-    bool   m_gifQualityDragging;   // true while dragging GIF quality slider
-    QRectF m_gifFpsTrackRect;      // cached GIF FPS slider track rect for drag calc
-    QRectF m_gifQualityTrackRect;  // cached GIF quality slider track rect for drag calc
-
     // Video settings
     int  m_videoFormat;      // index
     int  m_videoMaxRes;      // index
     int  m_videoFps;         // index
     bool m_recordMono;
     bool m_openEditor;
-
-    // GIF settings
-    int    m_gifFps;         // value (typically 5-60)
-    double m_gifQuality;     // 0.0 to 1.0
-    bool   m_optimizeGif;
-    int    m_gifSizeIdx;     // index
 
     bool m_recMic;
     bool m_recSpeaker;

@@ -201,12 +201,8 @@ fn handle_panel_or_selection_click(
                 st.recording.speaker_volume_popup_open = false;
             }
             RecordPanelTile::Size => {}
-            RecordPanelTile::RecordVideo | RecordPanelTile::RecordGif => {
-                let record_type = if matches!(tile, RecordPanelTile::RecordGif) {
-                    RecordingType::Gif
-                } else {
-                    RecordingType::Video
-                };
+            RecordPanelTile::RecordVideo => {
+                let record_type = RecordingType::Video;
                 if st.recording.selected_record_type == Some(record_type) {
                     let request = recording_request_from_state(st, record_type);
                     return ClickEffect::SendRecording(OverlaySelection::Recording(request));
@@ -255,8 +251,7 @@ mod tests {
         }
         assert!(
             production.contains("RecordPanelTile::Crop")
-                && production.contains("RecordPanelTile::RecordVideo")
-                && production.contains("RecordPanelTile::RecordGif"),
+                && production.contains("RecordPanelTile::RecordVideo"),
             "toolbar owner must cover recording panel tiles"
         );
         assert!(

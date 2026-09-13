@@ -208,7 +208,7 @@ CaptureOverlay::RecordPanelTile CaptureOverlay::hitTestRecordingPanel(const QPoi
     static const RecordPanelTile tileOrder[] = {
         RecordPanelTile::Controls, RecordPanelTile::Size, RecordPanelTile::Crop,
         RecordPanelTile::Mic, RecordPanelTile::Speaker,
-        RecordPanelTile::RecordVideo, RecordPanelTile::RecordGif
+        RecordPanelTile::RecordVideo
     };
 
     for (int i = 0; i < (int)m_recTileRects.size() && i < 8; ++i) {

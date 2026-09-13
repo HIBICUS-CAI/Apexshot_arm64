@@ -225,7 +225,6 @@ fn handle_settings_menu_click(
             match (st.recording.settings_tab, drop_idx) {
                 (SettingsTab::Video, 3) => st.recording.video_max_res = option_index,
                 (SettingsTab::Video, 4) => st.recording.video_fps = option_index,
-                (SettingsTab::Gif, 6) => st.recording.gif_size_idx = option_index,
                 _ => {}
             }
             st.recording.hovered_settings_item = -1;
@@ -246,11 +245,10 @@ fn handle_settings_menu_click(
         y,
         st.recording.settings_tab,
     ) {
-        if item < 3 {
+        if item < 2 {
             st.recording.settings_tab = match item {
                 0 => SettingsTab::General,
-                1 => SettingsTab::Video,
-                _ => SettingsTab::Gif,
+                _ => SettingsTab::Video,
             };
             st.recording.settings_dropdown_open = None;
             st.recording.hovered_settings_dropdown_item = -1;
@@ -273,28 +271,6 @@ fn handle_settings_menu_click(
                 2 => st.recording.record_mono = !st.recording.record_mono,
                 3 => st.recording.noise_suppression = !st.recording.noise_suppression,
                 4 => st.recording.open_editor = !st.recording.open_editor,
-                _ => {}
-            }
-        } else if matches!(st.recording.settings_tab, SettingsTab::Gif) {
-            let menu_x =
-                (rect.left + (rect.width() - 440.0) / 2.0).clamp(10.0, screen_width as f64 - 450.0);
-            match item - 3 {
-                0 => {
-                    let slider_x = menu_x + 200.0;
-                    let slider_w = 208.0;
-                    let click_x = x.clamp(slider_x, slider_x + slider_w);
-                    st.recording.gif_fps = 5.0 + (click_x - slider_x) / slider_w * 55.0;
-                    st.recording.gif_slider_dragging = Some(0);
-                }
-                1 => {
-                    let slider_x = menu_x + 160.0;
-                    let slider_w = 248.0;
-                    let click_x = x.clamp(slider_x, slider_x + slider_w);
-                    st.recording.gif_quality = ((click_x - slider_x) / slider_w).clamp(0.0, 1.0);
-                    st.recording.gif_slider_dragging = Some(1);
-                }
-                2 => st.recording.optimize_gif = !st.recording.optimize_gif,
-                3 => st.recording.settings_dropdown_open = Some(6),
                 _ => {}
             }
         }

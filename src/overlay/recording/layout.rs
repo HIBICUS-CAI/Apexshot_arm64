@@ -27,7 +27,6 @@ pub(crate) enum RecordPanelTile {
     Speaker,
 
     RecordVideo,
-    RecordGif,
 }
 
 pub(crate) fn compute_recording_deck_layout(
@@ -95,10 +94,6 @@ pub(crate) fn compute_dropdown_popup_y(menu_y: f64, item_idx: usize, tab: Settin
         SettingsTab::Video => match item_idx {
             3 => menu_y + 162.0,
             4 => menu_y + 227.0,
-            _ => menu_y + 106.0,
-        },
-        SettingsTab::Gif => match item_idx {
-            6 => menu_y + 345.0,
             _ => menu_y + 106.0,
         },
         _ => menu_y + 106.0,

@@ -42,10 +42,6 @@ pub(crate) fn draw_recording_panel(
     remember_selection: bool,
     dim_screen: bool,
     show_countdown: bool,
-    gif_fps: f64,
-    gif_quality: f64,
-    optimize_gif: bool,
-    gif_size_idx: usize,
 ) {
     let deck = compute_recording_deck_layout(
         selection_x,
@@ -254,28 +250,13 @@ pub(crate) fn draw_recording_panel(
         width: REC_ACTION_WIDTH,
         height: actions.height,
     };
-    let gif = RectF {
-        x: video.x + video.width + ACTION_CARD_GAP,
-        y: actions.y,
-        width: REC_ACTION_WIDTH,
-        height: actions.height,
-    };
-    for (rect, tile, icon, label, selected) in [
-        (
-            video,
-            RecordPanelTile::RecordVideo,
-            ToolbarIcon::Video,
-            "Video",
-            selected_record_type == Some(RecordingType::Video),
-        ),
-        (
-            gif,
-            RecordPanelTile::RecordGif,
-            ToolbarIcon::Gif,
-            "GIF",
-            selected_record_type == Some(RecordingType::Gif),
-        ),
-    ] {
+    for (rect, tile, icon, label, selected) in [(
+        video,
+        RecordPanelTile::RecordVideo,
+        ToolbarIcon::Video,
+        "Video",
+        selected_record_type == Some(RecordingType::Video),
+    )] {
         super::draw_frosted_panel(
             context,
             rect.x,
@@ -421,10 +402,6 @@ pub(crate) fn draw_recording_panel(
             remember_selection,
             dim_screen,
             show_countdown,
-            gif_fps,
-            gif_quality,
-            optimize_gif,
-            gif_size_idx,
             176.0 / 255.0,
             92.0 / 255.0,
             56.0 / 255.0,

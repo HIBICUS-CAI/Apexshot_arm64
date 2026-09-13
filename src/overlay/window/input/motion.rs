@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 /// Install motion + leave controllers on the drawing area.
 ///
 /// Preserves hover priority (menus → popups → tiles/toolbar → selection),
-/// cursor selection, crosshair updates, GIF/volume slider ownership while
+/// cursor selection, crosshair updates, volume slider ownership while
 /// dragging, and leave/reset of hover state.
 pub(in crate::overlay::window) fn wire_selection_motion(
     window: &ApplicationWindow,
@@ -50,38 +50,6 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                 ("crosshair".to_string(), false, true)
             } else {
                 let rect = current_selection_rect(&st);
-
-                // GIF slider dragging — update value from X position
-                if let Some(slider) = st.recording.gif_slider_dragging {
-                    if st.recording.settings_menu_open {
-                        let menu_x = (rect.left + (rect.width() - 440.0) / 2.0)
-                            .clamp(10.0, screen_width as f64 - 450.0);
-                        if slider == 0 {
-                            let slider_x = menu_x + 200.0;
-                            let slider_w = 208.0;
-                            let click_x = x.clamp(slider_x, slider_x + slider_w);
-                            st.recording.gif_fps = 5.0 + (click_x - slider_x) / slider_w * 55.0;
-                        } else {
-                            let slider_x = menu_x + 160.0;
-                            let q_slider_w = 248.0;
-                            let click_x = x.clamp(slider_x, slider_x + q_slider_w);
-                            st.recording.gif_quality =
-                                ((click_x - slider_x) / q_slider_w).clamp(0.0, 1.0);
-                        }
-                    }
-                    st.recording.hovered_settings_item = -1;
-                    st.hovered_capture_crop_menu_item = -1;
-                    st.recording.hovered_crop_menu_item = -1;
-                    st.hover_tool_index = None;
-                    st.hover_size_panel = false;
-                    st.hover_crop_panel = false;
-                    st.recording.hover_record_tile = None;
-                    drop(st);
-                    if let Some(da) = drawing_area_weak_motion.upgrade() {
-                        da.queue_draw();
-                    }
-                    return;
-                }
 
                 // Volume slider dragging
                 if st.recording.volume_slider_dragging
@@ -469,8 +437,7 @@ mod tests {
             "motion must own motion + leave together"
         );
         assert!(
-            production.contains("gif_slider_dragging")
-                && production.contains("volume_slider_dragging"),
+            production.contains("volume_slider_dragging"),
             "motion must own active slider drags"
         );
         assert!(

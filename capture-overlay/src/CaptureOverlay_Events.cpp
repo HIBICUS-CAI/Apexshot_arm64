@@ -358,7 +358,7 @@ void CaptureOverlay::mousePressEvent(QMouseEvent* event)
             // Check in reverse order so the latest clickable rects win when rows overlap.
             for (int i = static_cast<int>(m_settingsClickableRects.size()) - 1; i >= 0; --i) {
                 if (m_settingsClickableRects[i].contains(pos)) {
-                    if (i < 3) { // Tab clicks (indices 0, 1, 2)
+                    if (i < 2) { // Tab clicks (indices 0, 1)
                         m_settingsTab = i;
                         m_dropdownOpen = -1;
                         m_dropdownColors.clear();
@@ -368,55 +368,31 @@ void CaptureOverlay::mousePressEvent(QMouseEvent* event)
                     
                     if (m_settingsTab == 0) { // General tab logic
                         switch (i) {
-                        case 3: m_recControls = !m_recControls; break;
-                        case 4: m_hidpi = !m_hidpi; break;
-                        case 5: m_doNotDisturb = !m_doNotDisturb; break;
-                        case 6: m_rememberSelection = !m_rememberSelection; break;
-                        case 7: m_dimScreen = !m_dimScreen; break;
-                        case 8: m_showCountdown = !m_showCountdown; break;
+                        case 2: m_recControls = !m_recControls; break;
+                        case 3: m_hidpi = !m_hidpi; break;
+                        case 4: m_doNotDisturb = !m_doNotDisturb; break;
+                        case 5: m_rememberSelection = !m_rememberSelection; break;
+                        case 6: m_dimScreen = !m_dimScreen; break;
+                        case 7: m_showCountdown = !m_showCountdown; break;
                         }
                         update();
                         return;
                     } else if (m_settingsTab == 1) { // Video tab logic
                         switch (i) {
-                        case 3: // Max Resolution
+                        case 2: // Max Resolution
                             m_dropdownOpen = i;
                             m_dropdownAnchor = m_settingsClickableRects[i];
                             m_dropdownOptions = QStringList() << "Original" << "1080p" << "720p";
                             m_dropdownValuePtr = &m_videoMaxRes;
                             break;
-                        case 4: // Video FPS
+                        case 3: // Video FPS
                             m_dropdownOpen = i;
                             m_dropdownAnchor = m_settingsClickableRects[i];
                             m_dropdownOptions = QStringList() << "24" << "30" << "50" << "60";
                             m_dropdownValuePtr = &m_videoFps;
                             break;
-                        case 5: m_recordMono = !m_recordMono; break;
-                        case 6: m_openEditor = !m_openEditor; break;
-                        }
-                        update();
-                        return;
-                    } else if (m_settingsTab == 2) { // GIF tab logic
-                        switch (i) {
-                        case 3: { // FPS Slider
-                            double relX = pos.x() - m_settingsClickableRects[i].x();
-                            m_gifFps = 5 + (int)(55.0 * std::max(0.0, std::min(1.0, relX / m_settingsClickableRects[i].width())));
-                            m_gifFpsDragging = true;
-                            break;
-                        }
-                        case 4: { // Quality Slider
-                            double relX = pos.x() - m_settingsClickableRects[i].x();
-                            m_gifQuality = std::max(0.0, std::min(1.0, relX / m_settingsClickableRects[i].width()));
-                            m_gifQualityDragging = true;
-                            break;
-                        }
-                        case 5: m_optimizeGif = !m_optimizeGif; break;
-                        case 6: // GIF Size dropdown
-                            m_dropdownOpen = i;
-                            m_dropdownAnchor = m_settingsClickableRects[i];
-                            m_dropdownOptions = QStringList() << "800 x auto (default)" << "640 x auto" << "480 x auto" << "Original";
-                            m_dropdownValuePtr = &m_gifSizeIdx;
-                            break;
+                        case 4: m_recordMono = !m_recordMono; break;
+                        case 5: m_openEditor = !m_openEditor; break;
                         }
                         update();
                         return;
@@ -523,11 +499,6 @@ void CaptureOverlay::mousePressEvent(QMouseEvent* event)
             return;
         case RecordPanelTile::RecordVideo:
             m_recordType = RecordType::Video;
-            m_captureIntent = CaptureIntent::Record;
-            confirmRecordingSelection();
-            return;
-        case RecordPanelTile::RecordGif:
-            m_recordType = RecordType::Gif;
             m_captureIntent = CaptureIntent::Record;
             confirmRecordingSelection();
             return;
@@ -809,20 +780,6 @@ void CaptureOverlay::mouseMoveEvent(QMouseEvent* event)
         }
         // Don't return — fall through to allow selection drag/move/resize during countdown.
         // Cursor is set at the end of this function.
-    }
-
-    // ── GIF Slider Drag ─────────────────────────────────────────────────────
-    if (m_gifFpsDragging) {
-        double relX = pos.x() - m_gifFpsTrackRect.x();
-        m_gifFps = 5 + (int)(55.0 * std::max(0.0, std::min(1.0, relX / m_gifFpsTrackRect.width())));
-        update();
-        return;
-    }
-    if (m_gifQualityDragging) {
-        double relX = pos.x() - m_gifQualityTrackRect.x();
-        m_gifQuality = std::max(0.0, std::min(1.0, relX / m_gifQualityTrackRect.width()));
-        update();
-        return;
     }
 
     // ── Volume Slider Drag ─────────────────────────────────────────────────
@@ -1225,14 +1182,6 @@ void CaptureOverlay::mouseReleaseEvent(QMouseEvent* event)
     const bool wasManipulatingSelection =
         m_dragging || m_moving || m_resizing != HandlePos::None;
 
-    if (m_gifFpsDragging) {
-        m_gifFpsDragging = false;
-        m_recordConfigRequested = true;
-    }
-    if (m_gifQualityDragging) {
-        m_gifQualityDragging = false;
-        m_recordConfigRequested = true;
-    }
     if (m_volumeSliderDragging) {
         m_volumeSliderDragging = false;
         if (m_micVolumePopupOpen)

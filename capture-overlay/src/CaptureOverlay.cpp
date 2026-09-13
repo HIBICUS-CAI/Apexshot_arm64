@@ -412,17 +412,11 @@ CaptureOverlay::CaptureOverlay(const QPixmap& background, QWidget* parent,
     , m_rememberSelection(false)
     , m_dimScreen(true)
     , m_showCountdown(true)
-    , m_gifFpsDragging(false)
-    , m_gifQualityDragging(false)
     , m_videoFormat(0) // MP4
     , m_videoMaxRes(0) // Original
     , m_videoFps(2) // 50 (index 2: 24, 30, 50, 60)
     , m_recordMono(false)
     , m_openEditor(true)
-    , m_gifFps(50)
-    , m_gifQuality(0.75)
-    , m_optimizeGif(true)
-    , m_gifSizeIdx(0) // 800 x auto (default)
     , m_recMic(initialMic)
     , m_recSpeaker(initialSpeaker)
 

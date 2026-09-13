@@ -263,16 +263,13 @@ void CaptureOverlay::drawRecordingPanel(QPainter& p,
     drawModuleTile(micRect, RecordPanelTile::Mic, 11, m_recMic, QStringLiteral("Mic"), true, m_recMic, m_micLevel);
     m_recTileRects.append(speakerRect);
     drawModuleTile(speakerRect, RecordPanelTile::Speaker, 12, m_recSpeaker, QStringLiteral("Speaker"), false, m_recSpeaker, m_speakerLevel);
-    const QRectF videoRect(bottomX, bottomY, ACTION_RAIL_W, ACTION_CARD_H);
-    const QRectF gifRect(videoRect.right() + ACTION_CARD_GAP, bottomY, ACTION_RAIL_W, ACTION_CARD_H);
+    // Single primary action, centered in the two-slot action bar.
+    const double videoX = bottomX + (m_recordingBottomBarRect.width() - ACTION_RAIL_W) / 2.0;
+    const QRectF videoRect(videoX, bottomY, ACTION_RAIL_W, ACTION_CARD_H);
     drawFrostedPanel(p, videoRect.x(), videoRect.y(), videoRect.width(), videoRect.height(),
                      panelRadius, blurPtr, screenW, screenH);
-    drawFrostedPanel(p, gifRect.x(), gifRect.y(), gifRect.width(), gifRect.height(),
-                     panelRadius, blurPtr, screenW, screenH);
     m_recTileRects.append(videoRect);
-    m_recTileRects.append(gifRect);
     drawPrimaryAction(videoRect, RecordPanelTile::RecordVideo, 16, QStringLiteral("Video"), m_recordType == RecordType::Video);
-    drawPrimaryAction(gifRect, RecordPanelTile::RecordGif, 17, QStringLiteral("GIF"), m_recordType == RecordType::Gif);
 
     const double contextualX = std::max(10.0, std::min(selX + (selW - 440.0) / 2.0, screenW - 450.0));
     const double contextualY = std::max(10.0, std::min(selY + 24.0, screenH - 400.0));

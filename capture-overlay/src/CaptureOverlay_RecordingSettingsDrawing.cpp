@@ -37,7 +37,7 @@ void CaptureOverlay::drawSettingsMenu(QPainter& p, double panelX, double startY)
                Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Recording setup"));
 
     // Tabs
-    const QStringList tabs = {"General", "Video", "GIF"};
+    const QStringList tabs = {"General", "Video"};
     const double tabContainerX = menuX + 18.0;
     const double tabContainerY = menuY + 50.0;
     const double tabContainerW = menuW - 36.0;
@@ -246,131 +246,6 @@ void CaptureOverlay::drawSettingsMenu(QPainter& p, double panelX, double startY)
         drawText("Edit quality, resolution and audio after recording", labelX, row4Y + 50.0, false, 140);
         drawCheck(QRectF(controlRight - 18.0, row4Y + 29.0, 18.0, 18.0), m_openEditor);
         m_settingsClickableRects.append(encoderRow);
-    } else if (m_settingsTab == 2) { // GIF
-        const QRectF card(menuX + 18.0, menuY + 106.0, menuW - 36.0, 252.0);
-        const double labelX = card.x() + 14.0;
-        const double controlRight = card.right() - 14.0;
-        const double row1Y = card.y();
-        const double row2Y = row1Y + 64.0;
-        const double row3Y = row2Y + 72.0;
-        const double row4Y = row3Y + 52.0;
-
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, 10));
-        p.drawRoundedRect(card, 10.0, 10.0);
-        p.setPen(QPen(QColor(255, 255, 255, 13), 1.0));
-        for (double dividerY : {row2Y, row3Y, row4Y})
-            p.drawLine(QPointF(card.x() + 14.0, dividerY), QPointF(card.right() - 14.0, dividerY));
-
-        auto drawLabel = [&](const QString& text, double y) {
-            QFont font(QStringLiteral("Sans")); font.setPixelSize(13); font.setWeight(QFont::DemiBold);
-            p.setFont(font); p.setPen(QColor(255, 255, 255, 220));
-            p.drawText(QPointF(labelX, y), text);
-        };
-        auto drawRowHover = [&](const QRectF& row, int index) {
-            if (m_hoveredSettingsItem != index) return;
-            p.setPen(Qt::NoPen); p.setBrush(QColor(255, 255, 255, 16));
-            p.drawRoundedRect(row, 7.0, 7.0);
-        };
-        auto drawCheck = [&](const QRectF& cb, bool checked) {
-            if (checked) {
-                p.setPen(Qt::NoPen); p.setBrush(accentColor); p.drawRoundedRect(cb, 4, 4);
-                p.setPen(QPen(Qt::white, 2));
-                p.drawLine(QPointF(cb.x() + 4, cb.y() + 9), QPointF(cb.x() + 8, cb.y() + 13));
-                p.drawLine(QPointF(cb.x() + 8, cb.y() + 13), QPointF(cb.x() + 14, cb.y() + 5));
-            } else {
-                p.setPen(QPen(QColor(255, 255, 255, 41), 1.0));
-                p.setBrush(QColor(255, 255, 255, 15)); p.drawRoundedRect(cb, 4, 4);
-            }
-        };
-
-        const int fpsIndex = m_settingsClickableRects.size();
-        drawRowHover(QRectF(card.x(), row1Y, card.width(), 64.0), fpsIndex);
-        drawLabel("Frame rate", row1Y + 38.0);
-        QRectF fpsBox(menuX + 140.0, row1Y + 17.0, 45.0, 30.0);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, 15));
-        p.drawRoundedRect(fpsBox, 6, 6);
-        p.setPen(Qt::white);
-        p.setFont(QFont("Sans", 10));
-        p.drawText(fpsBox, Qt::AlignCenter, QString::number(m_gifFps));
-
-        const double sliderX = menuX + 200.0;
-        const double sliderW = controlRight - sliderX;
-        QRectF sliderTrack(sliderX, row1Y + 30.0, sliderW, 4.0);
-        m_gifFpsTrackRect = QRectF(sliderX, row1Y + 10.0, sliderW, 44.0);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, 30));
-        p.drawRoundedRect(sliderTrack, 2, 2);
-
-        // Progress fill
-        double progress = (m_gifFps - 5) / 55.0; // range 5 to 60
-        QRectF progressRect(sliderX, sliderTrack.y(), sliderW * progress, 4);
-        p.setBrush(accentColor);
-        p.drawRoundedRect(progressRect, 2, 2);
-
-        double handleX = sliderX + progress * sliderW;
-        QRectF handle(handleX - 7, sliderTrack.center().y() - 7, 14, 14);
-        p.setBrush(Qt::white);
-        p.drawEllipse(handle);
-        m_settingsClickableRects.append(m_gifFpsTrackRect);
-
-        const int qualityIndex = m_settingsClickableRects.size();
-        drawRowHover(QRectF(card.x(), row2Y, card.width(), 72.0), qualityIndex);
-        drawLabel("Quality", row2Y + 30.0);
-        const double qSliderX = menuX + 160.0;
-        const double qSliderW = controlRight - qSliderX;
-        QRectF qSliderTrack(qSliderX, row2Y + 27.0, qSliderW, 4);
-        m_gifQualityTrackRect = QRectF(qSliderX, row2Y + 10.0, qSliderW, 46.0);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, 30));
-        p.drawRoundedRect(qSliderTrack, 2, 2);
-
-        p.setBrush(accentColor);
-        p.drawRoundedRect(QRectF(qSliderX, qSliderTrack.y(), qSliderW * m_gifQuality, 4.0), 2.0, 2.0);
-
-        // Ticks
-        p.setPen(QPen(QColor(255, 255, 255, 60), 1));
-        for (int i = 0; i <= 8; ++i) {
-            double tx = qSliderX + (qSliderW / 8.0) * i;
-            p.drawLine(QPointF(tx, qSliderTrack.y() - 4.0), QPointF(tx, qSliderTrack.y() + 8.0));
-        }
-
-        double qHandleX = qSliderX + m_gifQuality * qSliderW;
-        QRectF qHandle(qHandleX - 7, qSliderTrack.center().y() - 7, 14, 14);
-        p.setPen(Qt::NoPen);
-        p.setBrush(Qt::white);
-        p.drawEllipse(qHandle);
-
-        p.setFont(QFont("Sans", 8));
-        p.setPen(QColor(255, 255, 255, 120));
-        p.drawText(QRectF(qSliderX, row2Y + 46.0, 40, 20), Qt::AlignLeft, "Low");
-        p.drawText(QRectF(qSliderX + qSliderW - 40, row2Y + 46.0, 40, 20), Qt::AlignRight, "High");
-        m_settingsClickableRects.append(m_gifQualityTrackRect);
-
-        const int optimizeIndex = m_settingsClickableRects.size();
-        QRectF optimizeRow(card.x(), row3Y, card.width(), 52.0);
-        drawRowHover(optimizeRow, optimizeIndex);
-        drawLabel("Optimize GIF", row3Y + 32.0);
-        drawCheck(QRectF(controlRight - 18.0, row3Y + 17.0, 18.0, 18.0), m_optimizeGif);
-        m_settingsClickableRects.append(optimizeRow);
-
-        const int sizeIdx = m_settingsClickableRects.size();
-        drawRowHover(QRectF(card.x(), row4Y, card.width(), 64.0), sizeIdx);
-        drawLabel("Output size", row4Y + 38.0);
-        QRectF sizeBtn(controlRight - 180.0, row4Y + 17.0, 180, 30);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, 15));
-        if (m_hoveredSettingsItem == sizeIdx) p.setBrush(QColor(255, 255, 255, 20));
-        p.drawRoundedRect(sizeBtn, 6, 6);
-        p.setPen(Qt::white);
-        const QStringList sizeOptions = {"800 x auto (default)", "640 x auto", "480 x auto", "Original"};
-        p.drawText(sizeBtn.adjusted(10, 0, -25, 0), Qt::AlignLeft | Qt::AlignVCenter, sizeOptions[m_gifSizeIdx]);
-        // Chevron
-        p.setPen(QPen(Qt::white, 1.5));
-        p.drawLine(QPointF(sizeBtn.right() - 15, sizeBtn.center().y() - 3), QPointF(sizeBtn.right() - 11, sizeBtn.center().y() + 1));
-        p.drawLine(QPointF(sizeBtn.right() - 11, sizeBtn.center().y() + 1), QPointF(sizeBtn.right() - 7, sizeBtn.center().y() - 3));
-        m_settingsClickableRects.append(sizeBtn);
     }
 
     if (m_dropdownOpen != -1) {

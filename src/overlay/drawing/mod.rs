@@ -804,10 +804,6 @@ pub(crate) fn draw_overlay(
                 st.recording.remember_selection,
                 st.recording.dim_screen,
                 st.recording.show_countdown,
-                st.recording.gif_fps,
-                st.recording.gif_quality,
-                st.recording.optimize_gif,
-                st.recording.gif_size_idx,
             );
         } else {
             // Toolbar (auto-positioned below / above the full-screen rect)
@@ -908,10 +904,6 @@ pub(crate) fn draw_overlay(
                 st.recording.remember_selection,
                 st.recording.dim_screen,
                 st.recording.show_countdown,
-                st.recording.gif_fps,
-                st.recording.gif_quality,
-                st.recording.optimize_gif,
-                st.recording.gif_size_idx,
             );
             // Volume popup menus (positioned top-centre of selection like other menus)
             {

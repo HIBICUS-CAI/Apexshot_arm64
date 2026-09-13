@@ -140,11 +140,11 @@ fn parse_recording_json(json: &str) -> Result<RecordingRequest, SelectionError> 
     let height = extract_int(json, "height")
         .ok_or_else(|| SelectionError::InitError("Missing height".into()))?;
 
-    let record_type_str = extract_string(json, "record_type").unwrap_or_else(|| "video".into());
-    let record_type = match record_type_str.as_str() {
-        "gif" => RecordingType::Gif,
-        _ => RecordingType::Video,
-    };
+    // GIF recording is discontinued: old overlays may still send
+    // record_type "gif" — record MP4 instead.
+    let _record_type_str =
+        extract_string(json, "record_type").unwrap_or_else(|| "video".into());
+    let record_type = RecordingType::Video;
 
     let controls = extract_bool(json, "controls").unwrap_or(false);
     let mic = extract_bool(json, "mic").unwrap_or(false);
@@ -166,12 +166,6 @@ fn parse_recording_json(json: &str) -> Result<RecordingRequest, SelectionError> 
     let record_mono = extract_bool(json, "record_mono").unwrap_or(false);
     let open_editor = extract_bool(json, "open_editor").unwrap_or(false);
     let noise_suppression = extract_bool(json, "noise_suppression").unwrap_or(false);
-    let gif_fps = extract_int(json, "gif_fps").unwrap_or(50).clamp(5, 60) as u8;
-    let gif_quality = extract_float(json, "gif_quality")
-        .unwrap_or(0.75)
-        .clamp(0.0, 1.0);
-    let gif_size_idx = extract_int(json, "gif_size_idx").unwrap_or(0).clamp(0, 3) as u8;
-    let optimize_gif = extract_bool(json, "optimize_gif").unwrap_or(true);
     let fullscreen = extract_bool(json, "fullscreen").unwrap_or(false);
 
     Ok(RecordingRequest {
@@ -196,10 +190,6 @@ fn parse_recording_json(json: &str) -> Result<RecordingRequest, SelectionError> 
         record_mono,
         open_editor,
         noise_suppression,
-        gif_fps,
-        gif_quality,
-        gif_size_idx,
-        optimize_gif,
         fullscreen,
     })
 }
@@ -249,6 +239,7 @@ fn extract_int(json: &str, key: &str) -> Option<i32> {
     rest[..end].parse().ok()
 }
 
+#[allow(dead_code)]
 fn extract_float(json: &str, key: &str) -> Option<f64> {
     let needle = format!("\"{}\":", key);
     let start = json.find(&needle)? + needle.len();

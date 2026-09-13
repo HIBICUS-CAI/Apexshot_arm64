@@ -54,9 +54,6 @@ pub enum RecordError {
 
     #[error("No suitable video encoder found. Please install gst-plugins-good/ugly/bad.")]
     NoEncoderFound,
-
-    #[error("GIF encoding error: {0}")]
-    GifError(String),
 }
 
 pub use audio::{list_audio_inputs, list_audio_outputs};
@@ -154,10 +151,6 @@ pub struct RecordingConfig {
     pub speaker_source: Option<String>,
     /// webrtcdsp noise suppression on the mic branch (GStreamer audio path).
     pub noise_suppression: bool,
-    // GIF-specific settings
-    pub gif_quality: f64,
-    pub gif_optimize: bool,
-    pub gif_max_width: Option<u32>,
 }
 
 /// Directory for new recordings: Settings `video_export_location`, else XDG Videos.
@@ -225,9 +218,6 @@ impl Default for RecordingConfig {
             mic_source: None,
             speaker_source: None,
             noise_suppression: false,
-            gif_quality: 0.75,
-            gif_optimize: true,
-            gif_max_width: Some(800),
         }
     }
 }
@@ -269,7 +259,7 @@ impl RecordingConfig {
             x: None,
             y: None,
             cursor: app_config.rec_cursor,
-            pointer_track: extension != "gif" && crate::gnome_shell::should_use_pointer_track(),
+            pointer_track: crate::gnome_shell::should_use_pointer_track(),
             hidpi: app_config.rec_hidpi,
             max_resolution,
             fps,
@@ -279,14 +269,6 @@ impl RecordingConfig {
             mic_source: None,
             speaker_source: None,
             noise_suppression: app_config.rec_noise_suppression,
-            gif_quality: app_config.rec_gif_quality,
-            gif_optimize: app_config.rec_gif_optimize,
-            gif_max_width: match app_config.rec_gif_size_idx {
-                0 => Some(800),
-                1 => Some(640),
-                2 => Some(480),
-                _ => None,
-            },
         }
     }
 }
@@ -342,16 +324,9 @@ async fn start_recording_with_commands(
         if wf_recorder::should_use_wf_recorder(&config) {
             return wf_recorder::record_with_wf_recorder(config, command_rx).await;
         }
-        if config.output_path.extension().is_some_and(|e| e == "gif") {
-            return wf_recorder::record_gif_with_wf_recorder(config, command_rx).await;
-        }
         return Err(RecordError::UnsupportedBackend(
             "wlroots recording with this output format is not supported".into(),
         ));
-    }
-
-    if config.output_path.extension().is_some_and(|e| e == "gif") {
-        return backend::record_gif_rust_with_commands(config, command_rx).await;
     }
 
     let built = backend::prepare_recording_backend(config).await?;

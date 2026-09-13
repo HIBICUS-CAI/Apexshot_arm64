@@ -66,11 +66,6 @@ pub struct AppConfig {
     pub rec_video_open_editor: bool,
     /// webrtcdsp noise suppression on the recording mic (GStreamer audio path).
     pub rec_noise_suppression: bool,
-    // Recording GIF tab settings
-    pub rec_gif_fps: u8,
-    pub rec_gif_quality: f64,
-    pub rec_gif_size_idx: u8,
-    pub rec_gif_optimize: bool,
     pub rec_mic: bool,
     pub rec_speaker: bool,
     // Quick Access settings
@@ -210,10 +205,6 @@ impl Default for AppConfig {
             rec_video_mono: false,
             rec_video_open_editor: false,
             rec_noise_suppression: false,
-            rec_gif_fps: 50,
-            rec_gif_quality: 0.75,
-            rec_gif_size_idx: 0,
-            rec_gif_optimize: true,
             rec_mic: false,
             rec_speaker: false,
             quick_access_position: "Left".to_string(),
@@ -325,9 +316,6 @@ impl AppConfig {
             self.after_capture_show_quick_access = DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS;
         }
         self.rec_video_format = self.rec_video_format.min(1);
-        self.rec_gif_fps = self.rec_gif_fps.clamp(5, 60);
-        self.rec_gif_quality = self.rec_gif_quality.clamp(0.0, 1.0);
-        self.rec_gif_size_idx = self.rec_gif_size_idx.min(3);
         self.quick_access_overlay_size =
             sanitize_quick_access_overlay_size(self.quick_access_overlay_size);
         self.quick_access_position = match self.quick_access_position.as_str() {

@@ -3,7 +3,6 @@ use super::super::layout::*;
 use super::super::recording::layout::compute_dropdown_popup_y;
 use super::super::recording::state::SettingsTab;
 use crate::i18n::t;
-use std::f64::consts::PI;
 
 pub(crate) fn draw_checkbox(
     context: &gtk4::cairo::Context,
@@ -99,10 +98,6 @@ pub(crate) fn draw_settings_menu(
     remember_selection: bool,
     dim_screen: bool,
     show_countdown: bool,
-    gif_fps: f64,
-    gif_quality: f64,
-    optimize_gif: bool,
-    gif_size_idx: usize,
     _accent_r: f64,
     _accent_g: f64,
     _accent_b: f64,
@@ -149,7 +144,7 @@ pub(crate) fn draw_settings_menu(
     }
 
     // Tabs
-    let tabs = [t("General"), t("Video"), t("GIF")];
+    let tabs = [t("General"), t("Video")];
     let tab_container_x = menu_x + 18.0;
     let tab_container_y = menu_y + 50.0;
     let tab_container_w = menu_w - 36.0;
@@ -179,8 +174,7 @@ pub(crate) fn draw_settings_menu(
             height: tab_h,
         };
         let is_active_tab = (i == 0 && matches!(tab, SettingsTab::General))
-            || (i == 1 && matches!(tab, SettingsTab::Video))
-            || (i == 2 && matches!(tab, SettingsTab::Gif));
+            || (i == 1 && matches!(tab, SettingsTab::Video));
         let tab_hovered = hovered_item == i as i32;
         if is_active_tab || tab_hovered {
             if is_active_tab {
@@ -253,20 +247,6 @@ pub(crate) fn draw_settings_menu(
             accent_g,
             accent_b,
         ),
-        SettingsTab::Gif => draw_settings_gif_tab(
-            context,
-            menu_x,
-            menu_y,
-            menu_w,
-            hovered_item,
-            gif_fps,
-            gif_quality,
-            optimize_gif,
-            gif_size_idx,
-            accent_r,
-            accent_g,
-            accent_b,
-        ),
     }
 
     if let Some(drop_idx) = dropdown_open {
@@ -280,7 +260,6 @@ pub(crate) fn draw_settings_menu(
             hovered_dropdown_item,
             video_max_res,
             video_fps,
-            gif_size_idx,
             accent_r,
             accent_g,
             accent_b,
@@ -622,192 +601,6 @@ pub(crate) fn draw_settings_video_tab(
     );
 }
 
-pub(crate) fn draw_settings_gif_tab(
-    context: &gtk4::cairo::Context,
-    menu_x: f64,
-    menu_y: f64,
-    menu_w: f64,
-    hovered_item: i32,
-    gif_fps: f64,
-    gif_quality: f64,
-    optimize_gif: bool,
-    gif_size_idx: usize,
-    _accent_r: f64,
-    _accent_g: f64,
-    _accent_b: f64,
-) {
-    let card_x = menu_x + 18.0;
-    let card_y = menu_y + 106.0;
-    let card_w = menu_w - 36.0;
-    let row_heights = [64.0, 72.0, 52.0, 64.0];
-    let card_h: f64 = row_heights.iter().sum();
-    let label_x = card_x + 14.0;
-    let control_right = card_x + card_w - 14.0;
-
-    super::rounded_rect_path(context, card_x, card_y, card_w, card_h, 10.0);
-    context.set_source_rgba(1.0, 1.0, 1.0, 10.0 / 255.0);
-    context.fill().ok();
-    context.set_source_rgba(1.0, 1.0, 1.0, 13.0 / 255.0);
-    context.set_line_width(1.0);
-    let mut divider_y = card_y;
-    for height in row_heights.iter().take(3) {
-        divider_y += height;
-        context.move_to(card_x + 14.0, divider_y);
-        context.line_to(card_x + card_w - 14.0, divider_y);
-        context.stroke().ok();
-    }
-
-    let draw_label = |context: &gtk4::cairo::Context, txt: &str, y: f64| {
-        context.select_font_face(
-            crate::typography::UI_FONT_FAMILY,
-            gtk4::cairo::FontSlant::Normal,
-            gtk4::cairo::FontWeight::Bold,
-        );
-        context.set_font_size(13.3);
-        context.set_source_rgba(1.0, 1.0, 1.0, 200.0 / 255.0);
-        if let Ok(extents) = context.text_extents(txt) {
-            context.move_to(label_x - extents.x_bearing(), y - extents.y_bearing());
-            context.show_text(txt).ok();
-        }
-    };
-
-    let row1 = card_y;
-    if hovered_item == 3 {
-        super::rounded_rect_path(context, card_x, row1, card_w, row_heights[0], 8.0);
-        context.set_source_rgba(1.0, 1.0, 1.0, 16.0 / 255.0);
-        context.fill().ok();
-    }
-    let gif_frame_rate = t("Frame rate");
-    draw_label(context, &gif_frame_rate, row1 + 37.0);
-    let fps_label = format!("{:.0}", gif_fps);
-    context.set_source_rgba(1.0, 1.0, 1.0, 15.0 / 255.0);
-    super::rounded_rect_path(context, menu_x + 140.0, row1 + 17.0, 45.0, 30.0, 6.0);
-    context.fill().ok();
-    context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
-    context.select_font_face(
-        crate::typography::UI_FONT_FAMILY,
-        gtk4::cairo::FontSlant::Normal,
-        gtk4::cairo::FontWeight::Normal,
-    );
-    context.set_font_size(13.3);
-    if let Ok(extents) = context.text_extents(&fps_label) {
-        context.move_to(
-            menu_x + 162.5 - extents.width() / 2.0 - extents.x_bearing(),
-            row1 + 32.0 - extents.height() / 2.0 - extents.y_bearing(),
-        );
-        context.show_text(&fps_label).ok();
-    }
-    let slider_x = menu_x + 200.0;
-    let slider_w = control_right - slider_x;
-    let track_y = row1 + 30.0;
-    let progress = ((gif_fps - 5.0) / 55.0).clamp(0.0, 1.0);
-    context.set_source_rgba(1.0, 1.0, 1.0, 30.0 / 255.0);
-    super::rounded_rect_path(context, slider_x, track_y, slider_w, 4.0, 2.0);
-    context.fill().ok();
-    context.set_source_rgba(176.0 / 255.0, 92.0 / 255.0, 56.0 / 255.0, 1.0);
-    super::rounded_rect_path(context, slider_x, track_y, slider_w * progress, 4.0, 2.0);
-    context.fill().ok();
-    let handle_x = slider_x + progress * slider_w;
-    context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
-    context.new_path();
-    context.arc(handle_x, track_y + 2.0, 7.0, 0.0, PI * 2.0);
-    context.fill().ok();
-
-    let row2 = row1 + row_heights[0];
-    if hovered_item == 4 {
-        super::rounded_rect_path(context, card_x, row2, card_w, row_heights[1], 6.0);
-        context.set_source_rgba(1.0, 1.0, 1.0, 16.0 / 255.0);
-        context.fill().ok();
-    }
-    let quality_label = t("Quality");
-    draw_label(context, &quality_label, row2 + 29.0);
-    let q_slider_x = menu_x + 160.0;
-    let q_slider_w = control_right - q_slider_x;
-    let q_track_y = row2 + 27.0;
-    context.set_source_rgba(1.0, 1.0, 1.0, 30.0 / 255.0);
-    super::rounded_rect_path(context, q_slider_x, q_track_y, q_slider_w, 4.0, 2.0);
-    context.fill().ok();
-    context.set_source_rgba(176.0 / 255.0, 92.0 / 255.0, 56.0 / 255.0, 1.0);
-    super::rounded_rect_path(
-        context,
-        q_slider_x,
-        q_track_y,
-        q_slider_w * gif_quality,
-        4.0,
-        2.0,
-    );
-    context.fill().ok();
-    // Ticks
-    context.set_source_rgba(1.0, 1.0, 1.0, 60.0 / 255.0);
-    context.set_line_width(1.0);
-    for i in 0..=8 {
-        let tx = q_slider_x + (q_slider_w / 8.0) * i as f64;
-        context.move_to(tx, q_track_y - 4.0);
-        context.line_to(tx, q_track_y + 8.0);
-        context.stroke().ok();
-    }
-    // Quality handle
-    let q_handle_x = q_slider_x + gif_quality * q_slider_w;
-    context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
-    context.new_path();
-    context.arc(q_handle_x, q_track_y + 2.0, 7.0, 0.0, PI * 2.0);
-    context.fill().ok();
-    context.set_font_size(10.7);
-    context.set_source_rgba(1.0, 1.0, 1.0, 120.0 / 255.0);
-    let low_label = t("Low");
-    let high_label = t("High");
-    if let Ok(_ext) = context.text_extents(&low_label) {
-        context.move_to(q_slider_x, row2 + 57.0);
-        context.show_text(&low_label).ok();
-    }
-    if let Ok(ext) = context.text_extents(&high_label) {
-        context.move_to(q_slider_x + q_slider_w - ext.width(), row2 + 57.0);
-        context.show_text(&high_label).ok();
-    }
-    let row3 = row2 + row_heights[1];
-    if hovered_item == 5 {
-        super::rounded_rect_path(context, card_x, row3, card_w, row_heights[2], 6.0);
-        context.set_source_rgba(1.0, 1.0, 1.0, 16.0 / 255.0);
-        context.fill().ok();
-    }
-    let optimize_gif_label = t("Optimize GIF");
-    draw_label(context, &optimize_gif_label, row3 + 32.0);
-    draw_checkbox(
-        context,
-        control_right - 18.0,
-        row3 + 17.0,
-        18.0,
-        optimize_gif,
-        false,
-        176.0 / 255.0,
-        92.0 / 255.0,
-        56.0 / 255.0,
-    );
-    let row4 = row3 + row_heights[2];
-    if hovered_item == 6 {
-        super::rounded_rect_path(context, card_x, row4, card_w, row_heights[3], 8.0);
-        context.set_source_rgba(1.0, 1.0, 1.0, 16.0 / 255.0);
-        context.fill().ok();
-    }
-    let output_size = t("Output size");
-    draw_label(context, &output_size, row4 + 38.0);
-    let size_options = [
-        t("800 x auto"),
-        t("640 x auto"),
-        t("480 x auto"),
-        t("Original"),
-    ];
-    draw_dropdown_button(
-        context,
-        control_right - 180.0,
-        row4 + 17.0,
-        180.0,
-        30.0,
-        &size_options[gif_size_idx],
-        hovered_item == 6,
-    );
-}
-
 pub(crate) fn draw_settings_dropdown_popup(
     context: &gtk4::cairo::Context,
     menu_x: f64,
@@ -818,7 +611,6 @@ pub(crate) fn draw_settings_dropdown_popup(
     hovered_item: i32,
     video_max_res: usize,
     video_fps: usize,
-    gif_size_idx: usize,
     accent_r: f64,
     accent_g: f64,
     accent_b: f64,
@@ -826,17 +618,9 @@ pub(crate) fn draw_settings_dropdown_popup(
     let (options, current_val): (&[&str], usize) = match (tab, drop_idx) {
         (SettingsTab::Video, 3) => (&["Original", "1080p", "720p"], video_max_res),
         (SettingsTab::Video, 4) => (&["24", "30", "50", "60"], video_fps),
-        (SettingsTab::Gif, 6) => (
-            &["800 x auto", "640 x auto", "480 x auto", "Original"],
-            gif_size_idx,
-        ),
         _ => return,
     };
-    let popup_w = if matches!((tab, drop_idx), (SettingsTab::Gif, 6)) {
-        180.0
-    } else {
-        160.0
-    };
+    let popup_w = 160.0;
     let value_x = menu_x + 408.0 - popup_w;
     let popup_y = compute_dropdown_popup_y(menu_y, drop_idx, tab);
     let item_h = 30.0;
