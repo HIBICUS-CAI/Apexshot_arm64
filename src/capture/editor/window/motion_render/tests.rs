@@ -64,6 +64,52 @@ mod tests {
     }
 
     #[test]
+    fn flat_card_pose_draws_exactly_its_rect() {
+        let card = ImageSurface::create(Format::ARgb32, 100, 50).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 0.0, 0.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let motion = motion_with_first_clip();
+        let mut frame = ImageSurface::create(Format::ARgb32, 400, 300).unwrap();
+        {
+            let context = Context::new(&frame).unwrap();
+            // No rotation and no perspective take the single-rectangle path.
+            super::draw_transformed_card(
+                &context,
+                &card,
+                MotionStage::frame(400.0, 300.0),
+                MotionTransform::default(),
+                (0.5, 0.5),
+                &motion.appearance,
+                1.0,
+                8,
+                gtk4::cairo::Filter::Good,
+            );
+        }
+        frame.flush();
+
+        let stride = frame.stride() as usize;
+        let data = frame.data().unwrap();
+        let mut painted = 0usize;
+        for y in 0..300usize {
+            for x in 0..400usize {
+                let offset = y * stride + x * 4;
+                if data[offset + 2] > 200 && data[offset + 1] < 60 && data[offset] < 60 {
+                    painted += 1;
+                }
+            }
+        }
+        assert!(
+            (painted as i64 - 5000).abs() < 400,
+            "the flat card must cover its 100x50 rect exactly, painted {painted} px"
+        );
+    }
+
+    #[test]
     fn scene_fill_is_bounded_in_preview_and_full_frame_on_export() {
         let card = ImageSurface::create(Format::ARgb32, 8, 8).unwrap();
         let mut motion = MotionState::default();

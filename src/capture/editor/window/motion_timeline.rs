@@ -30,7 +30,6 @@ pub(super) struct MotionTimeline {
     pub track: DrawingArea,
     pub text_track: DrawingArea,
     pub playhead: DrawingArea,
-    pub playhead_handle: DrawingArea,
     pub hover_playhead: DrawingArea,
     pub playhead_dragging: Rc<Cell<bool>>,
     pub playhead_hovered: Rc<Cell<bool>>,
@@ -160,24 +159,13 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
     playhead.set_vexpand(true);
     playhead.set_can_target(false);
 
-    // A narrow grabbable strip that follows the drawn playhead line. Clicking
-    // the tracks no longer scrubs, so dragging this handle is the way to
-    // reposition the playhead. Its allocation is frozen while a drag is in
-    // flight: moving it under the pointer would feed the drag offset (which
-    // GTK derives from widget-local coordinates) back into the position we
-    // compute from it, which reads as lag and rubber-banding.
-    let playhead_handle = DrawingArea::new();
-    playhead_handle.set_width_request(PLAYHEAD_HANDLE_W as i32);
-    playhead_handle.set_height_request(PLAYHEAD_HANDLE_H as i32);
-    playhead_handle.set_halign(Align::Start);
-    playhead_handle.set_valign(Align::Start);
-    playhead_handle.set_margin_top(PLAYHEAD_HANDLE_TOP as i32);
     let playhead_dragging = Rc::new(Cell::new(false));
     let playhead_hovered = Rc::new(Cell::new(false));
-    // Pure draw: never touch layout here. Mutating margin/width inside a
-    // draw invalidates layout, which re-queues a draw — one layout pass per
-    // frame the pointer moves. The handle is positioned from the redraw path
-    // (`sync_playhead_handle`) instead, so scrubbing is draw-only.
+    // Pure draw: the playhead is painted in this static overlay and follows
+    // model state, so a scrub never writes widget geometry or invalidates
+    // layout (the video editor card works the same way). The ruler is the
+    // grab surface, and hover hit-tests the drawn head in board coordinates
+    // (`playhead_head_hit`) instead of a positioned handle widget.
     playhead.set_draw_func({
         let runtime = runtime.clone();
         let dragging = playhead_dragging.clone();
@@ -200,7 +188,6 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
     });
     board.add_overlay(&hover_playhead);
     board.add_overlay(&playhead);
-    board.add_overlay(&playhead_handle);
 
     card.append(&toolbar);
     card.append(&board);
@@ -222,7 +209,6 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
         track,
         text_track,
         playhead,
-        playhead_handle,
         hover_playhead,
         playhead_dragging,
         playhead_hovered,
@@ -756,36 +742,6 @@ pub(in crate::capture::editor::window) fn playhead_head_hit(
         && (pointer_x - line_x).abs() <= half_w + PLAYHEAD_HOVER_SLOP
 }
 
-/// Position the grab handle from model state, outside any draw callback.
-/// The drawn capsule may clip at the board edge so its stem stays centered;
-/// the widget itself clamps into layout so it never gets a negative margin.
-pub(in crate::capture::editor::window) fn sync_playhead_handle(
-    handle: &DrawingArea,
-    runtime: &Rc<RefCell<MotionRuntime>>,
-    board_width: f64,
-    expanded: bool,
-) {
-    let (playhead, duration) = {
-        let runtime = runtime.borrow();
-        (runtime.motion.playhead, runtime.motion.duration.max(0.001))
-    };
-    let pill_w = if expanded {
-        PLAYHEAD_CLOCK_W
-    } else {
-        PLAYHEAD_HANDLE_W
-    };
-    let x = time_to_x(playhead, duration, board_width.max(1.0));
-    let margin = (x - pill_w / 2.0).max(0.0) as i32;
-    // Width/margin writes each invalidate layout, so skip no-ops: during a
-    // scrub this runs per pointer event and must stay allocation-free.
-    if handle.width_request() != pill_w as i32 {
-        handle.set_width_request(pill_w as i32);
-    }
-    if handle.margin_start() != margin {
-        handle.set_margin_start(margin);
-    }
-}
-
 /// Pointer read-out line. Unlike the playhead it has no capsule, so it can be
 /// drawn under everything and updated on every motion event cheaply.
 fn draw_hover_playhead(
@@ -939,6 +895,23 @@ mod tests {
             assert!(selected.label > unselected.label);
             assert!(unselected.label > faint.label);
         }
+    }
+
+    #[test]
+    fn motion_playhead_stays_draw_only_like_the_video_editor_card() {
+        let source = include_str!("motion_timeline.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            !source.contains("set_margin_start") && !source.contains("set_width_request"),
+            "the playhead must be painted from model state, not positioned as a widget"
+        );
+        let controls = include_str!("motion_mode/controls/timeline.rs");
+        assert!(
+            !controls.contains("playhead_handle") && !controls.contains("set_margin_start"),
+            "scrubbing must not move a handle widget or invalidate layout"
+        );
     }
 
     #[test]

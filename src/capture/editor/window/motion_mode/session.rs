@@ -2,6 +2,7 @@ use image::RgbaImage;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::capture::editor::render::rgba_image_to_surface;
@@ -32,6 +33,38 @@ pub(in crate::capture::editor::window) struct MotionBackdropCache {
 pub(in crate::capture::editor::window) enum MotionHoverTrack {
     Motion,
     Text,
+}
+
+/// A finished background-thread composite. The preview paint blits this;
+/// the UI thread never composites (see motion_mode/preview.rs).
+pub(in crate::capture::editor::window) struct PreviewFrame {
+    pub(in crate::capture::editor::window) width: i32,
+    pub(in crate::capture::editor::window) height: i32,
+    pub(in crate::capture::editor::window) time: f64,
+    pub(in crate::capture::editor::window) live_preview: bool,
+    pub(in crate::capture::editor::window) content_gen: u64,
+    pub(in crate::capture::editor::window) surface: gtk4::cairo::ImageSurface,
+}
+
+/// Raw surface pixels. Cairo surfaces are not `Send`, so this is what
+/// crosses the thread boundary; each side rebuilds its own surface.
+pub(in crate::capture::editor::window) struct PreviewPixels {
+    pub(in crate::capture::editor::window) width: i32,
+    pub(in crate::capture::editor::window) height: i32,
+    pub(in crate::capture::editor::window) stride: i32,
+    pub(in crate::capture::editor::window) bytes: Vec<u8>,
+}
+
+/// A finished frame posted by the background compositor, as pixels for the
+/// UI thread to upload.
+pub(in crate::capture::editor::window) struct PreviewResult {
+    pub(in crate::capture::editor::window) width: i32,
+    pub(in crate::capture::editor::window) height: i32,
+    pub(in crate::capture::editor::window) time: f64,
+    pub(in crate::capture::editor::window) live_preview: bool,
+    pub(in crate::capture::editor::window) content_gen: u64,
+    pub(in crate::capture::editor::window) stride: i32,
+    pub(in crate::capture::editor::window) bytes: Vec<u8>,
 }
 
 pub(in crate::capture::editor::window) struct MotionRuntime {
@@ -67,6 +100,19 @@ pub(in crate::capture::editor::window) struct MotionRuntime {
     /// Which track row the pointer is over, so an empty row can show its add
     /// affordance. UI-only.
     pub(in crate::capture::editor::window) hover_track: Option<MotionHoverTrack>,
+    /// Content generation: bumped on every model mutation a playhead move
+    /// alone would not reveal, so a cached preview frame cannot go stale.
+    pub(in crate::capture::editor::window) preview_content_gen: u64,
+    /// Latest finished background composite. Painted by the preview widget.
+    pub(in crate::capture::editor::window) preview_frame: Option<PreviewFrame>,
+    /// A composite is in flight; draws set `preview_dirty` instead of
+    /// spawning more work.
+    pub(in crate::capture::editor::window) preview_busy: bool,
+    /// A newer frame was requested while a composite was in flight.
+    pub(in crate::capture::editor::window) preview_dirty: bool,
+    pub(in crate::capture::editor::window) preview_tx: Option<mpsc::Sender<Option<PreviewResult>>>,
+    pub(in crate::capture::editor::window) preview_rx:
+        Option<mpsc::Receiver<Option<PreviewResult>>>,
 }
 
 impl MotionRuntime {
@@ -90,6 +136,12 @@ impl MotionRuntime {
             source_selected: false,
             hover_time: None,
             hover_track: None,
+            preview_content_gen: 0,
+            preview_frame: None,
+            preview_busy: false,
+            preview_dirty: false,
+            preview_tx: None,
+            preview_rx: None,
         }
     }
 
@@ -98,6 +150,7 @@ impl MotionRuntime {
     /// the first update inside the coalesce window pushes the checkpoint and
     /// the rest reuse it.
     pub(in crate::capture::editor::window) fn begin_motion_edit(&mut self) {
+        self.preview_content_gen = self.preview_content_gen.wrapping_add(1);
         let new_burst = self
             .last_edit
             .is_none_or(|at| at.elapsed() > MOTION_EDIT_COALESCE);
@@ -130,6 +183,7 @@ impl MotionRuntime {
         self.redo_stack
             .push(std::mem::replace(&mut self.motion, previous));
         self.last_edit = None;
+        self.preview_content_gen = self.preview_content_gen.wrapping_add(1);
         self.refresh_motion_surfaces();
         true
     }
@@ -141,6 +195,7 @@ impl MotionRuntime {
         self.undo_stack
             .push(std::mem::replace(&mut self.motion, next));
         self.last_edit = None;
+        self.preview_content_gen = self.preview_content_gen.wrapping_add(1);
         self.refresh_motion_surfaces();
         true
     }
@@ -238,6 +293,10 @@ impl MotionSession {
         runtime.source_selected = false;
         runtime.hover_time = None;
         runtime.hover_track = None;
+        runtime.preview_content_gen = runtime.preview_content_gen.wrapping_add(1);
+        runtime.preview_frame = None;
+        runtime.preview_busy = false;
+        runtime.preview_dirty = false;
         runtime.reset_motion_history();
         // Motion starts with an empty effects track; clips appear
         // when the user clicks or drags the timeline.
@@ -281,6 +340,10 @@ impl MotionSession {
         runtime.source_selected = false;
         runtime.hover_time = None;
         runtime.hover_track = None;
+        runtime.preview_content_gen = runtime.preview_content_gen.wrapping_add(1);
+        runtime.preview_frame = None;
+        runtime.preview_busy = false;
+        runtime.preview_dirty = false;
         runtime.reset_motion_history();
     }
 }

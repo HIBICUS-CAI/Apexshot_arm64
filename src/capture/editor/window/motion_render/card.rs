@@ -7,6 +7,7 @@ fn draw_transformed_card(
     appearance: &MotionAppearance,
     alpha: f64,
     mesh_div: usize,
+    filter: Filter,
 ) {
     // The radius rounds the captured image's own corners; the background
     // scene behind it stays a full rectangle. It is expressed in source-card
@@ -31,7 +32,7 @@ fn draw_transformed_card(
     }
 
     paint_perspective_card(
-        context, surface, img_w, img_h, fit, transform, cx, cy, alpha, mesh_div,
+        context, surface, img_w, img_h, fit, transform, cx, cy, alpha, mesh_div, filter,
     );
     if alpha >= 0.99 && appearance.border_thickness > 0.0 {
         let [r, g, b, a] = appearance.border_fill_color;
@@ -181,6 +182,7 @@ fn paint_perspective_card(
     cy: f64,
     alpha: f64,
     mesh_div: usize,
+    filter: Filter,
 ) {
     let hw = img_w * fit * transform.scale / 2.0;
     let hh = img_h * fit * transform.scale / 2.0;
@@ -190,26 +192,25 @@ fn paint_perspective_card(
         + transform.rotation_z.abs()
         + transform.perspective;
     if bent < 0.05 {
-        let corners = [
-            (cx - hw, cy - hh),
-            (cx + hw, cy - hh),
-            (cx + hw, cy + hh),
-            (cx - hw, cy + hh),
-        ];
-        paint_textured_triangle(
-            context,
-            surface,
-            [(0.0, 0.0), (img_w, 0.0), (0.0, img_h)],
-            [corners[0], corners[1], corners[3]],
-            alpha,
-        );
-        paint_textured_triangle(
-            context,
-            surface,
-            [(img_w, 0.0), (img_w, img_h), (0.0, img_h)],
-            [corners[1], corners[2], corners[3]],
-            alpha,
-        );
+        // Flat pose: the card is an axis-aligned rectangle. One rectangle
+        // blit is several times cheaper than two clipped textured triangles —
+        // Cairo takes a general masked-composite path for triangle clips — so
+        // zero rotation and zero perspective avoid that cost entirely.
+        let left = cx - hw;
+        let top = cy - hh;
+        let _ = context.save();
+        context.rectangle(left, top, hw * 2.0, hh * 2.0);
+        context.clip();
+        context.translate(left, top);
+        context.scale((hw * 2.0) / img_w, (hh * 2.0) / img_h);
+        context.set_source_surface(surface, 0.0, 0.0).ok();
+        context.source().set_filter(filter);
+        if alpha < 0.999 {
+            let _ = context.paint_with_alpha(alpha);
+        } else {
+            let _ = context.paint();
+        }
+        let _ = context.restore();
         return;
     }
 
@@ -242,8 +243,22 @@ fn paint_perspective_card(
             let d10 = grid[j * cols + i + 1];
             let d01 = grid[(j + 1) * cols + i];
             let d11 = grid[(j + 1) * cols + i + 1];
-            paint_textured_triangle(context, surface, [s00, s10, s01], [d00, d10, d01], alpha);
-            paint_textured_triangle(context, surface, [s10, s11, s01], [d10, d11, d01], alpha);
+            paint_textured_triangle(
+                context,
+                surface,
+                [s00, s10, s01],
+                [d00, d10, d01],
+                alpha,
+                filter,
+            );
+            paint_textured_triangle(
+                context,
+                surface,
+                [s10, s11, s01],
+                [d10, d11, d01],
+                alpha,
+                filter,
+            );
         }
     }
 }
@@ -254,6 +269,7 @@ fn paint_textured_triangle(
     src: [(f64, f64); 3],
     dest: [(f64, f64); 3],
     alpha: f64,
+    filter: Filter,
 ) {
     let Some(matrix) = affine_from_three_points(src, dest) else {
         return;
@@ -267,6 +283,7 @@ fn paint_textured_triangle(
     context.clip();
     context.transform(matrix);
     context.set_source_surface(surface, 0.0, 0.0).ok();
+    context.source().set_filter(filter);
     if alpha < 0.999 {
         let _ = context.paint_with_alpha(alpha);
     } else {

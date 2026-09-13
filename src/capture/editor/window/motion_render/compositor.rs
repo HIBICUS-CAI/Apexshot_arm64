@@ -148,6 +148,16 @@ pub(super) fn draw_motion_foreground(
     paint_motion_scene_shadow(context, stage, motion, true);
     let current_transform = motion.sample(time);
     let current_anchor = motion.zoom_anchor_at(time);
+    // The editor preview draws a downscaled card texture into a panel-sized
+    // canvas. Cairo's default Good filter convolves the source on every
+    // downscale, and that dominated scrub frame time (tens of milliseconds a
+    // frame at scale 1); Bilinear keeps interactive frames cheap. Export
+    // (checkerboard = false) keeps the high-quality filter.
+    let card_filter = if checkerboard {
+        Filter::Bilinear
+    } else {
+        Filter::Good
+    };
     // The card is drawn as a triangle mesh that approximates the perspective
     // warp. Its resolution must not depend on playhead scale: Ease edits
     // replay the segment, and a changing grid makes an otherwise smooth
@@ -198,6 +208,7 @@ pub(super) fn draw_motion_foreground(
             motion,
             &sample_offsets,
             time,
+            card_filter,
         );
     if !blurred {
         draw_transformed_card(
@@ -209,6 +220,7 @@ pub(super) fn draw_motion_foreground(
             &motion.appearance,
             1.0,
             mesh_div,
+            card_filter,
         );
     }
     paint_motion_text(context, surface, stage, motion, time, card_scale);
@@ -239,6 +251,7 @@ fn paint_motion_blurred_card(
     motion: &MotionState,
     sample_offsets: &[f64],
     time: f64,
+    filter: Filter,
 ) -> bool {
     // ponytail: two fresh buffers per blurred frame; cache them in the Motion
     // runtime if live playback ever drops frames to allocation churn.
@@ -271,6 +284,7 @@ fn paint_motion_blurred_card(
             &motion.appearance,
             1.0,
             MOTION_BLUR_MESH_DIVISIONS,
+            filter,
         );
         scratch.flush();
         accum_context.set_source_surface(&scratch, 0.0, 0.0).ok();
