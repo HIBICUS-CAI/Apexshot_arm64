@@ -79,8 +79,8 @@ pub(super) fn should_use_nvenc() -> bool {
 }
 
 pub(super) fn should_use_vaapi() -> bool {
-    // OBS parity: prefer HW encode when the render node + ffmpeg HW encoder
-    // exist. Opt out with APEXSHOT_HW_ENCODER=cpu/off.
+    // Prefer hardware encoding when the render node and the ffmpeg HW
+    // encoder exist. Opt out with APEXSHOT_HW_ENCODER=cpu/off.
     if let Ok(val) = std::env::var("APEXSHOT_HW_ENCODER") {
         if val == "cpu" || val == "off" || val == "soft" || val == "software" {
             return false;
@@ -94,14 +94,16 @@ pub(super) fn should_use_vaapi() -> bool {
 }
 
 pub(super) fn ffmpeg_vaapi_args(width: u32, height: u32, qp: u32) -> Vec<String> {
-    // OBS VAAPI Simple recording: profile HIGH, tier-derived QP in CQP mode
-    // (a fixed QP ignored the Ultra/High/Balanced setting entirely).
+    // VAAPI recording: profile HIGH, tier-derived QP in CQP mode (a fixed QP
+    // ignored the Ultra/High/Balanced setting entirely).
     let device = detect_vaapi_device().unwrap_or_else(|| "/dev/dri/renderD128".into());
     vec![
         "-vaapi_device".into(),
         device,
         "-vf".into(),
-        format!("format=nv12,hwupload,scale_vaapi=w={width}:h={height}"),
+        // bt709 matrix for the RGB->NV12 conversion; swscale's default is 601,
+        // which would not match the bt709 VUI tags on the output stream.
+        format!("scale=out_color_matrix=bt709:out_range=tv,format=nv12,hwupload,scale_vaapi=w={width}:h={height}"),
         "-c:v".into(),
         "h264_vaapi".into(),
         "-rc_mode".into(),

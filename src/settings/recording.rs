@@ -182,7 +182,15 @@ pub fn build_recording_section(config: &AppConfig) -> RecordingSettingsWidgets {
 
     let video_frame = build_frame();
     let rec_video_max_res = SettingsSelect::new(
-        [("0", t("Original")), ("1", t("1080p")), ("2", t("720p"))],
+        [
+            ("0", t("Original")),
+            ("6", t("2160p")),
+            ("3", t("1440p")),
+            ("1", t("1080p")),
+            ("4", t("900p")),
+            ("2", t("720p")),
+            ("5", t("480p")),
+        ],
         &config.rec_video_max_res.to_string(),
     );
     let resolution_row = GtkBox::new(Orientation::Horizontal, 12);

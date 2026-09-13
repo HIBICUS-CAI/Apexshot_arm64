@@ -492,7 +492,15 @@ pub(crate) fn draw_settings_video_tab(
     let max_res_desc = t("Reduce file size and upload time");
     draw_text(context, &max_res, label_x, row1 + 25.0, true, 0.9);
     draw_text(context, &max_res_desc, label_x, row1 + 48.0, false, 0.55);
-    let res_options = [t("Original"), t("1080p"), t("720p")];
+    let res_options = [
+        t("Original"),
+        t("1080p"),
+        t("720p"),
+        t("1440p"),
+        t("900p"),
+        t("480p"),
+        t("2160p"),
+    ];
     draw_dropdown_button(
         context,
         control_right - 136.0,
@@ -616,7 +624,12 @@ pub(crate) fn draw_settings_dropdown_popup(
     accent_b: f64,
 ) {
     let (options, current_val): (&[&str], usize) = match (tab, drop_idx) {
-        (SettingsTab::Video, 3) => (&["Original", "1080p", "720p"], video_max_res),
+        (SettingsTab::Video, 3) => (
+            &[
+                "Original", "1080p", "720p", "1440p", "900p", "480p", "2160p",
+            ],
+            video_max_res,
+        ),
         (SettingsTab::Video, 4) => (&["24", "30", "50", "60"], video_fps),
         _ => return,
     };

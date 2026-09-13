@@ -144,7 +144,7 @@ pub struct RecordingConfig {
     // Video tab settings
     pub max_resolution: Option<(u32, u32)>,
     pub fps: u32,
-    /// x264 CRF from Settings → quality tier (OBS range 16–23).
+    /// x264 CRF from Settings → quality tier (16–23 recording range).
     pub crf: u32,
     pub mono_audio: bool,
     pub mic_enabled: bool,
@@ -249,9 +249,17 @@ impl RecordingConfig {
             _ => 30,
         };
         let max_resolution = match app_config.rec_video_max_res {
-            0 => None,
+            0 => None, // Original — native size, no rescaling at all
             1 => Some((1920, 1080)),
             2 => Some((1280, 720)),
+            // Appended after the original three so saved configs keep their
+            // meaning. A target at or above the capture size leaves the frame
+            // untouched (no rescale = no quality loss); smaller targets are
+            // downscaled with lanczos in RGB space plus CRF compensation.
+            3 => Some((2560, 1440)),
+            4 => Some((1600, 900)),
+            5 => Some((854, 480)),
+            6 => Some((3840, 2160)),
             _ => None,
         };
 
@@ -277,19 +285,19 @@ impl RecordingConfig {
     }
 }
 
-/// x264 CRF for a Settings quality tier, inside OBS's recommended 16–23
-/// recording range (OBS Simple HQ = 16). Lower is sharper at file-size cost.
+/// x264 CRF for a Settings quality tier, inside the recommended 16–23
+/// recording range (sharpest tier = 16). Lower is sharper at file-size cost.
 pub fn crf_for_quality(tier: u8) -> u32 {
     match tier {
         0 => 23, // Balanced
-        2 => 16, // Ultra (OBS Simple HQ)
+        2 => 16, // Ultra
         _ => 20, // High (default)
     }
 }
 
-/// OBS `CalcCRF` resolution compensation (SimpleOutput.cpp): smaller outputs
-/// get a lower CRF so they don't turn to mush — up to -10 below 2000px
-/// diagonal. Applied to the tier base at encode time.
+/// Resolution compensation for CRF: smaller outputs get a lower CRF so they
+/// don't turn to mush — up to -10 below 2000px diagonal. Applied to the tier
+/// base at encode time.
 pub fn crf_resolution_reduction(width: u32, height: u32) -> u32 {
     const CUTOFF: f64 = 2000.0;
     let diagonal = ((u64::from(width) * u64::from(width) + u64::from(height) * u64::from(height))
@@ -483,7 +491,7 @@ mod tests {
         assert_eq!(crf_for_quality(1), 20);
         assert_eq!(crf_for_quality(2), 16);
         assert_eq!(crf_for_quality(9), 20);
-        // OBS CalcCRF: full-HD and above keep the base, smaller outputs gain.
+        // Full-HD and above keep the base CRF; smaller outputs get a bonus.
         assert_eq!(crf_resolution_reduction(1920, 1080), 0);
         assert_eq!(crf_resolution_reduction(1920, 1200), 0);
         assert_eq!(crf_resolution_reduction(1280, 720), 2);
@@ -498,6 +506,39 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(config.crf, 16);
+    }
+
+    #[test]
+    fn resolution_setting_maps_to_every_option_and_never_upscales() {
+        let at = chrono::Utc
+            .with_ymd_and_hms(2026, 7, 12, 11, 0, 49)
+            .unwrap();
+        let resolution_for = |idx: u8| {
+            let app = AppConfig {
+                rec_video_max_res: idx,
+                ..AppConfig::default()
+            };
+            RecordingConfig::from_app_config_at(&app, "mp4", at).max_resolution
+        };
+        // Saved configs from before the extra options keep their meaning.
+        assert_eq!(resolution_for(0), None);
+        assert_eq!(resolution_for(1), Some((1920, 1080)));
+        assert_eq!(resolution_for(2), Some((1280, 720)));
+        assert_eq!(resolution_for(3), Some((2560, 1440)));
+        assert_eq!(resolution_for(4), Some((1600, 900)));
+        assert_eq!(resolution_for(5), Some((854, 480)));
+        assert_eq!(resolution_for(6), Some((3840, 2160)));
+        assert_eq!(resolution_for(99), None);
+        // A target at or above the capture size must leave frames untouched —
+        // choosing a bigger option never costs quality.
+        assert_eq!(
+            super::backend::fit_within_max_resolution(1920, 1200, resolution_for(3)),
+            (1920, 1200)
+        );
+        assert_eq!(
+            super::backend::fit_within_max_resolution(1920, 1200, resolution_for(6)),
+            (1920, 1200)
+        );
     }
 
     #[test]

@@ -521,10 +521,10 @@ impl PipeWireCapture {
         guard.frames_consumed += 1;
         drop(guard);
 
-        // OBS keeps capture buffers native; the old per-pixel BGR→RGBA swap
-        // cost ~8ms/1080p and ~27ms/4K per frame (measured). Feed native
-        // 4-byte pixels (ffmpeg `-pix_fmt` matches) and strip row padding by
-        // whole rows only — usually a zero-copy move when stride is packed.
+        // Capture buffers stay in their native layout; the old per-pixel
+        // BGR→RGBA swap cost ~8ms/1080p and ~27ms/4K per frame (measured).
+        // Feed native 4-byte pixels (ffmpeg `-pix_fmt` matches) and strip row
+        // padding by whole rows only — usually a zero-copy move when packed.
         let width = raw_format.size().width as usize;
         let height = raw_format.size().height as usize;
         let bpp = format_bpp(raw_format.format()) as usize;

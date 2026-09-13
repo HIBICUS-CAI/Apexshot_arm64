@@ -137,7 +137,7 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
     };
 
     // Build ffmpeg command
-    // OBS parity: NVENC CQP > VAAPI QP > x264 CRF. All auto when HW present.
+    // Encoder preference: NVENC CQP > VAAPI QP > x264 CRF. All auto when HW present.
     let use_nvenc =
         super::wf_recorder::should_use_nvenc() && encoder_name != "libvpx-vp9" && encoder_name != "libvpx" && encoder_name != "libtheora";
     let use_vaapi = !use_nvenc && super::wf_recorder::should_use_vaapi();
@@ -208,7 +208,7 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
     let mut video_desc = String::from("unknown");
 
     if use_nvenc {
-        // OBS SimpleOutput UpdateRecordingSettings_nvenc: RC=CQP, profile high.
+        // NVENC recording settings: RC=CQP, profile high.
         let filter = wayland_video_filter(config.max_resolution);
         let (fit_w, fit_h) =
             super::fit_within_max_resolution(input_width, input_height, config.max_resolution);
@@ -232,6 +232,10 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             .arg("hq")
             .arg("-multipass")
             .arg("qres")
+            // Lookahead (8 frames) with adaptive I/B frames; without it motion
+            // re-allocates bits less smoothly.
+            .arg("-rc-lookahead")
+            .arg("8")
             .arg("-spatial-aq")
             .arg("1")
             .arg("-temporal-aq")
@@ -239,7 +243,22 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             .arg("-bf")
             .arg("2")
             .arg("-g")
-            .arg((fps * 2).to_string());
+            .arg((fps * 2).to_string())
+            // Match the bt709 conversion in the filter; untagged NVENC output
+            // makes players guess, which can wash the image out.
+            .arg("-color_range")
+            .arg("tv")
+            .arg("-colorspace")
+            .arg("bt709")
+            .arg("-color_primaries")
+            .arg("bt709")
+            .arg("-color_trc")
+            .arg("bt709")
+            // ffmpeg's nvenc wrapper drops transfer/primaries from the VUI.
+            // Players then guess wrong and lift blacks (cloudy playback), so
+            // rewrite the H.264 VUI so all four fields are tagged bt709/tv.
+            .arg("-bsf:v")
+            .arg("h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1");
         video_desc = format!("h264_nvenc CQP{cqp} preset=p5 tune=hq multipass=qres AQ");
     } else if use_vaapi {
         let (vaapi_width, vaapi_height) =
@@ -254,6 +273,18 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             ffmpeg_cmd.arg(arg);
         }
         ffmpeg_cmd.arg("-g").arg((fps * 2).to_string());
+        ffmpeg_cmd
+            .arg("-color_range")
+            .arg("tv")
+            .arg("-colorspace")
+            .arg("bt709")
+            .arg("-color_primaries")
+            .arg("bt709")
+            .arg("-color_trc")
+            .arg("bt709")
+            // Same VUI fix as NVENC: vaapi does not emit transfer/primaries.
+            .arg("-bsf:v")
+            .arg("h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1");
     } else {
         // Convert desktop RGBA (full-range RGB) to standard limited-range
         // YUV420P for broad MP4/player compatibility. Tagging H.264 as full
@@ -272,14 +303,14 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             .arg("-color_trc")
             .arg("iec61966-2-1");
         ffmpeg_cmd.arg("-c:v").arg(encoder_name);
-        // Sane defaults for screen recording (OBS SimpleOutput parity).
+        // Sane defaults for screen recording.
         if encoder_name == "libx264" {
             ffmpeg_cmd.arg("-preset").arg("veryfast");
             ffmpeg_cmd.arg("-profile:v").arg("high");
             ffmpeg_cmd.arg("-g").arg((fps * 2).to_string());
             ffmpeg_cmd.arg("-bf").arg("2");
-            // Resolution-compensated CRF like OBS: the tier base minus the
-            // output-size reduction, so capped resolutions stay sharp.
+            // Resolution-compensated CRF: the tier base minus the output-size
+            // reduction, so capped resolutions stay sharp.
             let (fit_w, fit_h) =
                 super::fit_within_max_resolution(input_width, input_height, config.max_resolution);
             let crf = config
@@ -303,7 +334,7 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             ffmpeg_cmd.arg("-allow_skip_frames").arg("0");
             video_desc = String::from("libopenh264 CBR 8M");
         } else if encoder_name == "libvpx-vp9" || encoder_name == "libvpx" {
-            // OBS/file-recording quality, not streaming realtime: deadline good,
+            // File-recording quality, not streaming realtime: deadline good,
             // cpu-used 2, CQ 20 (was realtime/6/CRF 32 = blurry).
             ffmpeg_cmd.arg("-b:v").arg("0");
             ffmpeg_cmd.arg("-crf").arg("20");
@@ -493,7 +524,7 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             continue;
         }
 
-        // Gate acquisition on cadence (OBS renders once per tick): acquiring
+        // Gate acquisition on cadence (one frame per tick): acquiring
         // and converting a full RGBA frame on every 1ms spin burns hundreds
         // of MiB/s of copies for frames that are overwritten before use.
         let now = std::time::Instant::now();
