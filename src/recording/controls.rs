@@ -342,6 +342,7 @@ pub fn prepare_overlay_recording_request(
         hidpi: request.hidpi,
         max_resolution,
         fps,
+        crf: super::crf_for_quality(app_config.rec_video_quality),
         mono_audio: request.record_mono,
         mic_enabled: request.mic,
         speaker_enabled: request.speaker,
@@ -774,12 +775,29 @@ pub fn run_overlay_recording_request_with_gtk(
         if let Some(params) = controls_params {
             runtime
                 .block_on(run_recording_with_controls_locked(recording_config, params))
-                .map_err(|err| anyhow::anyhow!("failed to run recording controls: {err}"))
+                .map_err(|err| {
+                    if err
+                        .downcast_ref::<super::RecordError>()
+                        .is_some_and(|e| matches!(e, super::RecordError::Cancelled))
+                    {
+                        err
+                    } else {
+                        anyhow::anyhow!("failed to run recording controls: {err}")
+                    }
+                })
         } else {
             runtime
                 .block_on(super::start_recording(recording_config))
                 .map(|path| (path, StopAction::Save))
-                .map_err(|err| anyhow::anyhow!("Recording failed: {err}"))
+                .map_err(|err| {
+                    // Preserve the type so the outcome handler below can tell
+                    // a portal-dialog cancel apart from a real failure.
+                    if matches!(err, super::RecordError::Cancelled) {
+                        anyhow::Error::from(err)
+                    } else {
+                        anyhow::anyhow!("Recording failed: {err}")
+                    }
+                })
         }
     })
     .join()
@@ -844,6 +862,13 @@ pub fn run_overlay_recording_request_with_gtk(
             Ok(path)
         }
         Err(err) => {
+            if err
+                .downcast_ref::<super::RecordError>()
+                .is_some_and(|e| matches!(e, super::RecordError::Cancelled))
+            {
+                eprintln!("[recording] Recording cancelled by user.");
+                return Err(err);
+            }
             crate::gnome_shell::hide_recording_mask_best_effort();
             super::notify_recording_session_ended_best_effort();
             crate::utils::notify::desktop_notification(

@@ -19,6 +19,19 @@ pub(in crate::recording) struct WaylandSource {
 const RECORDING_RESTORE_TOKEN_FILES: &[&str] =
     &["wayland-record-screen.token", "wayland-record-area.token"];
 
+// Dismissing the system dialog is a user cancel, not a failure — callers
+// skip the "recording failed" notification for it.
+fn portal_err(e: ashpd::Error) -> RecordError {
+    if matches!(
+        e,
+        ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled)
+    ) {
+        RecordError::Cancelled
+    } else {
+        RecordError::PortalError(e.to_string())
+    }
+}
+
 /// Older builds saved ScreenCast restore tokens and used `PersistMode::ExplicitlyRevoked`,
 /// which shows GNOME's "Remember this choice" checkbox and locks later recordings
 /// to the last window/screen. Recording never restores now.
@@ -117,7 +130,7 @@ pub(in crate::recording) async fn get_wayland_source(
         let session = proxy
             .create_session(CreateSessionOptions::default())
             .await
-            .map_err(|e| RecordError::PortalError(e.to_string()))?;
+            .map_err(portal_err)?;
         let setup_guard = OwnedPortalSession::new(conn, session);
 
         // Recording is monitors-only (quick capture disables Window in Video
@@ -138,9 +151,9 @@ pub(in crate::recording) async fn get_wayland_source(
                     .set_persist_mode(PersistMode::DoNot),
             )
             .await
-            .map_err(|e| RecordError::PortalError(e.to_string()))?
+            .map_err(portal_err)?
             .response()
-            .map_err(|e| RecordError::PortalError(e.to_string()))?;
+            .map_err(portal_err)?;
 
         if wants_area_crop {
             println!("Please select the monitor containing the recording area...");
@@ -151,9 +164,9 @@ pub(in crate::recording) async fn get_wayland_source(
         let response = proxy
             .start(setup_guard.as_session(), None, StartCastOptions::default())
             .await
-            .map_err(|e| RecordError::PortalError(e.to_string()))?
+            .map_err(portal_err)?
             .response()
-            .map_err(|e| RecordError::PortalError(e.to_string()))?;
+            .map_err(portal_err)?;
 
         let pipewire_fd = proxy
             .open_pipe_wire_remote(
@@ -245,4 +258,23 @@ fn get_kde_wayland_source(config: &RecordingConfig) -> RecordResult<WaylandSourc
         crop: None,
         session: Some(WaylandCaptureSession::KdeNative(Box::new(handle))),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portal_dialog_dismissal_maps_to_cancel_not_failure() {
+        assert!(matches!(
+            portal_err(ashpd::Error::Response(
+                ashpd::desktop::ResponseError::Cancelled
+            )),
+            RecordError::Cancelled
+        ));
+        assert!(matches!(
+            portal_err(ashpd::Error::Response(ashpd::desktop::ResponseError::Other)),
+            RecordError::PortalError(_)
+        ));
+    }
 }

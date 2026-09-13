@@ -226,7 +226,14 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
         // Sane defaults for screen recording.
         if encoder_name == "libx264" {
             ffmpeg_cmd.arg("-preset").arg("veryfast");
-            ffmpeg_cmd.arg("-crf").arg("23");
+            ffmpeg_cmd.arg("-crf").arg(config.crf.to_string());
+            // x264 sets VUI color metadata from its own params, ignoring
+            // ffmpeg's -color_* output options — pass them explicitly so the
+            // transfer/primaries tags actually land in the file. Strict
+            // players otherwise guess, which can wash the image out.
+            ffmpeg_cmd
+                .arg("-x264-params")
+                .arg("colorprim=bt709:transfer=iec61966-2-1:colormatrix=bt709");
         } else if encoder_name == "libopenh264" {
             // Fedora ffmpeg-free ships OpenH264 (no libx264). CRF is not
             // supported; use a solid CBR-ish bitrate for desktop capture.

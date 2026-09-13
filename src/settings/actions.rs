@@ -52,6 +52,7 @@ pub struct SaveInputs {
     pub rec_countdown: CheckButton,
     pub rec_video_max_res: SettingsSelect,
     pub rec_video_fps: SettingsSelect,
+    pub rec_video_quality: SettingsSelect,
     pub rec_video_mono: CheckButton,
     pub screenshot_quick_access: CheckButton,
     pub screenshot_copy_to_clipboard: CheckButton,
@@ -194,6 +195,11 @@ pub fn save_settings(inputs: &SaveInputs) -> anyhow::Result<SaveOutcome> {
         .unwrap_or(0);
     config.rec_video_fps = inputs
         .rec_video_fps
+        .active_id()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1);
+    config.rec_video_quality = inputs
+        .rec_video_quality
         .active_id()
         .and_then(|value| value.parse().ok())
         .unwrap_or(1);

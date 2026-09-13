@@ -62,6 +62,8 @@ pub struct AppConfig {
     pub rec_video_format: u8,
     pub rec_video_max_res: u8,
     pub rec_video_fps: u8,
+    /// 0 = Balanced (CRF 23), 1 = High (CRF 20), 2 = Ultra (CRF 17).
+    pub rec_video_quality: u8,
     pub rec_video_mono: bool,
     pub rec_video_open_editor: bool,
     /// webrtcdsp noise suppression on the recording mic (GStreamer audio path).
@@ -202,6 +204,7 @@ impl Default for AppConfig {
             rec_video_format: 0,  // 0 = MP4
             rec_video_max_res: 0, // 0 = Original
             rec_video_fps: 1,     // 1 = 30fps
+            rec_video_quality: 1, // 1 = High
             rec_video_mono: false,
             rec_video_open_editor: false,
             rec_noise_suppression: false,

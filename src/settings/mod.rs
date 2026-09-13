@@ -543,6 +543,7 @@ fn build_settings_window(app: &Application) {
         rec_countdown: recordings.rec_countdown.clone(),
         rec_video_max_res: recordings.rec_video_max_res.clone(),
         rec_video_fps: recordings.rec_video_fps.clone(),
+        rec_video_quality: recordings.rec_video_quality.clone(),
         rec_video_mono: recordings.rec_video_mono.clone(),
         screenshot_quick_access: after_capture.screenshot_after_capture_checks[0].clone(),
         screenshot_copy_to_clipboard: after_capture.screenshot_after_capture_checks[1].clone(),
@@ -764,6 +765,7 @@ fn install_save_dirty_tracking(inputs: &Rc<SaveInputs>, mark_dirty: Rc<dyn Fn()>
     wire_check(&inputs.rec_countdown);
     wire_combo(&inputs.rec_video_max_res);
     wire_combo(&inputs.rec_video_fps);
+    wire_combo(&inputs.rec_video_quality);
     wire_check(&inputs.rec_video_mono);
     wire_check(&inputs.screenshot_quick_access);
     wire_check(&inputs.screenshot_copy_to_clipboard);

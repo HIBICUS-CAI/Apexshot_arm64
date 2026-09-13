@@ -144,6 +144,8 @@ pub struct RecordingConfig {
     // Video tab settings
     pub max_resolution: Option<(u32, u32)>,
     pub fps: u32,
+    /// x264 CRF from Settings → quality tier (OBS range 16–23).
+    pub crf: u32,
     pub mono_audio: bool,
     pub mic_enabled: bool,
     pub speaker_enabled: bool,
@@ -212,6 +214,7 @@ impl Default for RecordingConfig {
             hidpi: true,
             max_resolution: None,
             fps: 30,
+            crf: 20,
             mono_audio: false,
             mic_enabled: false,
             speaker_enabled: false,
@@ -263,6 +266,7 @@ impl RecordingConfig {
             hidpi: app_config.rec_hidpi,
             max_resolution,
             fps,
+            crf: crf_for_quality(app_config.rec_video_quality),
             mono_audio: app_config.rec_video_mono,
             mic_enabled: false,
             speaker_enabled: false,
@@ -270,6 +274,16 @@ impl RecordingConfig {
             speaker_source: None,
             noise_suppression: app_config.rec_noise_suppression,
         }
+    }
+}
+
+/// x264 CRF for a Settings quality tier, inside OBS's recommended 16–23
+/// recording range. Lower is sharper at the cost of file size.
+pub fn crf_for_quality(tier: u8) -> u32 {
+    match tier {
+        0 => 23, // Balanced
+        2 => 17, // Ultra
+        _ => 20, // High (default)
     }
 }
 
@@ -450,6 +464,24 @@ mod tests {
             PathBuf::from("/mnt/media/apexshot/Clip 2026-07-12 11-00-49.mp4")
         );
         assert!(!path.to_string_lossy().contains("output.mp4"));
+    }
+
+    #[test]
+    fn quality_tier_maps_to_obs_crf_range() {
+        assert_eq!(crf_for_quality(0), 23);
+        assert_eq!(crf_for_quality(1), 20);
+        assert_eq!(crf_for_quality(2), 17);
+        assert_eq!(crf_for_quality(9), 20);
+        let mut app = AppConfig::default();
+        app.rec_video_quality = 2;
+        let config = RecordingConfig::from_app_config_at(
+            &app,
+            "mp4",
+            chrono::Utc
+                .with_ymd_and_hms(2026, 7, 12, 11, 0, 49)
+                .unwrap(),
+        );
+        assert_eq!(config.crf, 17);
     }
 
     #[test]

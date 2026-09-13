@@ -179,6 +179,7 @@ mod tests {
             hidpi: false,
             max_resolution: None,
             fps: 30,
+            crf: 20,
             mono_audio: false,
             mic_enabled: false,
             speaker_enabled: false,

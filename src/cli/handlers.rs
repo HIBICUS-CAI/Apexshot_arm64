@@ -11,8 +11,8 @@ use apexshot::{
     ocr::{extract_text_from_capture, extract_text_from_path, ContentSource, OcrConfig, OcrOutput},
     preview_launch::{launch_preview_on_display, show_preview_direct_on_display},
     recording::{
-        run_recording_with_controls, start_recording, RecordingConfig, RecordingControlsParams,
-        StopAction,
+        run_recording_with_controls, start_recording, RecordError, RecordingConfig,
+        RecordingControlsParams, StopAction,
     },
 };
 use std::path::PathBuf;
@@ -698,11 +698,18 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
             session_id: None,
         };
 
-        let controls_outcome = run_recording_with_controls(config, params)
-            .await
-            .map_err(|e| {
+        let controls_outcome = match run_recording_with_controls(config, params).await {
+            Err(e)
+                if e.downcast_ref::<RecordError>()
+                    .is_some_and(|e| matches!(e, RecordError::Cancelled)) =>
+            {
+                eprintln!("Recording cancelled.");
+                return Ok(());
+            }
+            other => other.map_err(|e| {
                 Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
-            })?;
+            })?,
+        };
 
         match controls_outcome {
             (path, StopAction::Discard) => {
@@ -715,9 +722,13 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
             }
         }
     } else {
-        start_recording(config)
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
+        match start_recording(config).await {
+            Err(RecordError::Cancelled) => {
+                eprintln!("Recording cancelled.");
+                return Ok(());
+            }
+            other => other.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?,
+        }
     };
 
     Ok(())
