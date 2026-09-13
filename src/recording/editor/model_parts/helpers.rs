@@ -289,7 +289,7 @@ pub fn card_depth(hw: f64, hh: f64, perspective: f64) -> f64 {
     // the card's half diagonal as the film-size reference so the same value
     // has comparable yaw and pitch on wide, square, and portrait captures.
     // This is ApexShot's aspect-invariant focal heuristic. The corresponding
-    // Shotbase CIPerspectiveTransform parameter construction is not inferred
+    // CIPerspectiveTransform parameter construction is not inferred
     // from this value.
     let half_diagonal = hw.hypot(hh).max(1.0);
     half_diagonal * (2.44 - perspective.clamp(0.0, 1.0) * 1.30).max(1.15)

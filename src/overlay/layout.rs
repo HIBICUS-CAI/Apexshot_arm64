@@ -15,6 +15,9 @@ pub(crate) const FEATURE_PANEL_HEIGHT: f64 = 62.0;
 pub(crate) const FEATURE_PANEL_RADIUS: f64 = 13.0;
 pub(crate) const FEATURE_PANEL_TOP_GAP: f64 = 12.0;
 pub(crate) const FEATURE_PANEL_MARGIN: f64 = 16.0;
+/// Keep bottom-anchored chrome above the app dock, mirroring BOTTOM_LIFT in
+/// capture-overlay/src/WindowPickerOverlay.cpp.
+pub(crate) const DOCK_LIFT: f64 = 76.0;
 pub(crate) const TOOL_RAIL_GAP: f64 = 18.0;
 pub(crate) const ACTION_CARD_GAP: f64 = 8.0;
 pub(crate) const SIZE_CARD_WIDTH: f64 = 152.0;
@@ -81,7 +84,8 @@ pub(crate) fn compute_toolbar_layout(
     let tool_x = (selection_x - TOOL_RAIL_GAP - FEATURE_PANEL_ITEM_WIDTH).max(FEATURE_PANEL_MARGIN);
     let tool_y = (center_y - tool_panel_height / 2.0).clamp(
         FEATURE_PANEL_MARGIN,
-        (screen_height - tool_panel_height - FEATURE_PANEL_MARGIN).max(FEATURE_PANEL_MARGIN),
+        (screen_height - tool_panel_height - FEATURE_PANEL_MARGIN - DOCK_LIFT)
+            .max(FEATURE_PANEL_MARGIN),
     );
 
     let tools_panel = RectF {
@@ -98,7 +102,8 @@ pub(crate) fn compute_toolbar_layout(
     );
     let top_y = (selection_y - FEATURE_PANEL_TOP_GAP - SIZE_CARD_HEIGHT).clamp(
         FEATURE_PANEL_MARGIN,
-        (screen_height - SIZE_CARD_HEIGHT - FEATURE_PANEL_MARGIN).max(FEATURE_PANEL_MARGIN),
+        (screen_height - SIZE_CARD_HEIGHT - FEATURE_PANEL_MARGIN - DOCK_LIFT)
+            .max(FEATURE_PANEL_MARGIN),
     );
 
     let size_panel = RectF {
@@ -144,8 +149,8 @@ pub(crate) fn compute_aspect_menu_rects(
     let menu_h = (ASPECT_RATIO_OPTIONS.len() as f64 * item_h) + 10.0;
     let menu_x = (anchor_rect.x + anchor_rect.width / 2.0 - menu_w / 2.0)
         .clamp(10.0, screen_width - menu_w - 10.0);
-    let menu_y =
-        (anchor_rect.y + anchor_rect.height + 8.0).clamp(10.0, screen_height - menu_h - 10.0);
+    let menu_y = (anchor_rect.y + anchor_rect.height + 8.0)
+        .clamp(10.0, screen_height - menu_h - 10.0 - DOCK_LIFT);
     let panel_rect = RectF {
         x: menu_x,
         y: menu_y,
@@ -265,7 +270,7 @@ pub(crate) fn compute_volume_popup_layout(
     let menu_w = VOLUME_POPUP_WIDTH;
     let menu_h = VOLUME_POPUP_HEIGHT;
     let max_x = (screen_width - menu_w - 10.0).max(10.0);
-    let max_y = (screen_height - menu_h - 10.0).max(10.0);
+    let max_y = (screen_height - menu_h - 10.0 - DOCK_LIFT).max(10.0);
     let right_x = selection_x + selection_width + VOLUME_POPUP_GAP;
     let left_x = selection_x - VOLUME_POPUP_GAP - menu_w;
     let menu_x = if right_x <= max_x {
@@ -317,7 +322,7 @@ pub(crate) fn compute_settings_menu_layout(
     let menu_w = SETTINGS_MENU_WIDTH;
     let menu_h = SETTINGS_MENU_HEIGHT;
     let menu_x = (selection_x + (selection_width - menu_w) / 2.0).clamp(10.0, screen_width - 450.0);
-    let menu_y = (selection_y + 24.0).clamp(10.0, screen_height - menu_h - 10.0);
+    let menu_y = (selection_y + 24.0).clamp(10.0, screen_height - menu_h - 10.0 - DOCK_LIFT);
     SettingsMenuLayout {
         panel: RectF {
             x: menu_x,

@@ -38,7 +38,7 @@ support.
 
 | Workflow | ApexShot support |
 |---|---|
-| ShareX-style capture | Full screen, area, window, and crosshair screenshots |
+| Screen capture | Full screen, area, window, and crosshair screenshots |
 | Annotation and editing | Arrows, shapes, text, blur, pixelate, crop, highlighter, and color picker |
 | Screen recording | Area or full-screen recording with MP4/GIF output, audio monitoring, countdown, and controls (**not supported on Fedora**) |
 | Video editing | Trim, convert dimensions, adjust quality, and change audio mode for MP4 recordings |

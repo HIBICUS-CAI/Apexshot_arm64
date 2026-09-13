@@ -121,7 +121,7 @@ fn paint_motion_watermark(
 }
 
 /// Paint the selected Scene Shadows preset across the scene rectangle.
-/// Shotbase names distinct overlay and underlay shadow render layers; the
+/// Distinct overlay and underlay shadow render layers; the
 /// `underlay` pass draws beneath the card, the overlay pass above card and
 /// titles but below the watermark. Presets are procedural shading rather
 /// than image assets, so preview and export share this one painter.

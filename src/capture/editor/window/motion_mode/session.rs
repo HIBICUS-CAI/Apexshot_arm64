@@ -239,7 +239,7 @@ impl MotionSession {
         runtime.hover_time = None;
         runtime.hover_track = None;
         runtime.reset_motion_history();
-        // Shotbase enters Motion with an empty effects track; clips appear
+        // Motion starts with an empty effects track; clips appear
         // when the user clicks or drags the timeline.
     }
 

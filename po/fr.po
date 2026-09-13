@@ -2375,3 +2375,15 @@ msgstr "Annuler"
 
 msgid "Bounce"
 msgstr "Rebond"
+
+msgid "Custom"
+msgstr "Personnalisé"
+
+msgid "Gentle"
+msgstr "Doux"
+
+msgid "Bouncy"
+msgstr "Rebondissant"
+
+msgid "Spring"
+msgstr "Ressort"

@@ -2330,3 +2330,15 @@ msgstr "元に戻す"
 
 msgid "Bounce"
 msgstr "バウンス"
+
+msgid "Custom"
+msgstr "カスタム"
+
+msgid "Gentle"
+msgstr "やわらか"
+
+msgid "Bouncy"
+msgstr "弾む"
+
+msgid "Spring"
+msgstr "スプリング"

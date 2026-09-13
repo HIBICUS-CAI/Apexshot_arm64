@@ -1386,6 +1386,21 @@ fn spring_bounce_reads_as_the_first_overshoot() {
 }
 
 #[test]
+fn default_spring_preset_is_a_soft_settle_not_a_bounce() {
+    let timing = MotionEffectTransformTiming {
+        kind: MotionTimingKind::Spring,
+        ..MotionEffectTransformTiming::default()
+    };
+    let peak = (0..=1000)
+        .map(|index| timing.apply(index as f64 / 1000.0))
+        .fold(f64::MIN, f64::max);
+    assert!(
+        (peak - 1.05).abs() < 0.02,
+        "the default spring should round off about 5% past the target, got {peak}"
+    );
+}
+
+#[test]
 fn timing_is_per_clip_and_new_clips_inherit_the_selected_curve() {
     let mut motion = MotionState::default();
     motion.add_segment_at(0.0).expect("first clip");
@@ -1414,7 +1429,7 @@ fn timing_is_per_clip_and_new_clips_inherit_the_selected_curve() {
 }
 
 #[test]
-fn motion_blur_uses_recovered_shotbase_setting_bounds() {
+fn motion_blur_uses_recovered_setting_bounds() {
     let settings = MotionBlurSettings {
         cursor_strength: 50.0,
         zoom_strength: 50.0,

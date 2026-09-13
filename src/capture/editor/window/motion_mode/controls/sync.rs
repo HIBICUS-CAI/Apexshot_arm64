@@ -60,8 +60,9 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let ease_slider = parts.transform.ease_slider.clone();
     let ease_value = parts.transform.ease_value.clone();
     let timing_kind_buttons = parts.transform.timing_kind_buttons.clone();
-    let ease_timing_rows = parts.transform.ease_timing_rows.clone();
-    let spring_timing_rows = parts.transform.spring_timing_rows.clone();
+    let custom_timing_btn = parts.transform.custom_timing_btn.clone();
+    let custom_easing_rows = parts.transform.custom_easing_rows.clone();
+    let custom_spring_rows = parts.transform.custom_spring_rows.clone();
     let spring_bounce_slider = parts.transform.spring_bounce_slider.clone();
     let spring_bounce_value = parts.transform.spring_bounce_value.clone();
     let easing_x1_slider = parts.transform.easing_x1_slider.clone();
@@ -72,7 +73,6 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let easing_x2_value = parts.transform.easing_x2_value.clone();
     let easing_y2_slider = parts.transform.easing_y2_slider.clone();
     let easing_y2_value = parts.transform.easing_y2_value.clone();
-    let reset_timing_btn = parts.transform.reset_timing_btn.clone();
     let delete_btn = parts.shared.delete_btn.clone();
     let syncing = parts.shared.inspector_syncing.clone();
     Rc::new(move || {
@@ -122,13 +122,17 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         for (kind, button) in &timing_kind_buttons {
             button.set_active(*kind == transform_timing.kind);
         }
-        ease_timing_rows.set_visible(transform_timing.kind == MotionTimingKind::Ease);
-        spring_timing_rows.set_visible(transform_timing.kind == MotionTimingKind::Spring);
+        // Custom discloses the sliders for whichever family is active.
+        custom_easing_rows.set_visible(
+            transform_timing.kind == MotionTimingKind::Ease && custom_timing_btn.is_active(),
+        );
+        custom_spring_rows.set_visible(
+            transform_timing.kind == MotionTimingKind::Spring && custom_timing_btn.is_active(),
+        );
         spring_bounce_slider.set_value(transform_timing.spring_bounce);
         spring_bounce_value.set_label(&format!("{:.0}%", transform_timing.spring_bounce * 100.0));
         let has_clip = selected.is_some();
         let has_text = selected_text.is_some();
-        reset_timing_btn.set_sensitive(has_clip);
         clip_box.set_visible(has_clip);
         text_box.set_visible(has_text);
         clip_hint.set_visible(!has_clip && !has_text);

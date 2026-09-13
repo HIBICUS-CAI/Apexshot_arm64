@@ -111,7 +111,10 @@ pub(crate) fn draw_settings_menu(
     let menu_w = crate::overlay::layout::SETTINGS_MENU_WIDTH;
     let menu_h = crate::overlay::layout::SETTINGS_MENU_HEIGHT;
     let menu_x = panel_x.clamp(10.0, screen_width - menu_w - 10.0);
-    let menu_y = panel_y.clamp(10.0, screen_height - menu_h - 10.0);
+    let menu_y = panel_y.clamp(
+        10.0,
+        screen_height - menu_h - 10.0 - crate::overlay::layout::DOCK_LIFT,
+    );
 
     let accent_r = 176.0 / 255.0;
     let accent_g = 92.0 / 255.0;

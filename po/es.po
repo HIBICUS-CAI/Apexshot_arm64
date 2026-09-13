@@ -2371,3 +2371,15 @@ msgstr "Deshacer"
 
 msgid "Bounce"
 msgstr "Rebote"
+
+msgid "Custom"
+msgstr "Personalizado"
+
+msgid "Gentle"
+msgstr "Suave"
+
+msgid "Bouncy"
+msgstr "Saltarín"
+
+msgid "Spring"
+msgstr "Resorte"

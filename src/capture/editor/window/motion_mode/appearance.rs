@@ -21,10 +21,8 @@ use super::widgets::{
 };
 use super::MotionSession;
 
-/// Two-stop gradient presets for Motion backgrounds. Shotbase ships a
-/// gradient-preset model (`selectedGradientPresetIndex`) whose exact visuals
-/// are not recoverable from the binary, so these are Apexshot's own presets;
-/// selecting one copies its stops into the editable gradient colors.
+/// Two-stop gradient presets for Motion backgrounds. Selecting one
+/// copies its stops into the editable gradient colors.
 const MOTION_GRADIENT_PRESETS: [(&str, [f64; 4], [f64; 4]); 8] = [
     ("Dusk", [0.10, 0.14, 0.30, 1.0], [0.45, 0.22, 0.55, 1.0]),
     ("Sunset", [0.98, 0.55, 0.30, 1.0], [0.88, 0.28, 0.48, 1.0]),
@@ -137,8 +135,8 @@ fn motion_gradient_preset_area(start: [f64; 4], end: [f64; 4]) -> DrawingArea {
     area
 }
 
-/// Shotbase keeps Motion appearance as a scene-level inspector rather than an
-/// animation clip.  The five fill controls map one-to-one to the recovered
+/// Motion appearance is a scene-level inspector rather than an
+/// animation clip. The five fill controls map one-to-one to the
 /// `BackgroundFillType` cases and only mutate the compositor state.
 pub(super) fn build_motion_appearance_panel(
     window: &ApplicationWindow,
@@ -639,7 +637,7 @@ pub(super) fn build_motion_appearance_panel(
     border_section.append(&radius.widget());
     root.append(&border_section);
 
-    // Shotbase's Frame section: an independent layer with its own persisted
+    // Frame section: an independent layer with its own persisted
     // preset id, not an Appearance field. Standard keeps the original canvas;
     // the other presets re-fit the scene into a centered social format.
     let frame_section = motion_appearance_section("Frame");
@@ -725,10 +723,10 @@ pub(super) fn build_motion_appearance_panel(
     frame_section.append(&frame_rows);
     root.append(&frame_section);
 
-    // Shotbase's Scene Shadows: an independent overlay layer with its own
+    // Scene Shadows: an independent overlay layer with its own
     // preset id, opacity, and above/below-card placement — deliberately not
-    // the card's Border/Shadow drop shadow. The presets are Apexshot's own
-    // procedural shading because Shotbase's assets are not recoverable.
+    // the card's Border/Shadow drop shadow. The presets are procedural
+    // shading.
     let scene_shadow_section = motion_appearance_section("Scene Shadows");
     // Exports render an unset background fill as a solid black scene, so a
     // dark shadow over it cannot be seen. Say so instead of leaving users to

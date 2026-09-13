@@ -1,7 +1,9 @@
 use gtk4::prelude::*;
+use gtk4::ToggleButton;
 
-use crate::recording::editor::model::MotionEffectTransformTiming;
+use crate::recording::editor::model::MotionTimingKind;
 
+use super::super::widgets::{ease_preset_timing, spring_preset_timing};
 use super::super::{MotionModeParts, MotionSession};
 use super::{Redraw, RequestLivePreview, RequestTransitionPreview};
 
@@ -428,16 +430,13 @@ pub(super) fn install(
 
     for (kind, button) in &parts.transform.timing_kind_buttons {
         let kind = *kind;
-        button.connect_toggled({
+        button.connect_clicked({
             let session = session.runtime.clone();
             let redraw = redraw.clone();
             let request_transition_preview = request_transition_preview.clone();
             let request_live_preview = request_live_preview.clone();
-            let syncing = parts.shared.inspector_syncing.clone();
-            move |button| {
-                if syncing.get() || !button.is_active() {
-                    return;
-                }
+            let custom_timing_btn = parts.transform.custom_timing_btn.clone();
+            move |_| {
                 let segment_start = {
                     let runtime = session.borrow();
                     runtime
@@ -448,12 +447,22 @@ pub(super) fn install(
                 {
                     let mut runtime = session.borrow_mut();
                     runtime.begin_motion_edit();
-                    let mut timing = runtime.motion.selected_transform_timing();
-                    timing.kind = kind;
+                    // Each family button applies the curve its icon previews
+                    // (S for Ease, Gentle for Spring). Clicked, not toggled,
+                    // so re-clicking an active family still converges the
+                    // curve — e.g. a default clip onto the S.
+                    let current = runtime.motion.selected_transform_timing();
+                    let timing = match kind {
+                        MotionTimingKind::Ease => {
+                            let mut preset = ease_preset_timing(0, current);
+                            preset.kind = MotionTimingKind::Ease;
+                            preset
+                        }
+                        MotionTimingKind::Spring => spring_preset_timing(1, current),
+                    };
                     runtime.motion.set_transform_timing(timing);
                 }
-                // Swap the inspector rows immediately; the preview then
-                // replays the clip on the new curve.
+                custom_timing_btn.set_active(false);
                 redraw();
                 match segment_start {
                     Some(start) => request_transition_preview(start),
@@ -462,6 +471,17 @@ pub(super) fn install(
             }
         });
     }
+
+    parts.transform.custom_timing_btn.connect_toggled({
+        let redraw = redraw.clone();
+        let syncing = parts.shared.inspector_syncing.clone();
+        move |_: &ToggleButton| {
+            if syncing.get() {
+                return;
+            }
+            redraw();
+        }
+    });
 
     parts.transform.spring_bounce_slider.connect_value_changed({
         let session = session.runtime.clone();
@@ -492,32 +512,6 @@ pub(super) fn install(
             match segment_start {
                 Some(start) => request_transition_preview(start),
                 None => request_live_preview(),
-            }
-        }
-    });
-
-    parts.transform.reset_timing_btn.connect_clicked({
-        let session = session.runtime.clone();
-        let redraw = redraw.clone();
-        let request_transition_preview = request_transition_preview.clone();
-        move |_| {
-            let segment_start = {
-                let runtime = session.borrow();
-                runtime
-                    .motion
-                    .selected_segment()
-                    .map(|segment| segment.start)
-            };
-            {
-                let mut runtime = session.borrow_mut();
-                runtime.begin_motion_edit();
-                runtime
-                    .motion
-                    .set_transform_timing(MotionEffectTransformTiming::default());
-            }
-            match segment_start {
-                Some(start) => request_transition_preview(start),
-                None => redraw(),
             }
         }
     });

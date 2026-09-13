@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum MotionBackgroundFillType {
-    /// Shotbase renders this as black in Motion, rather than transparency.
+    /// Motion renders this as black, rather than transparency.
     #[default]
     None,
     Color,
@@ -9,7 +9,7 @@ pub enum MotionBackgroundFillType {
     Image,
 }
 
-/// The scene fields carried by Shotbase's Motion appearance model.  This is
+/// The scene fields carried by the Motion appearance model.  This is
 /// deliberately separate from the animated card transform: the background is
 /// a compositor layer, shared by preview and export.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,8 +38,8 @@ impl Default for MotionAppearance {
     fn default() -> Self {
         Self {
             // Preserve the established Motion card framing until the user
-            // changes it; unlike the fill, Shotbase's binary does not expose
-            // a recoverable numeric default for this field.
+            // changes it; unlike the fill, there is no recoverable numeric
+            // default for this field.
             background_padding: 96.0,
             background_fill_type: MotionBackgroundFillType::None,
             background_color: [0.0, 0.0, 0.0, 1.0],
@@ -63,7 +63,7 @@ impl Default for MotionAppearance {
 }
 
 /// A separately composited image layer for capture-image Motion.  The source
-/// is intentionally kept out of `MotionAppearance`: Shotbase carries a
+/// is intentionally kept out of `MotionAppearance`: the model carries a
 /// dedicated watermark snapshot rather than treating it as card decoration.
 ///
 /// ApexShot stores normalized card-space values so one watermark setup has the
@@ -92,7 +92,7 @@ impl Default for MotionWatermark {
     }
 }
 
-/// Shotbase's image-Motion `framePresetId` section with recovered labels
+/// The image-Motion `framePresetId` section with recovered labels
 /// Standard, Instagram, X (Twitter), and YouTube. The binary does not expose
 /// the presets' dimensions or safe areas, so the output aspects below are
 /// Apexshot design decisions: each preset re-fits the Motion scene into a
@@ -119,14 +119,14 @@ impl MotionFramePreset {
     }
 }
 
-/// A separately persisted Frame layer, matching Shotbase's own
+/// A separately persisted Frame layer, matching the
 /// `frameSnapshot` contract rather than a field of the Appearance scene.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MotionFrame {
     pub preset: MotionFramePreset,
 }
 
-/// Shotbase's `sceneShadowPresetId` concept. Its shipped `Shadow-01` …
+/// The `sceneShadowPresetId` concept. Its shipped `Shadow-01` …
 /// `Shadow-14` assets are not recoverable, so the shapes below are Apexshot's
 /// own procedurally drawn shading presets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -165,7 +165,7 @@ impl MotionSceneShadowPreset {
     }
 }
 
-/// Shotbase stores a scene-shadow `placement` with distinct `Shadow-Overlay`
+/// The scene shadow stores a `placement` with distinct `Shadow-Overlay`
 /// and `Shadow-Underlay` render layers; their enum values were not recovered,
 /// so the above/below-card split below is the Apexshot interpretation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -175,7 +175,7 @@ pub enum MotionSceneShadowPlacement {
     Overlay,
 }
 
-/// A separately persisted Scene Shadows layer, matching Shotbase's
+/// A separately persisted Scene Shadows layer, matching the
 /// `sceneShadowSnapshot` contract: preset id, opacity, and placement. This is
 /// deliberately not an extension of the card's drop shadow.
 #[derive(Debug, Clone, PartialEq)]
@@ -200,7 +200,7 @@ pub struct MotionState {
     pub duration: f64,
     pub segments: Vec<MotionSegment>,
     pub playhead: f64,
-    /// Shotbase's compositor-level `perspectiveIntensity`. It is deliberately
+    /// The compositor-level `perspectiveIntensity`. It is deliberately
     /// independent of timed effect segments so every camera move shares one
     /// projection depth.
     pub perspective_intensity: f64,

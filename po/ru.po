@@ -2366,3 +2366,15 @@ msgstr "Отменить"
 
 msgid "Bounce"
 msgstr "Отскок"
+
+msgid "Custom"
+msgstr "Свой"
+
+msgid "Gentle"
+msgstr "Мягкий"
+
+msgid "Bouncy"
+msgstr "Упругий"
+
+msgid "Spring"
+msgstr "Пружина"

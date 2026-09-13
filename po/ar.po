@@ -2346,3 +2346,15 @@ msgstr "تراجع"
 
 msgid "Bounce"
 msgstr "ارتداد"
+
+msgid "Custom"
+msgstr "مخصص"
+
+msgid "Gentle"
+msgstr "لطيف"
+
+msgid "Bouncy"
+msgstr "مرتد"
+
+msgid "Spring"
+msgstr "زنبرك"

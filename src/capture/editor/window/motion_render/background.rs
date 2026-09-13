@@ -31,7 +31,7 @@ fn paint_backdrop(
         None
     };
     // The preview shows the plain checkerboard until a fill is chosen;
-    // Shotbase's black scene for an unset fill only applies to exports.
+    // the black scene for an unset fill only applies to exports.
     if checkerboard
         && matches!(
             appearance.background_fill_type,
@@ -46,7 +46,7 @@ fn paint_backdrop(
         context.clip();
     }
     match appearance.background_fill_type {
-        // Shotbase's explicit Motion-mode rule: None is a black scene, not
+        // Explicit Motion-mode rule: None is a black scene, not
         // the editor's transparent checkerboard.
         MotionBackgroundFillType::None => {
             context.set_source_rgb(0.0, 0.0, 0.0);

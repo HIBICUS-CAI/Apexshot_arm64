@@ -2366,3 +2366,15 @@ msgstr "Desfazer"
 
 msgid "Bounce"
 msgstr "Rebote"
+
+msgid "Custom"
+msgstr "Personalizado"
+
+msgid "Gentle"
+msgstr "Suave"
+
+msgid "Bouncy"
+msgstr "Saltitante"
+
+msgid "Spring"
+msgstr "Mola"

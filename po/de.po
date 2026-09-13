@@ -2377,3 +2377,15 @@ msgstr "Rückgängig"
 
 msgid "Bounce"
 msgstr "Federung"
+
+msgid "Custom"
+msgstr "Benutzerdefiniert"
+
+msgid "Gentle"
+msgstr "Sanft"
+
+msgid "Bouncy"
+msgstr "Federnd"
+
+msgid "Spring"
+msgstr "Feder"

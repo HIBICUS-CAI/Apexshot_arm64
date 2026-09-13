@@ -115,7 +115,7 @@ impl MotionHost {
             watermark_tab_btn: watermark_tab_btn.clone(),
         });
         // One notch button per Motion tool; the table keeps the next
-        // Shotbase tab (Cursor, Camera, Audio, Frame, …) to a one-line addition.
+        // tab (Cursor, Camera, Audio, Frame, …) to a one-line addition.
         let tool_tabs: [(Button, &str); 3] = [
             (motion_tab_btn.clone(), "motion"),
             (appearance_tab_btn.clone(), "motion-appearance"),

@@ -1,13 +1,13 @@
 pub const DEFAULT_MOTION_DURATION_SECONDS: f64 = 6.0;
 pub const MIN_MOTION_DURATION_SECONDS: f64 = 1.0;
 pub const MAX_MOTION_DURATION_SECONDS: f64 = 10.0;
-/// Shotbase's `MotionEffectDefaults`: a new move targets 200% zoom, and the
+/// A new move targets 200% zoom, and the
 /// remembered value is clamped to the 100%..400% range.
 pub const DEFAULT_MOTION_ZOOM: f64 = 2.0;
 pub const MIN_MOTION_ZOOM: f64 = 1.0;
 pub const MAX_MOTION_ZOOM: f64 = 4.0;
 pub const DEFAULT_MOTION_END_PERSPECTIVE: f64 = 0.18;
-/// Recovered from Shotbase's Motion transform-timing editor defaults.
+/// Recovered transform-timing editor defaults.
 pub const DEFAULT_MOTION_TRANSITION_SECONDS: f64 = 1.2;
 pub const DEFAULT_MOTION_EASING_X1: f64 = 0.25;
 pub const DEFAULT_MOTION_EASING_Y1: f64 = 1.0;
@@ -16,10 +16,12 @@ pub const DEFAULT_MOTION_EASING_Y2: f64 = 1.0;
 /// Spring bounce bounds. Bounce is the first-peak overshoot of the move, so
 /// 0 is a critically damped spring and 0.5 passes the target by half the move.
 /// The ceiling keeps the oscillation readable: a 50 % overshoot still settles
-/// in roughly three visible swings inside the transition window.
+/// in roughly three visible swings inside the transition window. The default
+/// mirrors the neutral spring preset (Figma's Gentle): a quick launch that
+/// eases into the target with only a soft round-off.
 pub const MIN_MOTION_SPRING_BOUNCE: f64 = 0.0;
 pub const MAX_MOTION_SPRING_BOUNCE: f64 = 0.5;
-pub const DEFAULT_MOTION_SPRING_BOUNCE: f64 = 0.3;
+pub const DEFAULT_MOTION_SPRING_BOUNCE: f64 = 0.05;
 pub const MOTION_EXPORT_FPS: u32 = 30;
 pub const MIN_MOTION_SEGMENT_SECONDS: f64 = 0.25;
 pub const DEFAULT_MOTION_SEGMENT_SECONDS: f64 = 1.0;
@@ -37,7 +39,7 @@ pub const MIN_MOTION_TEXT_SIZE: f64 = 0.5;
 pub const MAX_MOTION_TEXT_SIZE: f64 = 2.2;
 
 /// Identity camera for a still or the start of a motion segment.
-/// Field names follow Shotbase `orientationRotation*` / `perspectiveIntensity`.
+/// Field names follow `orientationRotation*` / `perspectiveIntensity`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MotionTransform {
     pub scale: f64,
@@ -63,7 +65,7 @@ impl Default for MotionTransform {
     }
 }
 
-/// Which curve drives the Motion track's transitions. Ease is Shotbase's
+/// Which curve drives the Motion track's transitions. Ease is the
 /// recovered cubic-Bézier timing; Spring is a physical damped oscillator whose
 /// overshoot gives a move weight and a settle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -84,7 +86,7 @@ impl MotionTimingKind {
     }
 }
 
-/// Shotbase's recovered `MotionEffectTransformTiming`: a transition duration
+/// Recovered `MotionEffectTransformTiming`: a transition duration
 /// and cubic-Bézier control points, extended with a physical spring option.
 /// ApexShot keeps one per Motion clip so each move owns its timing.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -195,7 +197,7 @@ const SPRING_SETTLE_EPSILON: f64 = 0.01;
 
 /// One timed camera move. Slice 1 stores these but does not yet author them.
 ///
-/// The field set mirrors the recovered Shotbase `MotionEffectSegment` schema:
+/// The field set mirrors the persisted `MotionEffectSegment` schema:
 /// `zoomMode`, `intensity`, `zoom`, `zoomAnchorX/Y`, `positionX/Y`,
 /// `rotationX/Y/Z`, and `isDisabled`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -213,8 +215,8 @@ pub struct MotionSegment {
     pub start: f64,
     pub end: f64,
     pub zoom_mode: MotionZoomMode,
-    /// Effect strength. This is preserved separately from zoom exactly as in
-    /// Shotbase, even though the current inspector does not expose it yet.
+    /// Effect strength. This is preserved separately from zoom
+    /// even though the current inspector does not expose it yet.
     pub intensity: f64,
     /// Source-artboard anchor for camera zoom, in normalized coordinates.
     pub zoom_anchor_x: f64,
@@ -222,8 +224,8 @@ pub struct MotionSegment {
     pub is_disabled: bool,
     pub from: MotionTransform,
     pub to: MotionTransform,
-    /// This clip's own transition timing. ApexShot keeps the recovered
-    /// Shotbase field set per move so one clip's duration or curve no longer
+    /// This clip's own transition timing. ApexShot keeps the persisted
+    /// field set per move so one clip's duration or curve no longer
     /// rewrites every other move on the track.
     pub timing: MotionEffectTransformTiming,
 }
@@ -258,7 +260,7 @@ impl MotionSegment {
         target
     }
 
-    /// Shotbase stores segment intensity separately from its camera values.
+    /// Segment intensity is stored separately from its camera values.
     /// Treat it as the blend from the pose entering the segment to the
     /// authored target, so zero is a true no-op and one is the full move.
     fn target_transform(&self) -> MotionTransform {

@@ -138,7 +138,7 @@ impl MotionState {
 
     /// Find the nearest meaningful timeline edge for an effect segment. The
     /// visual timeline deliberately stays uncluttered; this supplies the
-    /// Shotbase-style magnetic behavior behind it.
+    /// magnetic behavior behind it.
     pub fn snap_effect_time(&self, time: f64, tolerance: f64, excluding: Option<usize>) -> f64 {
         self.snap_time(time, tolerance, excluding, None)
     }
@@ -331,7 +331,7 @@ impl MotionState {
     }
 
     /// The scalar used by ApexShot's current still-image renderer. It is a
-    /// compatibility projection of Shotbase's separate blur strengths.
+    /// compatibility projection of the separate blur strengths.
     pub fn effective_motion_blur(&self) -> f64 {
         if self.motion_blur_settings.enabled {
             self.motion_blur_settings.zoom_strength.clamp(0.0, 1.0)
@@ -535,7 +535,7 @@ impl MotionState {
     }
 
     /// Source-artboard zoom focus for the active camera move. The anchor is
-    /// deliberately sampled alongside the transform because Shotbase keeps it
+    /// deliberately sampled alongside the transform because it lives
     /// on `MotionEffectSegment`, not in the global compositor configuration.
     pub fn zoom_anchor_at(&self, time: f64) -> (f64, f64) {
         let time = time.clamp(0.0, self.duration.max(0.0));

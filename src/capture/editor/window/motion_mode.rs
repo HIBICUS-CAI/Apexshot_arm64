@@ -69,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    fn default_duration_matches_shotbase_still_length() {
+    fn default_duration_matches_still_length() {
         assert!((MotionState::default().duration - 6.0).abs() < f64::EPSILON);
     }
 
@@ -78,7 +78,7 @@ mod tests {
         let state = blank_state();
         let session = MotionSession::new(true);
         session.capture_snapshot(&state);
-        // Shotbase shows the hint and waits for a click or drag; nothing plays
+        // Motion shows the hint and waits for a click or drag; nothing plays
         // until the user adds a clip.
         assert!(!session.has_segments());
         let identity = session.runtime.borrow().motion.sample(1.5);

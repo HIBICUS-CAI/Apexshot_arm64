@@ -2327,3 +2327,15 @@ msgstr "撤销"
 
 msgid "Bounce"
 msgstr "回弹"
+
+msgid "Custom"
+msgstr "自定义"
+
+msgid "Gentle"
+msgstr "轻柔"
+
+msgid "Bouncy"
+msgstr "弹跳"
+
+msgid "Spring"
+msgstr "弹簧"

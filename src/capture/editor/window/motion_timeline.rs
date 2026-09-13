@@ -111,8 +111,8 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
         move |_, cr, width, height| draw_ruler(cr, width, height, &runtime)
     });
 
-    // The source is a real timeline clip, not an implied backdrop. Shotbase
-    // exposes this as ThumbnailTrack/MotionPreviewSegmentView; ApexShot has
+    // The source is a real timeline clip, not an implied backdrop. An earlier
+    // design exposes this as ThumbnailTrack/MotionPreviewSegmentView; ApexShot has
     // one static source, so the lane spans the entire Motion composition.
     let source_track = DrawingArea::new();
     source_track.add_css_class("recording-editor-card-zoom-track");

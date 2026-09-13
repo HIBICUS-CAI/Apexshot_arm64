@@ -509,7 +509,10 @@ pub(crate) fn draw_volume_popup(
     let menu_w = crate::overlay::layout::VOLUME_POPUP_WIDTH;
     let menu_h = crate::overlay::layout::VOLUME_POPUP_HEIGHT;
     let menu_x = panel_x.clamp(10.0, screen_width - menu_w - 10.0);
-    let menu_y = panel_y.clamp(10.0, screen_height - menu_h - 10.0);
+    let menu_y = panel_y.clamp(
+        10.0,
+        screen_height - menu_h - 10.0 - crate::overlay::layout::DOCK_LIFT,
+    );
     let radius = menu_w / 2.0;
     let filled_h = volume.clamp(0.0, 1.0) * menu_h;
 

@@ -315,11 +315,14 @@ pub(super) fn draw_crosshair_mode_bubble(
     if bx + bubble_w > screen_width - 8.0 {
         bx = x - bubble_w - 14.0;
     }
-    if by + bubble_h > screen_height - 8.0 {
+    if by + bubble_h > screen_height - 8.0 - crate::overlay::layout::DOCK_LIFT {
         by = y - bubble_h - 14.0;
     }
     bx = bx.clamp(8.0, (screen_width - bubble_w - 8.0).max(8.0));
-    by = by.clamp(8.0, (screen_height - bubble_h - 8.0).max(8.0));
+    by = by.clamp(
+        8.0,
+        (screen_height - bubble_h - 8.0 - crate::overlay::layout::DOCK_LIFT).max(8.0),
+    );
 
     super::rounded_rect_path(context, bx, by, bubble_w, bubble_h, 6.0);
     context.set_source_rgba(0.0, 0.0, 0.0, 180.0 / 255.0);

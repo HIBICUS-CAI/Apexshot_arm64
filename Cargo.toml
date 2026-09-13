@@ -2,7 +2,7 @@
 name = "apexshot"
 version = "0.2.35"
 edition = "2021"
-description = "Open-source Linux screenshot, annotation, and screen recording tool with OCR, QR detection, and ShareX-style workflows"
+description = "Open-source Linux screenshot, annotation, and screen recording tool with OCR, QR detection, and fast capture workflows"
 license = "GPL-3.0-or-later"
 authors = ["codegoddy <codegoddy@gmail.com>"]
 repository = "https://github.com/apex-shot/apexshot"

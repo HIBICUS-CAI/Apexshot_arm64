@@ -126,22 +126,35 @@ pub(crate) fn draw_feature_toolbar(
         );
     }
 
-    // Single combined panel for size + crop (matches C++ topCluster)
+    // Single combined panel for size + crop, in the quick-capture language:
+    // solid dark fill, white rim, and drop shadow (matches CaptureMenu).
     let top_cluster_x = layout.size_panel.x;
     let top_cluster_y = layout.size_panel.y;
     let top_cluster_w = layout.size_panel.width + ACTION_CARD_GAP + layout.crop_panel.width;
     let top_cluster_h = layout.size_panel.height;
-    draw_frosted_panel(
+    rounded_rect_path(
+        context,
+        top_cluster_x,
+        top_cluster_y + 3.0,
+        top_cluster_w,
+        top_cluster_h,
+        15.0,
+    );
+    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
+    let _ = context.fill();
+    rounded_rect_path(
         context,
         top_cluster_x,
         top_cluster_y,
         top_cluster_w,
         top_cluster_h,
-        FEATURE_PANEL_RADIUS,
-        screen_width,
-        screen_height,
-        background,
+        15.0,
     );
+    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
+    let _ = context.fill_preserve();
+    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
+    context.set_line_width(1.2);
+    let _ = context.stroke();
 
     let draw_accent = |context: &gtk4::cairo::Context, rect: RectF, active: bool| {
         rounded_rect_path(
@@ -162,6 +175,29 @@ pub(crate) fn draw_feature_toolbar(
         let _ = context.fill();
     };
 
+    // Quick-capture cell accent for the size/crop card: orange fill when
+    // active, white fill + orange rim on hover (matches CaptureMenu).
+    let draw_quick_accent = |context: &gtk4::cairo::Context, rect: RectF, active: bool| {
+        rounded_rect_path(
+            context,
+            rect.x + 4.0,
+            rect.y + 4.0,
+            rect.width - 8.0,
+            rect.height - 8.0,
+            10.0,
+        );
+        if active {
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
+            let _ = context.fill();
+        } else {
+            context.set_source_rgba(1.0, 1.0, 1.0, 24.0 / 255.0);
+            let _ = context.fill_preserve();
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 170.0 / 255.0);
+            context.set_line_width(1.0);
+            let _ = context.stroke();
+        }
+    };
+
     if !capture_menu_area_mode {
         draw_accent(context, layout.item_cells[active_tool_index], true);
         if timer_tool_active && active_tool_index != super::icons::TOOLBAR_TIMER_INDEX {
@@ -180,10 +216,10 @@ pub(crate) fn draw_feature_toolbar(
         }
     }
     if hover_size_panel {
-        draw_accent(context, layout.size_panel, false);
+        draw_quick_accent(context, layout.size_panel, false);
     }
     if hover_crop_panel || crop_active {
-        draw_accent(context, crop_panel, crop_active);
+        draw_quick_accent(context, crop_panel, crop_active);
     }
 
     // Icons + labels.  The compact capture-menu area flow intentionally has
@@ -300,15 +336,7 @@ pub(crate) fn draw_feature_toolbar(
         gtk4::cairo::FontWeight::Bold,
     );
     context.set_font_size(9.6);
-    context.set_source_rgba(0.0, 0.0, 0.0, 0.50);
-    if let Ok(extents) = context.text_extents(&frame_label) {
-        let text_x = size_center_x - extents.width() / 2.0 - extents.x_bearing() + 0.6;
-        let text_y = size_panel_y + 17.0 + 0.8;
-        context.move_to(text_x, text_y);
-        let _ = context.show_text(&frame_label);
-    }
-
-    context.set_source_rgba(1.0, 224.0 / 255.0, 196.0 / 255.0, 0.84);
+    context.set_source_rgba(164.0 / 255.0, 164.0 / 255.0, 172.0 / 255.0, 1.0);
     if let Ok(extents) = context.text_extents(&frame_label) {
         let text_x = size_center_x - extents.width() / 2.0 - extents.x_bearing();
         let text_y = size_panel_y + 17.0;
@@ -322,14 +350,6 @@ pub(crate) fn draw_feature_toolbar(
         gtk4::cairo::FontWeight::Bold,
     );
     context.set_font_size(12.5);
-    context.set_source_rgba(0.0, 0.0, 0.0, 0.55);
-    if let Ok(extents) = context.text_extents(&size_text) {
-        let text_x = size_center_x - extents.width() / 2.0 - extents.x_bearing() + 0.6;
-        let text_y = size_panel_y + 39.0 + 0.8;
-        context.move_to(text_x, text_y);
-        let _ = context.show_text(&size_text);
-    }
-
     context.set_source_rgba(1.0, 1.0, 1.0, 0.98);
     if let Ok(extents) = context.text_extents(&size_text) {
         let text_x = size_center_x - extents.width() / 2.0 - extents.x_bearing();
@@ -348,28 +368,12 @@ pub(crate) fn draw_feature_toolbar(
     draw_toolbar_icon(
         context,
         ToolbarIcon::Crop,
-        crop_center_x + 0.6,
-        crop_y + 0.8,
-        (
-            0.0,
-            0.0,
-            0.0,
-            if hover_crop_panel {
-                62.0 / 255.0
-            } else {
-                118.0 / 255.0
-            },
-        ),
-    );
-    draw_toolbar_icon(
-        context,
-        ToolbarIcon::Crop,
         crop_center_x,
         crop_y,
         if crop_active {
-            (1.0, 229.0 / 255.0, 206.0 / 255.0, 0.95)
+            (1.0, 1.0, 1.0, 1.0)
         } else {
-            (1.0, 1.0, 1.0, 242.0 / 255.0)
+            (245.0 / 255.0, 245.0 / 255.0, 247.0 / 255.0, 1.0)
         },
     );
 
@@ -488,27 +492,28 @@ pub(super) fn draw_aspect_ratio_menu(
     selected_index: usize,
     screen_width: f64,
     screen_height: f64,
-    background: Option<&BackgroundFrame>,
+    _background: Option<&BackgroundFrame>,
 ) -> Vec<RectF> {
     let item_h = 34.0;
     let menu_w = 196.0;
     let menu_h = (ASPECT_RATIO_OPTIONS.len() as f64 * item_h) + 10.0;
     let menu_x = (anchor_rect.x + anchor_rect.width / 2.0 - menu_w / 2.0)
         .clamp(10.0, screen_width - menu_w - 10.0);
-    let menu_y =
-        (anchor_rect.y + anchor_rect.height + 8.0).clamp(10.0, screen_height - menu_h - 10.0);
-
-    draw_frosted_panel(
-        context,
-        menu_x,
-        menu_y,
-        menu_w,
-        menu_h,
-        12.0,
-        screen_width,
-        screen_height,
-        background,
+    let menu_y = (anchor_rect.y + anchor_rect.height + 8.0).clamp(
+        10.0,
+        screen_height - menu_h - 10.0 - crate::overlay::layout::DOCK_LIFT,
     );
+
+    // Quick-capture menu language: solid dark fill, white rim, drop shadow.
+    rounded_rect_path(context, menu_x, menu_y + 3.0, menu_w, menu_h, 12.0);
+    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
+    let _ = context.fill();
+    rounded_rect_path(context, menu_x, menu_y, menu_w, menu_h, 12.0);
+    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
+    let _ = context.fill_preserve();
+    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
+    context.set_line_width(1.2);
+    let _ = context.stroke();
 
     let mut item_rects = Vec::with_capacity(ASPECT_RATIO_OPTIONS.len());
     for (i, _label) in ASPECT_RATIO_OPTIONS.iter().enumerate() {
@@ -529,8 +534,11 @@ pub(super) fn draw_aspect_ratio_menu(
                 item_rect.height,
                 7.0,
             );
-            context.set_source_rgba(1.0, 1.0, 1.0, 18.0 / 255.0);
-            let _ = context.fill();
+            context.set_source_rgba(1.0, 1.0, 1.0, 24.0 / 255.0);
+            let _ = context.fill_preserve();
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 170.0 / 255.0);
+            context.set_line_width(1.0);
+            let _ = context.stroke();
         }
 
         let selected = i == selected_index;
@@ -543,9 +551,9 @@ pub(super) fn draw_aspect_ratio_menu(
                 item_rect.height - 2.0,
                 7.0,
             );
-            context.set_source_rgba(176.0 / 255.0, 92.0 / 255.0, 56.0 / 255.0, 94.0 / 255.0);
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
             let _ = context.fill();
-            context.set_source_rgba(1.0, 238.0 / 255.0, 224.0 / 255.0, 1.0);
+            context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
             context.set_line_width(1.5);
             let cy = item_rect.y + item_rect.height / 2.0;
             context.move_to(indicator_x + 3.5, cy);
@@ -570,7 +578,7 @@ pub(super) fn draw_aspect_ratio_menu(
             let label_y =
                 item_rect.y + item_rect.height / 2.0 - extents.height() / 2.0 - extents.y_bearing();
             let label_color = if selected {
-                (1.0, 240.0 / 255.0, 226.0 / 255.0, 1.0)
+                (1.0, 1.0, 1.0, 1.0)
             } else {
                 (242.0 / 255.0, 242.0 / 255.0, 244.0 / 255.0, 1.0)
             };

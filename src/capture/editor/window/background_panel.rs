@@ -258,7 +258,7 @@ pub fn motion_wallpaper_preview_asset_path(file_name: &str) -> PathBuf {
 
 /// First bundled Motion wallpaper that exists on disk. Motion opens with this
 /// selected so the first static → motion switch shows a composed scene
-/// instead of Shotbase's black default.
+/// instead of a black default.
 pub fn default_motion_wallpaper() -> Option<String> {
     MOTION_WALLPAPER_FILES.iter().find_map(|file_name| {
         let path = background_gradient_asset_path(file_name);

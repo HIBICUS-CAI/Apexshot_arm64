@@ -8,12 +8,13 @@ use std::rc::Rc;
 use crate::capture::editor::ui_support::EDITOR_TOP_CHROME_HEIGHT;
 use crate::i18n::t;
 use crate::recording::editor::model::{
-    MotionTextAnimation, MotionTextScope, MotionTimingKind, DEFAULT_MOTION_DURATION_SECONDS,
-    DEFAULT_MOTION_SPRING_BOUNCE, DEFAULT_MOTION_TEXT_POS_X, DEFAULT_MOTION_TEXT_POS_Y,
-    DEFAULT_MOTION_TEXT_SIZE, DEFAULT_MOTION_ZOOM, MAX_MOTION_DURATION_SECONDS,
-    MAX_MOTION_SPRING_BOUNCE, MAX_MOTION_TEXT_POS, MAX_MOTION_TEXT_SIZE, MAX_MOTION_YAW,
-    MAX_MOTION_ZOOM, MAX_ZOOM_EASE_MS, MIN_MOTION_DURATION_SECONDS, MIN_MOTION_SPRING_BOUNCE,
-    MIN_MOTION_TEXT_POS, MIN_MOTION_TEXT_SIZE, MIN_MOTION_YAW, MIN_MOTION_ZOOM, MIN_ZOOM_EASE_MS,
+    MotionEffectTransformTiming, MotionTextAnimation, MotionTextScope, MotionTimingKind,
+    DEFAULT_MOTION_DURATION_SECONDS, DEFAULT_MOTION_SPRING_BOUNCE, DEFAULT_MOTION_TEXT_POS_X,
+    DEFAULT_MOTION_TEXT_POS_Y, DEFAULT_MOTION_TEXT_SIZE, DEFAULT_MOTION_ZOOM,
+    MAX_MOTION_DURATION_SECONDS, MAX_MOTION_SPRING_BOUNCE, MAX_MOTION_TEXT_POS,
+    MAX_MOTION_TEXT_SIZE, MAX_MOTION_YAW, MAX_MOTION_ZOOM, MAX_ZOOM_EASE_MS,
+    MIN_MOTION_DURATION_SECONDS, MIN_MOTION_SPRING_BOUNCE, MIN_MOTION_TEXT_POS,
+    MIN_MOTION_TEXT_SIZE, MIN_MOTION_YAW, MIN_MOTION_ZOOM, MIN_ZOOM_EASE_MS,
 };
 use crate::recording::editor::window::tool_sidebar::FillSlider;
 
@@ -25,7 +26,8 @@ use super::parts::{
 use super::position_pad::MotionPositionPad;
 use super::watermark::build_motion_watermark_panel;
 use super::widgets::{
-    angle_slider_row, format_duration_label, position_slider_row, span_slider_row,
+    angle_slider_row, ease_preset_timing, format_duration_label, position_slider_row,
+    span_slider_row, spring_preset_timing, timing_curve_icon,
 };
 use super::MotionSession;
 
@@ -220,32 +222,7 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     clip_box.append(&position_section);
 
     let timing_section = motion_settings_section("Timing");
-    // Ease keeps Shotbase's recovered cubic-Bézier handles; Spring replaces
-    // them with a physical damped oscillator driven by duration + bounce.
-    let timing_mode_row = GtkBox::new(Orientation::Horizontal, 6);
-    timing_mode_row.add_css_class("recording-editor-zoom-easing");
-    timing_mode_row.set_hexpand(true);
-    timing_mode_row.set_homogeneous(true);
-    let timing_kind_buttons: Vec<(MotionTimingKind, ToggleButton)> = MotionTimingKind::ALL
-        .iter()
-        .map(|&kind| {
-            let button = ToggleButton::with_label(&t(kind.label()));
-            button.add_css_class("recording-editor-zoom-easing-btn");
-            button.set_has_frame(false);
-            button.set_hexpand(true);
-            timing_mode_row.append(&button);
-            (kind, button)
-        })
-        .collect();
-    if let Some((_, first)) = timing_kind_buttons.first() {
-        for (index, (_, button)) in timing_kind_buttons.iter().enumerate() {
-            if index > 0 {
-                button.set_group(Some(first));
-            }
-        }
-    }
-    timing_section.append(&timing_mode_row);
-
+    // Duration is the one control both families share, so it sits at the top.
     let ease_value = Label::new(Some("1200ms"));
     ease_value.set_visible(false);
     let ease_slider =
@@ -256,42 +233,68 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     timing_section.append(&ease_value);
     timing_section.append(&ease_slider.widget());
 
-    let ease_timing_rows = GtkBox::new(Orientation::Vertical, 0);
+    // Top row: the two families plus Custom. Each family button applies
+    // the curve its icon previews; Custom just discloses the sliders for
+    // whichever family is active.
+    let timing_mode_row = GtkBox::new(Orientation::Horizontal, 6);
+    timing_mode_row.add_css_class("recording-editor-zoom-easing");
+    timing_mode_row.set_hexpand(true);
+    timing_mode_row.set_homogeneous(true);
+    let timing_kind_buttons: Vec<(MotionTimingKind, ToggleButton)> = MotionTimingKind::ALL
+        .iter()
+        .map(|&kind| {
+            (
+                kind,
+                timing_mode_button(&t(kind.label()), timing_mode_preview(kind)),
+            )
+        })
+        .collect();
+    if let Some((_, first)) = timing_kind_buttons.first() {
+        for (index, (_, button)) in timing_kind_buttons.iter().enumerate() {
+            if index > 0 {
+                button.set_group(Some(first));
+            }
+        }
+    }
+    for (_, button) in &timing_kind_buttons {
+        timing_mode_row.append(button);
+    }
+    let custom_timing_btn = timing_custom_button(&t("Custom"));
+    timing_mode_row.append(&custom_timing_btn);
+    timing_section.append(&timing_mode_row);
+
+    let custom_easing_rows = GtkBox::new(Orientation::Vertical, 0);
     let (easing_x1_header, easing_x1_value, easing_x1_slider) =
         span_slider_row(&t("Ease X1"), 0.25, 0.0, 1.0);
-    ease_timing_rows.append(&easing_x1_header);
-    ease_timing_rows.append(&easing_x1_slider.widget());
+    custom_easing_rows.append(&easing_x1_header);
+    custom_easing_rows.append(&easing_x1_slider.widget());
     let (easing_y1_header, easing_y1_value, easing_y1_slider) =
         span_slider_row(&t("Ease Y1"), 1.0, 0.0, 1.0);
-    ease_timing_rows.append(&easing_y1_header);
-    ease_timing_rows.append(&easing_y1_slider.widget());
+    custom_easing_rows.append(&easing_y1_header);
+    custom_easing_rows.append(&easing_y1_slider.widget());
     let (easing_x2_header, easing_x2_value, easing_x2_slider) =
         span_slider_row(&t("Ease X2"), 0.50, 0.0, 1.0);
-    ease_timing_rows.append(&easing_x2_header);
-    ease_timing_rows.append(&easing_x2_slider.widget());
+    custom_easing_rows.append(&easing_x2_header);
+    custom_easing_rows.append(&easing_x2_slider.widget());
     let (easing_y2_header, easing_y2_value, easing_y2_slider) =
         span_slider_row(&t("Ease Y2"), 1.0, 0.0, 1.0);
-    ease_timing_rows.append(&easing_y2_header);
-    ease_timing_rows.append(&easing_y2_slider.widget());
-    timing_section.append(&ease_timing_rows);
+    custom_easing_rows.append(&easing_y2_header);
+    custom_easing_rows.append(&easing_y2_slider.widget());
+    custom_easing_rows.set_visible(false);
+    timing_section.append(&custom_easing_rows);
 
-    let spring_timing_rows = GtkBox::new(Orientation::Vertical, 0);
+    let custom_spring_rows = GtkBox::new(Orientation::Vertical, 0);
     let (spring_bounce_header, spring_bounce_value, spring_bounce_slider) = span_slider_row(
         &t("Bounce"),
         DEFAULT_MOTION_SPRING_BOUNCE,
         MIN_MOTION_SPRING_BOUNCE,
         MAX_MOTION_SPRING_BOUNCE,
     );
-    spring_timing_rows.append(&spring_bounce_header);
-    spring_timing_rows.append(&spring_bounce_slider.widget());
-    spring_timing_rows.set_visible(false);
-    timing_section.append(&spring_timing_rows);
+    custom_spring_rows.append(&spring_bounce_header);
+    custom_spring_rows.append(&spring_bounce_slider.widget());
+    custom_spring_rows.set_visible(false);
+    timing_section.append(&custom_spring_rows);
 
-    let reset_timing_btn = Button::with_label(&t("Reset"));
-    reset_timing_btn.add_css_class("recording-editor-zoom-easing-btn");
-    reset_timing_btn.set_has_frame(false);
-    reset_timing_btn.set_halign(gtk4::Align::Start);
-    timing_section.append(&reset_timing_btn);
     clip_box.append(&timing_section);
 
     inspector.append(&clip_box);
@@ -503,8 +506,9 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
                 ease_slider,
                 ease_value,
                 timing_kind_buttons,
-                ease_timing_rows,
-                spring_timing_rows,
+                custom_timing_btn,
+                custom_easing_rows,
+                custom_spring_rows,
                 spring_bounce_slider,
                 spring_bounce_value,
                 easing_x1_slider,
@@ -515,11 +519,44 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
                 easing_x2_value,
                 easing_y2_slider,
                 easing_y2_value,
-                reset_timing_btn,
             },
         },
         session,
     )
+}
+
+/// Top-row button: curve icon left of its name, matching the family buttons.
+fn timing_mode_button(label: &str, timing: MotionEffectTransformTiming) -> ToggleButton {
+    let button = ToggleButton::new();
+    button.add_css_class("recording-editor-zoom-easing-btn");
+    button.set_has_frame(false);
+    button.set_hexpand(true);
+    let content = GtkBox::new(Orientation::Horizontal, 6);
+    content.set_halign(gtk4::Align::Center);
+    content.append(&timing_curve_icon(timing, 30, 20));
+    content.append(&Label::new(Some(label)));
+    button.set_child(Some(&content));
+    button
+}
+
+/// Custom card: text only, stretched to the preset cards' size by the row.
+fn timing_custom_button(label: &str) -> ToggleButton {
+    let button = ToggleButton::new();
+    button.add_css_class("recording-editor-zoom-easing-btn");
+    button.set_has_frame(false);
+    button.set_hexpand(true);
+    button.set_child(Some(&Label::new(Some(label))));
+    button
+}
+
+fn timing_mode_preview(kind: MotionTimingKind) -> MotionEffectTransformTiming {
+    let base = MotionEffectTransformTiming::default();
+    match kind {
+        // Ease is the classic S (ease-in-out); Spring is Gentle. Each icon
+        // is the curve its button applies.
+        MotionTimingKind::Ease => ease_preset_timing(0, base),
+        MotionTimingKind::Spring => spring_preset_timing(1, base),
+    }
 }
 
 fn motion_settings_section(title: &str) -> GtkBox {

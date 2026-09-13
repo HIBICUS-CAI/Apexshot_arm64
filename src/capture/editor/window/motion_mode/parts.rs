@@ -105,8 +105,9 @@ pub(in crate::capture::editor::window) struct MotionTransformControlParts {
     pub ease_slider: FillSlider,
     pub ease_value: Label,
     pub timing_kind_buttons: Vec<(MotionTimingKind, ToggleButton)>,
-    pub ease_timing_rows: GtkBox,
-    pub spring_timing_rows: GtkBox,
+    pub custom_timing_btn: ToggleButton,
+    pub custom_easing_rows: GtkBox,
+    pub custom_spring_rows: GtkBox,
     pub spring_bounce_slider: FillSlider,
     pub spring_bounce_value: Label,
     pub easing_x1_slider: FillSlider,
@@ -117,5 +118,4 @@ pub(in crate::capture::editor::window) struct MotionTransformControlParts {
     pub easing_x2_value: Label,
     pub easing_y2_slider: FillSlider,
     pub easing_y2_value: Label,
-    pub reset_timing_btn: Button,
 }

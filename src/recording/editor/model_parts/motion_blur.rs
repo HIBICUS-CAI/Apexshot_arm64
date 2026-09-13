@@ -1,8 +1,8 @@
 /// Motion blur configuration whose field order and clamp bounds were recovered
-/// from Shotbase's `MotionBlurSettings` metadata and implementation.
+/// from the persisted `MotionBlurSettings` metadata and implementation.
 ///
 /// The temporal composition policy below is ApexShot's current policy; it is
-/// deliberately not described as a byte-for-byte Shotbase reconstruction.
+/// deliberately not described as a byte-for-byte reconstruction.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MotionBlurSettings {
     pub enabled: bool,
@@ -13,7 +13,7 @@ pub struct MotionBlurSettings {
     pub zoom_blur_amount_multiplier: f64,
     pub zoom_blur_max_amount: f64,
     pub transform_temporal_exposure_cap: f64,
-    /// Recovered Shotbase trail opacity. The renderer derives blur from the
+    /// Recovered trail opacity. The renderer derives blur from the
     /// exposure window and averages temporal subframes instead of stacking
     /// ghost copies, so the field is retained for schema compatibility only.
     pub transform_trail_opacity: f64,
@@ -23,8 +23,8 @@ impl Default for MotionBlurSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            // These are ApexShot defaults. Shotbase's construction defaults
-            // have not yet been recovered from the stripped application.
+            // These are ApexShot defaults. The legacy construction defaults
+            // have not yet been recovered.
             cursor_strength: 0.4,
             zoom_strength: 0.0,
             capture_movement_strength: 0.35,
@@ -37,7 +37,7 @@ impl Default for MotionBlurSettings {
     }
 }
 
-/// Motion blur quality mode recovered from Shotbase's `MotionBlurBudgetMode`.
+/// Motion blur quality mode recovered from the persisted `MotionBlurBudgetMode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MotionBlurBudgetMode {
     LivePreviewPlayback,
@@ -106,7 +106,7 @@ impl MotionBlurSettings {
     }
 
     /// Exposure time of one output frame in seconds: the frame interval scaled
-    /// by the shutter angle, capped by Shotbase's `transform_temporal_exposure_cap`,
+    /// by the shutter angle, capped by `transform_temporal_exposure_cap`,
     /// then scaled by the user's blur strength. This is the window a real
     /// camera would integrate over.
     pub fn exposure_seconds(self, frame_rate: f64) -> f64 {

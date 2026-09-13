@@ -143,7 +143,7 @@ pub(super) fn draw_motion_foreground(
         stage.bounds_h,
     );
     context.clip();
-    // Shotbase's underlay shadow layer sits between the background scene and
+    // The underlay shadow layer sits between the background scene and
     // the animated card, so the card's own drop shadow still reads on top.
     paint_motion_scene_shadow(context, stage, motion, true);
     let current_transform = motion.sample(time);

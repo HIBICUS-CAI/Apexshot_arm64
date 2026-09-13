@@ -23,7 +23,7 @@ mod tests {
         assert_eq!(super::fit_stage_aspect(100.0, 50.0, None), (100.0, 50.0));
     }
 
-    /// Shotbase starts Motion with an empty track; tests add their own clip.
+    /// Motion starts with an empty track; tests add their own clip.
     fn motion_with_first_clip() -> MotionState {
         let mut motion = MotionState::default();
         motion
@@ -32,7 +32,7 @@ mod tests {
         motion
     }
 
-    /// Export-style layout: the full frame with Shotbase's default padding.
+    /// Export-style layout: the full frame with default padding.
     fn frame_layout(
         surface: &ImageSurface,
         transform: MotionTransform,
@@ -92,7 +92,7 @@ mod tests {
         assert_ne!(&data[..4], &[153, 102, 51, 255]);
 
         // Exports have no editor canvas: the fill covers the whole frame and
-        // an unset fill is Shotbase's black scene. The radius belongs to the
+        // an unset fill is a black scene. The radius belongs to the
         // card, so the background corners stay filled regardless of it.
         motion.appearance.background_fill_type = MotionBackgroundFillType::None;
         motion.appearance.border_radius = 40.0;
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn shotbase_transform_timing_defaults_drive_glide_motion() {
+    fn transform_timing_defaults_drive_glide_motion() {
         let mut motion = motion_with_first_clip();
         // Keep the clip longer than the 1.2s transition so the timing curve
         // is not clamped by the default one-second clip.
@@ -809,7 +809,7 @@ mod tests {
         let linear_progress = motion.sample(0.6).scale;
         assert!(
             default_progress > linear_progress + 0.01,
-            "Shotbase's recovered Bézier should advance ahead of linear at mid-transition"
+            "The default Bézier should advance ahead of linear at mid-transition"
         );
         // linear progress at t=0.6 of a 1.2s transition is 0.5: scale 1 + (2-1)*0.5
         assert!((linear_progress - 1.5).abs() < 0.002);
