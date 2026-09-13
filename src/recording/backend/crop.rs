@@ -105,13 +105,14 @@ pub(in crate::recording) fn fit_within_max_resolution(
 }
 
 pub(in crate::recording) fn wayland_video_filter(max_resolution: Option<(u32, u32)>) -> String {
+    // Lanczos keeps downscaled text sharper than the default scaler.
     let scale = if let Some((max_w, max_h)) = max_resolution {
         format!(
-            "scale=w='min(iw,{max_w})':h='min(ih,{max_h})':force_original_aspect_ratio=decrease:force_divisible_by=2:in_range=pc:out_range=tv"
+            "scale=w='min(iw,{max_w})':h='min(ih,{max_h})':force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos:in_range=pc:out_range=tv"
         )
     } else {
         // Keep original size, but make dimensions encoder-safe for yuv420p.
-        "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2':in_range=pc:out_range=tv".to_string()
+        "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2':flags=lanczos:in_range=pc:out_range=tv".to_string()
     };
     format!("{scale},format=yuv420p")
 }

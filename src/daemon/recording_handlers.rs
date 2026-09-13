@@ -81,7 +81,7 @@ pub(super) async fn handle_record_screen(_tx: std::sync::mpsc::Sender<DaemonActi
         show_timer: true,
         use_shell_mask: false,
         dim_screen: false,
-        countdown_enabled: false,
+        countdown_enabled: app_config.rec_countdown,
         countdown_seconds: 3,
         session_id: None,
     };

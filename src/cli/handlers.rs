@@ -653,7 +653,8 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
         }
     }
 
-    let mut config = RecordingConfig::default();
+    let app_config = load_config().sanitized();
+    let mut config = RecordingConfig::from_app_config(&app_config, "mp4");
 
     // Configure output path
     if let Some(p) = output_path {
@@ -693,7 +694,7 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
             show_timer: true,
             use_shell_mask: false,
             dim_screen: false,
-            countdown_enabled: false,
+            countdown_enabled: app_config.rec_countdown,
             countdown_seconds: 3,
             session_id: None,
         };
@@ -722,6 +723,17 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
             }
         }
     } else {
+        if app_config.rec_countdown {
+            let proceed = apexshot::recording::run_standalone_countdown()
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+                })?;
+            if !proceed {
+                eprintln!("Recording cancelled.");
+                return Ok(());
+            }
+        }
         match start_recording(config).await {
             Err(RecordError::Cancelled) => {
                 eprintln!("Recording cancelled.");

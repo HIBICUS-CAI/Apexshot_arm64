@@ -72,7 +72,7 @@ pub(crate) fn run_audio_level_monitor(
 pub use controls::{
     persist_overlay_recording_request_state, prepare_overlay_recording_request,
     run_overlay_recording_request, run_overlay_recording_request_with_gtk,
-    run_recording_with_controls, run_recording_with_native_controls,
+    run_recording_with_controls, run_recording_with_native_controls, run_standalone_countdown,
     PreparedOverlayRecordingRequest,
 };
 
@@ -278,13 +278,24 @@ impl RecordingConfig {
 }
 
 /// x264 CRF for a Settings quality tier, inside OBS's recommended 16–23
-/// recording range. Lower is sharper at the cost of file size.
+/// recording range (OBS Simple HQ = 16). Lower is sharper at file-size cost.
 pub fn crf_for_quality(tier: u8) -> u32 {
     match tier {
         0 => 23, // Balanced
-        2 => 17, // Ultra
+        2 => 16, // Ultra (OBS Simple HQ)
         _ => 20, // High (default)
     }
+}
+
+/// OBS `CalcCRF` resolution compensation (SimpleOutput.cpp): smaller outputs
+/// get a lower CRF so they don't turn to mush — up to -10 below 2000px
+/// diagonal. Applied to the tier base at encode time.
+pub fn crf_resolution_reduction(width: u32, height: u32) -> u32 {
+    const CUTOFF: f64 = 2000.0;
+    let diagonal = ((u64::from(width) * u64::from(width) + u64::from(height) * u64::from(height))
+        as f64)
+        .sqrt();
+    ((1.0 - diagonal.min(CUTOFF) / CUTOFF) * 10.0) as u32
 }
 
 fn command_exists(name: &str) -> bool {
@@ -470,8 +481,13 @@ mod tests {
     fn quality_tier_maps_to_obs_crf_range() {
         assert_eq!(crf_for_quality(0), 23);
         assert_eq!(crf_for_quality(1), 20);
-        assert_eq!(crf_for_quality(2), 17);
+        assert_eq!(crf_for_quality(2), 16);
         assert_eq!(crf_for_quality(9), 20);
+        // OBS CalcCRF: full-HD and above keep the base, smaller outputs gain.
+        assert_eq!(crf_resolution_reduction(1920, 1080), 0);
+        assert_eq!(crf_resolution_reduction(1920, 1200), 0);
+        assert_eq!(crf_resolution_reduction(1280, 720), 2);
+        assert_eq!(crf_resolution_reduction(640, 480), 6);
         let mut app = AppConfig::default();
         app.rec_video_quality = 2;
         let config = RecordingConfig::from_app_config_at(
@@ -481,7 +497,7 @@ mod tests {
                 .with_ymd_and_hms(2026, 7, 12, 11, 0, 49)
                 .unwrap(),
         );
-        assert_eq!(config.crf, 17);
+        assert_eq!(config.crf, 16);
     }
 
     #[test]

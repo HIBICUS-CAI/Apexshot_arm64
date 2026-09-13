@@ -402,6 +402,17 @@ async fn run_recording_with_controls_locked(
     run_recording_with_native_controls(config, params).await
 }
 
+/// Standalone countdown window for entry points without a controls deck
+/// (e.g. CLI): shows the timer when Settings enables it. Returns false when
+/// the user cancels the countdown.
+pub async fn run_standalone_countdown() -> anyhow::Result<bool> {
+    run_recording_countdown_subprocess(RecordingControlsParams {
+        countdown_seconds: 3,
+        ..Default::default()
+    })
+    .await
+}
+
 async fn run_recording_countdown_subprocess(
     params: RecordingControlsParams,
 ) -> anyhow::Result<bool> {

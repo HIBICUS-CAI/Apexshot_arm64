@@ -66,20 +66,36 @@ pub(super) fn detect_vaapi_device() -> Option<String> {
     None
 }
 
-pub(super) fn should_use_vaapi() -> bool {
-    if std::env::var_os("APEXSHOT_HW_ENCODER")
-        .map(|v| v == "vaapi")
-        .unwrap_or(false)
-    {
-        return detect_vaapi_device().is_some();
-    }
+pub(super) fn should_use_nvenc() -> bool {
     if let Ok(val) = std::env::var("APEXSHOT_HW_ENCODER") {
-        return val == "vaapi" && detect_vaapi_device().is_some();
+        if val == "cpu" || val == "off" || val == "soft" || val == "software" {
+            return false;
+        }
+        if val == "nvenc" {
+            return true;
+        }
     }
-    false
+    super::backend::ffmpeg_encoder_available("h264_nvenc")
 }
 
-pub(super) fn ffmpeg_vaapi_args(width: u32, height: u32) -> Vec<String> {
+pub(super) fn should_use_vaapi() -> bool {
+    // OBS parity: prefer HW encode when the render node + ffmpeg HW encoder
+    // exist. Opt out with APEXSHOT_HW_ENCODER=cpu/off.
+    if let Ok(val) = std::env::var("APEXSHOT_HW_ENCODER") {
+        if val == "cpu" || val == "off" || val == "soft" || val == "software" {
+            return false;
+        }
+        if val == "vaapi" {
+            return detect_vaapi_device().is_some();
+        }
+    }
+    detect_vaapi_device().is_some()
+        && super::backend::ffmpeg_encoder_available("h264_vaapi")
+}
+
+pub(super) fn ffmpeg_vaapi_args(width: u32, height: u32, qp: u32) -> Vec<String> {
+    // OBS VAAPI Simple recording: profile HIGH, tier-derived QP in CQP mode
+    // (a fixed QP ignored the Ultra/High/Balanced setting entirely).
     let device = detect_vaapi_device().unwrap_or_else(|| "/dev/dri/renderD128".into());
     vec![
         "-vaapi_device".into(),
@@ -88,10 +104,12 @@ pub(super) fn ffmpeg_vaapi_args(width: u32, height: u32) -> Vec<String> {
         format!("format=nv12,hwupload,scale_vaapi=w={width}:h={height}"),
         "-c:v".into(),
         "h264_vaapi".into(),
+        "-rc_mode".into(),
+        "CQP".into(),
         "-qp".into(),
-        "24".into(),
+        qp.to_string(),
         "-profile".into(),
-        "main".into(),
+        "high".into(),
     ]
 }
 
