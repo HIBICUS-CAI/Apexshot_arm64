@@ -172,6 +172,7 @@ pub fn picker_dynamic_css(color: DrawColor) -> String {
     )
 }
 
+#[allow(dead_code)]
 pub fn custom_color_slots_css(colors: &[Option<DrawColor>]) -> String {
     let mut css = String::new();
 
@@ -264,6 +265,7 @@ pub fn save_persisted_custom_slot_colors(slots: &[Option<DrawColor>]) {
     let _ = std::fs::write(path, raw);
 }
 
+#[allow(dead_code)]
 pub fn move_custom_color_between_slots(
     slots: &mut [Option<DrawColor>],
     from_index: usize,

@@ -5,6 +5,121 @@
                 border-left: 1px solid rgba(255, 255, 255, 0.08);
             }
 
+            .editor-color-picker-panel-minimal {
+                min-width: 232px;
+                padding: 0;
+                margin-left: 0;
+                border-left: none;
+            }
+
+            .editor-color-popover-body-minimal {
+                padding: 12px;
+                border-radius: 16px;
+                background: #1e1e1e;
+                background-image: none;
+                border: 1px solid rgba(255, 255, 255, 0.09);
+                box-shadow:
+                    0 14px 32px rgba(0, 0, 0, 0.55),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            }
+
+            .editor-color-picker-header {
+                padding: 0 2px;
+                margin-bottom: 2px;
+            }
+
+            .editor-color-picker-title {
+                font-size: 15px;
+                font-weight: 600;
+                color: #f2f2f2;
+            }
+
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:hover,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:active,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:focus,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:focus-visible {
+                min-width: 26px;
+                min-height: 26px;
+                border: none;
+                border-radius: 0;
+                background: transparent;
+                background-image: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                padding: 0;
+                transform: none;
+                transition: none;
+            }
+
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal image {
+                color: rgba(255, 255, 255, 0.65);
+            }
+
+            .editor-root scale.editor-hue-slider-minimal {
+                min-height: 20px;
+                padding: 0;
+            }
+
+            .editor-root scale.editor-hue-slider-minimal trough {
+                min-height: 16px;
+                border-radius: 999px;
+                border: none;
+                box-shadow: none;
+            }
+
+            .editor-root scale.editor-hue-slider-minimal highlight {
+                background: transparent;
+                border: none;
+            }
+
+            .editor-root scale.editor-hue-slider-minimal slider {
+                min-width: 18px;
+                min-height: 18px;
+                border-radius: 999px;
+                background: #ffffff;
+                background-image: none;
+                border: 1px solid rgba(0, 0, 0, 0.18);
+                box-shadow:
+                    0 1px 4px rgba(0, 0, 0, 0.55),
+                    0 0 0 1px rgba(255, 255, 255, 0.65);
+            }
+
+            entry.editor-hex-entry.editor-hex-entry-minimal,
+            entry.editor-hex-entry.editor-hex-entry-minimal:hover,
+            entry.editor-hex-entry.editor-hex-entry-minimal:focus {
+                min-height: 34px;
+                border-radius: 8px;
+                font-size: 13px;
+                font-family: 'Inter', 'Noto Sans', system-ui, sans-serif;
+                font-weight: 500;
+                background: #2b2b2d;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.85);
+            }
+
+            entry.editor-hex-entry.editor-hex-entry-minimal placeholder {
+                color: rgba(255, 255, 255, 0.35);
+            }
+
+            .editor-color-picker-panel-minimal .editor-gradient-area {
+                min-width: 232px;
+                min-height: 200px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+            }
+
+            .editor-color-picker-panel-minimal .editor-color-preview {
+                min-width: 30px;
+                min-height: 30px;
+                border-radius: 8px;
+            }
+
             .editor-gradient-area {
                 min-width: 252px;
                 min-height: 150px;
@@ -189,7 +304,7 @@
             .editor-color-preview {
                 min-width: 24px;
                 min-height: 24px;
-                border-radius: 999px;
+                border-radius: 7px;
                 background: #37805B;
                 border: 1px solid rgba(255, 255, 255, 0.22);
                 box-shadow:

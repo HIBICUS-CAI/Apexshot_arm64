@@ -849,7 +849,7 @@ fn setup_editor_window_full(
         drawing_area_placeholder.clone(),
         annotate_config.show_color_names,
     );
-    let _color_picker_trigger_host = color_picker_parts.trigger_host;
+    let color_picker_trigger_host = color_picker_parts.trigger_host;
     let color_popover = color_picker_parts.popover;
     let color_buttons = color_picker_parts.color_buttons;
     let color_picker_dot = color_picker_parts.color_picker_dot;
@@ -874,10 +874,10 @@ fn setup_editor_window_full(
         size_slider,
         text_size_group,
         text_size_label,
-        text_size_list: _toolbar_text_size_list,
+        text_size_list: toolbar_text_size_list,
         font_family_group,
         font_family_label,
-        font_family_list: _toolbar_font_family_list,
+        font_family_list: toolbar_font_family_list,
         obfuscate_method_group,
         obfuscate_method_button,
         obfuscate_method_popover: _,
@@ -1637,6 +1637,172 @@ fn setup_editor_window_full(
     workspace.append(&inspector);
 
     *drawing_area_placeholder.borrow_mut() = Some(drawing_area.downgrade());
+
+    // Floating text toolbar (Shotbase-style): font + size + color, anchored above the
+    // blue text outline (active_text_bounds). Lives in canvas_overlay so it scrolls/zooms with the image.
+    let text_floating_bar = GtkBox::new(Orientation::Horizontal, 8);
+    text_floating_bar.add_css_class("editor-text-floating-bar");
+    text_floating_bar.set_halign(gtk4::Align::Start);
+    text_floating_bar.set_valign(gtk4::Align::Start);
+    color_picker_trigger_host.set_hexpand(false);
+    text_floating_bar.append(&font_family_group);
+    text_floating_bar.append(&text_size_group);
+    text_floating_bar.append(&color_picker_trigger_host);
+    text_floating_bar.set_visible(false);
+    canvas_overlay.add_overlay(&text_floating_bar);
+
+    // Tick: anchor the bar above active_text_bounds (blue outline), flip below if no room.
+    // Owns visibility: only Text tool + existing bounds shows it.
+    // Never covers the outline: uses measured bar size (sticky max) + outline clearance.
+    {
+        let state_t = state.clone();
+        let transform_t = transform.clone();
+        let bar = text_floating_bar.clone();
+        let known = Rc::new(Cell::new((320.0f64, 48.0f64)));
+        drawing_area.add_tick_callback(move |widget, _| {
+            let (is_text, bounds_opt, t) = {
+                let st = state_t.lock().unwrap();
+                (
+                    st.selected_tool == Tool::Text,
+                    st.active_text_bounds.clone(),
+                    *transform_t.lock().unwrap(),
+                )
+            };
+            let Some(bounds) = bounds_opt.filter(|_| is_text) else {
+                if bar.is_visible() {
+                    bar.set_visible(false);
+                }
+                return glib::ControlFlow::Continue;
+            };
+            // Remember size: height uses sticky max (never underestimate -> never covers
+            // the outline); width uses last measured (max would off-center a narrower bar).
+            let (mut known_w, mut known_h) = known.get();
+            let (bw, bh) = (bar.width() as f64, bar.height() as f64);
+            if bw > 1.0 {
+                known_w = bw;
+            }
+            if bh > 1.0 {
+                known_h = known_h.max(bh);
+            }
+            known.set((known_w, known_h));
+            let area_w = widget.width() as f64;
+            let area_h = widget.height() as f64;
+            let x = bounds.rect.x as f64 * t.scale + t.offset_x;
+            let y = bounds.rect.y as f64 * t.scale + t.offset_y;
+            // Outline clearance: border (2px) + handle radius (7px) + breathing room.
+            let gap = 12.0;
+            let mut top = y - known_h - gap;
+            if top < 0.0 {
+                top = y + bounds.rect.height as f64 * t.scale + gap;
+            }
+            if top + known_h > area_h {
+                top = (area_h - known_h).max(0.0);
+            }
+            let left = (x + bounds.rect.width as f64 * t.scale / 2.0 - known_w / 2.0)
+                .max(0.0)
+                .min((area_w - known_w).max(0.0));
+            if (bar.margin_start() as f64 - left).abs() >= 1.0
+                || (bar.margin_top() as f64 - top).abs() >= 1.0
+            {
+                bar.set_margin_start(left as i32);
+                bar.set_margin_top(top as i32);
+            }
+            if !bar.is_visible() {
+                bar.set_visible(true);
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
+    // Wire the toolbar font/size popover lists (built dead in toolbar.rs) like the inspector lists.
+    {
+        let state_c = state.clone();
+        let drawing_area_c = drawing_area.clone();
+        let text_size_label_c = text_size_label.clone();
+        let inspector_list_c = text_size_list.clone();
+        let mut idx = 0usize;
+        let mut child_opt = toolbar_text_size_list.first_child();
+        while let Some(child) = child_opt {
+            child_opt = child.next_sibling();
+            let Ok(btn) = child.downcast::<Button>() else {
+                continue;
+            };
+            let size = TEXT_SIZE_OPTIONS.get(idx).copied().unwrap_or(24);
+            idx += 1;
+            let state_b = state_c.clone();
+            let drawing_area_b = drawing_area_c.clone();
+            let label_b = text_size_label_c.clone();
+            let list_b = inspector_list_c.clone();
+            btn.connect_clicked(move |b| {
+                if let Some(popover) = b.ancestor(Popover::static_type()) {
+                    popover.downcast::<Popover>().unwrap().popdown();
+                }
+                label_b.set_label(&format!("{}pt", size));
+                let mut st = state_b.lock().unwrap();
+                let changed = st.set_text_size(size as f64);
+                let has_active_text = st.active_text_input.is_some();
+                if !changed
+                    && st.active_text_input.is_none()
+                    && st.selected_action_index.is_none()
+                {
+                    st.text_size = size as f64;
+                }
+                drop(st);
+                sync_text_option_selection(
+                    &list_b,
+                    TEXT_SIZE_OPTIONS.iter().position(|c| *c == size),
+                );
+                if has_active_text {
+                    drawing_area_b.grab_focus();
+                }
+                drawing_area_b.queue_draw();
+            });
+        }
+    }
+    {
+        let state_c = state.clone();
+        let drawing_area_c = drawing_area.clone();
+        let font_family_label_c = font_family_label.clone();
+        let inspector_list_c = font_family_list.clone();
+        let mut idx = 0usize;
+        let mut child_opt = toolbar_font_family_list.first_child();
+        while let Some(child) = child_opt {
+            child_opt = child.next_sibling();
+            let Ok(btn) = child.downcast::<Button>() else {
+                continue;
+            };
+            let family = TEXT_FONT_FAMILIES.get(idx).copied().unwrap_or("Sans");
+            idx += 1;
+            let family_str = family.to_string();
+            let state_b = state_c.clone();
+            let drawing_area_b = drawing_area_c.clone();
+            let label_b = font_family_label_c.clone();
+            let list_b = inspector_list_c.clone();
+            btn.connect_clicked(move |b| {
+                if let Some(popover) = b.ancestor(Popover::static_type()) {
+                    popover.downcast::<Popover>().unwrap().popdown();
+                }
+                label_b.set_label(&family_str);
+                let mut st = state_b.lock().unwrap();
+                let changed = st.set_selected_text_font_family(family_str.clone());
+                let has_active_text = st.active_text_input.is_some();
+                if st.active_text_input.is_some() || !changed {
+                    st.text_font_family = family_str.clone();
+                }
+                drop(st);
+                sync_text_option_selection(
+                    &list_b,
+                    TEXT_FONT_FAMILIES
+                        .iter()
+                        .position(|c| *c == family_str.as_str()),
+                );
+                if has_active_text {
+                    drawing_area_b.grab_focus();
+                }
+                drawing_area_b.queue_draw();
+            });
+        }
+    }
 
     let sync_inspector_thickness_controls: Rc<dyn Fn()> = Rc::new({
         let state = state.clone();

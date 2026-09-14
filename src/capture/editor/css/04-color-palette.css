@@ -39,11 +39,10 @@
 
             .editor-color-trigger-shell {
                 min-height: 30px;
-                border-radius: 999px;
+                border-radius: 10px;
                 border: 1px solid rgba(255, 255, 255, 0.10);
-                background-image: linear-gradient(to bottom,
-                    rgba(38, 38, 44, 0.95),
-                    rgba(25, 25, 30, 0.95));
+                background: #1d1d1d;
+                background-image: none;
                 padding: 2px 6px 2px 4px;
                 transition: all 160ms ease;
                 box-shadow:
@@ -53,9 +52,8 @@
 
             .editor-color-trigger-shell:hover {
                 border-color: rgba(255, 255, 255, 0.18);
-                background-image: linear-gradient(to bottom,
-                    rgba(46, 46, 54, 0.98),
-                    rgba(31, 31, 38, 0.98));
+                background: #262628;
+                background-image: none;
                 box-shadow:
                     0 3px 8px rgba(0, 0, 0, 0.35),
                     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -63,9 +61,8 @@
 
             .editor-color-trigger-shell:active {
                 border-color: rgba(255, 255, 255, 0.12);
-                background-image: linear-gradient(to bottom,
-                    rgba(22, 22, 27, 0.98),
-                    rgba(17, 17, 21, 0.98));
+                background: #141414;
+                background-image: none;
                 box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
             }
 
@@ -106,7 +103,7 @@
             .editor-color-trigger-dot {
                 min-width: 20px;
                 min-height: 20px;
-                border-radius: 999px;
+                border-radius: 7px;
                 border: 1px solid rgba(255, 255, 255, 0.24);
                 box-shadow:
                     0 0 0 1px rgba(0, 0, 0, 0.5),
@@ -145,7 +142,7 @@
             .editor-color-placeholder-dot {
                 min-width: 18px;
                 min-height: 18px;
-                border-radius: 999px;
+                border-radius: 7px;
             }
 
             .editor-color-dot {
@@ -164,9 +161,8 @@
             .editor-color-popover-body {
                 padding: 8px;
                 border-radius: 14px;
-                background-image: linear-gradient(to bottom,
-                    rgba(28, 28, 34, 0.98),
-                    rgba(18, 18, 23, 0.98));
+                background: #1d1d1d;
+                background-image: none;
                 border: 1px solid rgba(255, 255, 255, 0.10);
                 box-shadow:
                     0 14px 32px rgba(0, 0, 0, 0.55),
