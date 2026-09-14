@@ -60,6 +60,46 @@
                 box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
             }
 
+            .editor-obfuscate-slider-bar {
+                padding: 2px 8px;
+                min-width: 240px;
+                border-radius: 999px;
+            }
+
+            .editor-obfuscate-intensity-slider {
+                min-width: 200px;
+                margin: 0;
+            }
+
+            .editor-obfuscate-intensity-slider trough {
+                background-color: alpha(white, 0.20);
+                border-radius: 999px;
+                border: none;
+                min-height: 6px;
+            }
+
+            .editor-obfuscate-intensity-slider highlight {
+                background-color: alpha(white, 0.20);
+                border-radius: 999px;
+                border: none;
+            }
+
+            .editor-obfuscate-intensity-slider slider {
+                background: #b05c38;
+                border: 3px solid white;
+                border-radius: 50%;
+                min-width: 10px;
+                min-height: 10px;
+            }
+
+            .editor-obfuscate-intensity-slider slider:hover {
+                background: #c06a44;
+            }
+
+            .editor-obfuscate-intensity-slider slider:active {
+                background: #8a4a2d;
+            }
+
             .editor-text-floating-bar .editor-tools-group {
                 background: transparent;
                 border: none;

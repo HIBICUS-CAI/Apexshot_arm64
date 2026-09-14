@@ -369,6 +369,16 @@ pub(super) fn wire_canvas_click(
                     if let Some(font_family) = st.selected_text_font_family() {
                         st.text_font_family = font_family;
                     }
+                    if let Some(crate::capture::editor::types::AnnotationAction::Obfuscate {
+                        method,
+                        amount,
+                        ..
+                    }) = st.selected_action()
+                    {
+                        let (method, amount) = (*method, *amount);
+                        st.set_obfuscate_method(method);
+                        st.set_current_obfuscate_amount(amount);
+                    }
 
                     let selected_color_index = selected_color.map(palette_index_for_color);
                     let selected_text_size = Some(st.text_size);

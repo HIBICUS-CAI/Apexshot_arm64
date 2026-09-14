@@ -26,6 +26,29 @@ impl EditorState {
 
     pub fn set_obfuscate_method(&mut self, method: ObfuscateMethod) {
         self.obfuscate_method = method;
+        // Live-update the selected rect so method switches re-tint existing pixels
+        // (mirrors set_text_size propagating to the selected text action).
+        // ponytail: amount snaps to the new method's current amount; per-method memory stays in the pixelate/blur stores.
+        let current = self.current_obfuscate_amount();
+        if let Some(index) = self.selected_action_index {
+            if let Some(AnnotationAction::Obfuscate {
+                method: act_method,
+                amount: act_amount,
+                ..
+            }) = self.actions.get_mut(index)
+            {
+                if *act_method == method && (*act_amount - current).abs() <= f64::EPSILON {
+                    return;
+                }
+                *act_method = method;
+                if (*act_amount - current).abs() > f64::EPSILON {
+                    *act_amount = clamp_obfuscate_amount(current);
+                }
+                self.redo_actions.clear();
+            } else if self.actions.get(index).is_none() {
+                self.selected_action_index = None;
+            }
+        }
     }
 
     pub fn obfuscate_method(&self) -> ObfuscateMethod {

@@ -2,7 +2,7 @@ use gdk4x11::X11Surface;
 use gtk4::gdk;
 use gtk4::{
     glib, prelude::*, Application, ApplicationWindow, Box as GtkBox, Button, CheckButton,
-    DrawingArea, DropTarget, Entry, Label, Orientation, Overlay, Popover, Stack,
+    DrawingArea, DropTarget, Entry, Image, Label, Orientation, Overlay, Popover, Scale, Stack,
 };
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -1714,6 +1714,385 @@ fn setup_editor_window_full(
         });
     }
 
+    // Floating obfuscate bars (mirrors the text bar): the method picker pill stays
+    // on top of the active obfuscate rect, while a separate intensity slider pill
+    // sits at the bottom of it.
+    let obfuscate_method_bar = GtkBox::new(Orientation::Horizontal, 8);
+    obfuscate_method_bar.add_css_class("editor-text-floating-bar");
+    obfuscate_method_bar.set_halign(gtk4::Align::Start);
+    obfuscate_method_bar.set_valign(gtk4::Align::Start);
+
+    let obfuscate_slider_bar = GtkBox::new(Orientation::Horizontal, 4);
+    obfuscate_slider_bar.add_css_class("editor-text-floating-bar");
+    obfuscate_slider_bar.add_css_class("editor-obfuscate-slider-bar");
+    obfuscate_slider_bar.set_halign(gtk4::Align::Start);
+    obfuscate_slider_bar.set_valign(gtk4::Align::Start);
+
+    let obfuscate_floating_method_button = Button::new();
+    obfuscate_floating_method_button.set_has_frame(false);
+    obfuscate_floating_method_button.set_focusable(false);
+    obfuscate_floating_method_button.add_css_class("editor-tool-button");
+    obfuscate_floating_method_button.add_css_class("flat");
+    obfuscate_floating_method_button.set_tooltip_text(Some(&t("Obfuscate method")));
+    let obfuscate_floating_btn_box = GtkBox::new(Orientation::Horizontal, 6);
+    obfuscate_floating_btn_box.set_halign(gtk4::Align::Center);
+    obfuscate_floating_btn_box.set_valign(gtk4::Align::Center);
+    let obfuscate_floating_icon = Image::from_icon_name(icon_names::VIEW_GRID);
+    obfuscate_floating_icon.set_pixel_size(14);
+    let obfuscate_floating_label = Label::new(Some("Pixelate"));
+    let obfuscate_floating_chevron = Image::from_icon_name(icon_names::CHEVRON_DOWN_REGULAR);
+    obfuscate_floating_chevron.set_pixel_size(10);
+    obfuscate_floating_btn_box.append(&obfuscate_floating_icon);
+    obfuscate_floating_btn_box.append(&obfuscate_floating_label);
+    obfuscate_floating_btn_box.append(&obfuscate_floating_chevron);
+    obfuscate_floating_method_button.set_child(Some(&obfuscate_floating_btn_box));
+
+    let obfuscate_floating_popover = Popover::new();
+    obfuscate_floating_popover.set_has_arrow(false);
+    obfuscate_floating_popover.set_autohide(true);
+    obfuscate_floating_popover.add_css_class("editor-popover");
+    obfuscate_floating_popover.set_parent(&obfuscate_floating_method_button);
+    let obfuscate_floating_method_list = GtkBox::new(Orientation::Vertical, 0);
+    obfuscate_floating_method_list.add_css_class("editor-popover-list");
+    obfuscate_floating_popover.set_child(Some(&obfuscate_floating_method_list));
+
+    {
+        let selected = state.lock().unwrap().obfuscate_method();
+        for (method, label) in OBFUSCATE_METHOD_OPTIONS {
+            let row = GtkBox::new(Orientation::Horizontal, 8);
+            row.set_margin_start(8);
+            row.set_margin_end(8);
+            row.set_margin_top(4);
+            row.set_margin_bottom(4);
+            let icon_name = match method {
+                super::types::ObfuscateMethod::Pixelate => icon_names::VIEW_GRID,
+                super::types::ObfuscateMethod::Blur => icon_names::BLUR,
+                super::types::ObfuscateMethod::Blackout => icon_names::MEDIA_PLAYBACK_STOP,
+            };
+            let icon = Image::from_icon_name(icon_name);
+            icon.set_pixel_size(14);
+            let lab = Label::new(Some(&t(label)));
+            lab.set_hexpand(true);
+            lab.set_xalign(0.0);
+            let check = Label::new(Some("✓"));
+            check.set_visible(method == selected);
+            check.add_css_class("editor-obfuscate-inspector-check");
+            row.append(&icon);
+            row.append(&lab);
+            row.append(&check);
+            let btn = Button::builder()
+                .has_frame(false)
+                .css_classes([
+                    "editor-popover-list-item",
+                    "flat",
+                    "editor-obfuscate-inspector-option",
+                ])
+                .child(&row)
+                .build();
+            if method == selected {
+                btn.add_css_class("editor-obfuscate-inspector-option-active");
+            }
+            obfuscate_floating_method_list.append(&btn);
+        }
+    }
+    {
+        let m = state.lock().unwrap().obfuscate_method();
+        let (icon_name, label) = match m {
+            super::types::ObfuscateMethod::Pixelate => (icon_names::VIEW_GRID, "Pixelate"),
+            super::types::ObfuscateMethod::Blur => (icon_names::BLUR, "Blur"),
+            super::types::ObfuscateMethod::Blackout => {
+                (icon_names::MEDIA_PLAYBACK_STOP, "Blackout")
+            }
+        };
+        obfuscate_floating_icon.set_icon_name(Some(icon_name));
+        obfuscate_floating_label.set_label(&t(label));
+    }
+
+    {
+        let p = obfuscate_floating_popover.clone();
+        obfuscate_floating_method_button.connect_clicked(move |_| {
+            p.popup();
+        });
+    }
+    obfuscate_method_bar.append(&obfuscate_floating_method_button);
+
+    let obfuscate_intensity_slider = Scale::with_range(
+        Orientation::Horizontal,
+        super::color::MIN_OBFUSCATE_AMOUNT,
+        super::color::MAX_OBFUSCATE_AMOUNT,
+        0.5,
+    );
+    obfuscate_intensity_slider.add_css_class("editor-toolbar-size-slider");
+    obfuscate_intensity_slider.add_css_class("editor-obfuscate-intensity-slider");
+    obfuscate_intensity_slider.set_draw_value(false);
+    obfuscate_intensity_slider.set_size_request(200, -1);
+    obfuscate_intensity_slider.set_halign(gtk4::Align::Fill);
+    obfuscate_intensity_slider.set_valign(gtk4::Align::Center);
+    obfuscate_intensity_slider.set_hexpand(true);
+    obfuscate_intensity_slider.set_value(state.lock().unwrap().current_obfuscate_amount());
+
+    obfuscate_slider_bar.append(&obfuscate_intensity_slider);
+    obfuscate_method_bar.set_visible(false);
+    obfuscate_slider_bar.set_visible(false);
+    canvas_overlay.add_overlay(&obfuscate_method_bar);
+    canvas_overlay.add_overlay(&obfuscate_slider_bar);
+
+    // Wire floating method list like the inspector list.
+    {
+        let methods = [
+            super::types::ObfuscateMethod::Pixelate,
+            super::types::ObfuscateMethod::Blur,
+            super::types::ObfuscateMethod::Blackout,
+        ];
+        let mut idx = 0usize;
+        let mut child_opt = obfuscate_floating_method_list.first_child();
+        while let Some(child) = child_opt {
+            child_opt = child.next_sibling();
+            let Ok(btn) = child.downcast::<Button>() else {
+                continue;
+            };
+            let Some(&method) = methods.get(idx) else {
+                break;
+            };
+            idx += 1;
+            let state_m = state.clone();
+            let drawing_area_m = drawing_area.clone();
+            let floating_list_m = obfuscate_floating_method_list.clone();
+            let inspector_list_m = obfuscate_method_list.clone();
+            let toolbar_button_m = obfuscate_method_button.clone();
+            let floating_icon_m = obfuscate_floating_icon.clone();
+            let floating_label_m = obfuscate_floating_label.clone();
+            let rebuild_m = rebuild_effects_async.clone();
+            let list_index = idx - 1;
+            btn.connect_clicked(move |b| {
+                {
+                    let mut st = state_m.lock().unwrap();
+                    st.set_obfuscate_method(method);
+                }
+                if let Some(child) = toolbar_button_m.child() {
+                    if let Ok(img) = child.downcast::<Image>() {
+                        let icon_name = match method {
+                            super::types::ObfuscateMethod::Pixelate => icon_names::VIEW_GRID,
+                            super::types::ObfuscateMethod::Blur => icon_names::BLUR,
+                            super::types::ObfuscateMethod::Blackout => {
+                                icon_names::MEDIA_PLAYBACK_STOP
+                            }
+                        };
+                        img.set_icon_name(Some(icon_name));
+                    }
+                }
+                let (icon_name, label) = match method {
+                    super::types::ObfuscateMethod::Pixelate => (icon_names::VIEW_GRID, "Pixelate"),
+                    super::types::ObfuscateMethod::Blur => (icon_names::BLUR, "Blur"),
+                    super::types::ObfuscateMethod::Blackout => {
+                        (icon_names::MEDIA_PLAYBACK_STOP, "Blackout")
+                    }
+                };
+                floating_icon_m.set_icon_name(Some(icon_name));
+                floating_label_m.set_label(&t(label));
+                sync_obfuscate_option_selection(&floating_list_m, list_index);
+                sync_obfuscate_option_selection(&inspector_list_m, list_index);
+                rebuild_m();
+                if let Some(popover) = b.ancestor(Popover::static_type()) {
+                    popover.downcast::<Popover>().unwrap().popdown();
+                }
+                drawing_area_m.queue_draw();
+            });
+        }
+    }
+
+    // Wire floating intensity slider like the toolbar size slider.
+    {
+        let state_s = state.clone();
+        let drawing_area_s = drawing_area.clone();
+        let toolbar_slider_s = size_slider.clone();
+        let rebuild_s = rebuild_effects_async.clone();
+        obfuscate_intensity_slider.connect_value_changed(move |slider| {
+            let value = slider.value();
+            if state_s
+                .lock()
+                .unwrap()
+                .set_active_size_without_rebuild(value)
+            {
+                if (toolbar_slider_s.value() - value).abs() > f64::EPSILON {
+                    toolbar_slider_s.set_value(value);
+                }
+                rebuild_s();
+                drawing_area_s.queue_draw();
+            }
+        });
+    }
+
+    // Tick: method picker pill stays on top of the active obfuscate rect (draft or
+    // selected), intensity slider pill sits at the bottom of it. Owns visibility:
+    // Obfuscate/Select tool + rect shows them.
+    {
+        let state_t = state.clone();
+        let transform_t = transform.clone();
+        let method_bar = obfuscate_method_bar.clone();
+        let slider_bar = obfuscate_slider_bar.clone();
+        let slider = obfuscate_intensity_slider.clone();
+        let floating_list = obfuscate_floating_method_list.clone();
+        let floating_icon = obfuscate_floating_icon.clone();
+        let floating_label = obfuscate_floating_label.clone();
+        let toolbar_slider = size_slider.clone();
+        let known_method = Rc::new(Cell::new((200.0f64, 48.0f64)));
+        let known_slider = Rc::new(Cell::new((220.0f64, 48.0f64)));
+        drawing_area.add_tick_callback(move |widget, _| {
+            let (show_bar, rect_opt, method, amount, view) = {
+                let st = state_t.lock().unwrap();
+                // Live draft first; otherwise the selected rect (reselect) when the
+                // Obfuscate or Select tool is active. Prefer the rect's own
+                // method/amount so re-editing shows the truth.
+                let mut show = false;
+                let mut rect_opt = None;
+                let mut method = st.obfuscate_method();
+                let mut amount = st.current_obfuscate_amount();
+                if st.selected_tool == Tool::Obfuscate {
+                    if let Some(AnnotationAction::Obfuscate { rect, .. }) = st.draft_action() {
+                        show = true;
+                        rect_opt = Some(rect);
+                    }
+                }
+                if rect_opt.is_none() {
+                    if let Some(AnnotationAction::Obfuscate {
+                        rect,
+                        method: m,
+                        amount: a,
+                    }) = st.selected_action()
+                    {
+                        if matches!(st.selected_tool, Tool::Obfuscate | Tool::Select) {
+                            show = true;
+                            rect_opt = Some(*rect);
+                            method = *m;
+                            amount = *a;
+                        }
+                    }
+                }
+                drop(st);
+                let view = *transform_t.lock().unwrap();
+                (show, rect_opt, method, amount, view)
+            };
+            let Some(rect) = rect_opt.filter(|_| show_bar) else {
+                if method_bar.is_visible() {
+                    method_bar.set_visible(false);
+                }
+                if slider_bar.is_visible() {
+                    slider_bar.set_visible(false);
+                }
+                return glib::ControlFlow::Continue;
+            };
+            // Sync method UI + intensity UI from state.
+            let (icon_name, label, tooltip) = match method {
+                super::types::ObfuscateMethod::Pixelate => {
+                    (icon_names::VIEW_GRID, "Pixelate", "Pixelate intensity")
+                }
+                super::types::ObfuscateMethod::Blur => (icon_names::BLUR, "Blur", "Blur intensity"),
+                super::types::ObfuscateMethod::Blackout => (
+                    icon_names::MEDIA_PLAYBACK_STOP,
+                    "Blackout",
+                    "Blackout has no intensity control",
+                ),
+            };
+            floating_icon.set_icon_name(Some(icon_name));
+            floating_label.set_label(&t(label));
+            if let Some(pos) = OBFUSCATE_METHOD_OPTIONS
+                .iter()
+                .position(|(m, _)| *m == method)
+            {
+                sync_obfuscate_option_selection(&floating_list, pos);
+            }
+            let has_slider = method.has_slider();
+            if has_slider {
+                slider.set_sensitive(true);
+                slider.set_tooltip_text(Some(tooltip));
+                if (slider.value() - amount).abs() > f64::EPSILON {
+                    slider.set_value(amount);
+                }
+                // Keep the toolbar slider in sync while the floating pills own the tool.
+                if (toolbar_slider.value() - amount).abs() > f64::EPSILON {
+                    toolbar_slider.set_range(
+                        super::color::MIN_OBFUSCATE_AMOUNT,
+                        super::color::MAX_OBFUSCATE_AMOUNT,
+                    );
+                    toolbar_slider.set_value(amount);
+                }
+                toolbar_slider.set_tooltip_text(Some(tooltip));
+            }
+            let area_w = widget.width() as f64;
+            let area_h = widget.height() as f64;
+            let x = rect.x as f64 * view.scale + view.offset_x;
+            let y = rect.y as f64 * view.scale + view.offset_y;
+            let rect_h = rect.height as f64 * view.scale;
+            let rect_cx = x + rect.width as f64 * view.scale / 2.0;
+            let gap = 12.0;
+            // Picker pill on top; flip below only when there is no room.
+            let (mut method_w, mut method_h) = known_method.get();
+            let (mbw, mbh) = (method_bar.width() as f64, method_bar.height() as f64);
+            if mbw > 1.0 {
+                method_w = mbw;
+            }
+            if mbh > 1.0 {
+                method_h = method_h.max(mbh);
+            }
+            known_method.set((method_w, method_h));
+            let mut method_top = y - method_h - gap;
+            if method_top < 0.0 {
+                method_top = y + rect_h + gap;
+            }
+            if method_top + method_h > area_h {
+                method_top = (area_h - method_h).max(0.0);
+            }
+            let method_left = (rect_cx - method_w / 2.0)
+                .max(0.0)
+                .min((area_w - method_w).max(0.0));
+            if (method_bar.margin_start() as f64 - method_left).abs() >= 1.0
+                || (method_bar.margin_top() as f64 - method_top).abs() >= 1.0
+            {
+                method_bar.set_margin_start(method_left as i32);
+                method_bar.set_margin_top(method_top as i32);
+            }
+            if !method_bar.is_visible() {
+                method_bar.set_visible(true);
+            }
+            // Slider pill at the bottom; flip above only when there is no room.
+            if slider_bar.is_visible() != has_slider {
+                slider_bar.set_visible(has_slider);
+            }
+            if has_slider {
+                let (mut slider_w, mut slider_h) = known_slider.get();
+                let (sbw, sbh) = (slider_bar.width() as f64, slider_bar.height() as f64);
+                if sbw > 1.0 {
+                    slider_w = sbw;
+                }
+                if sbh > 1.0 {
+                    slider_h = slider_h.max(sbh);
+                }
+                known_slider.set((slider_w, slider_h));
+                let mut slider_top = y + rect_h + gap;
+                if slider_top + slider_h > area_h {
+                    slider_top = y - slider_h - gap;
+                }
+                if slider_top < 0.0 {
+                    slider_top = (area_h - slider_h).max(0.0);
+                }
+                let slider_left = (rect_cx - slider_w / 2.0)
+                    .max(0.0)
+                    .min((area_w - slider_w).max(0.0));
+                if (slider_bar.margin_start() as f64 - slider_left).abs() >= 1.0
+                    || (slider_bar.margin_top() as f64 - slider_top).abs() >= 1.0
+                {
+                    slider_bar.set_margin_start(slider_left as i32);
+                    slider_bar.set_margin_top(slider_top as i32);
+                }
+                if !slider_bar.is_visible() {
+                    slider_bar.set_visible(true);
+                }
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
     // Wire the toolbar font/size popover lists (built dead in toolbar.rs) like the inspector lists.
     {
         let state_c = state.clone();
@@ -1741,9 +2120,7 @@ fn setup_editor_window_full(
                 let mut st = state_b.lock().unwrap();
                 let changed = st.set_text_size(size as f64);
                 let has_active_text = st.active_text_input.is_some();
-                if !changed
-                    && st.active_text_input.is_none()
-                    && st.selected_action_index.is_none()
+                if !changed && st.active_text_input.is_none() && st.selected_action_index.is_none()
                 {
                     st.text_size = size as f64;
                 }
@@ -2205,12 +2582,14 @@ fn setup_editor_window_full(
         let state = state.clone();
         let drawing_area = drawing_area.clone();
         let obfuscate_method_list_sync = obfuscate_method_list.clone();
+        let rebuild_obfuscate_inspector = rebuild_effects_async.clone();
         btn.connect_clicked(move |_| {
             {
                 let mut st = state.lock().unwrap();
                 st.set_obfuscate_method(*method);
             }
             sync_obfuscate_option_selection(&obfuscate_method_list_sync, index);
+            rebuild_obfuscate_inspector();
             drawing_area.queue_draw();
         });
 

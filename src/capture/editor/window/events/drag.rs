@@ -424,8 +424,11 @@ pub(super) fn wire_canvas_drag(
             return;
         }
 
-        // Box/Circle tool: unified interaction — resize, move, or draw new.
-        if matches!(st.selected_tool, Tool::Box | Tool::Circle) {
+        // Box/Circle/Obfuscate tool: unified interaction — resize, move, or draw new.
+        if matches!(
+            st.selected_tool,
+            Tool::Box | Tool::Circle | Tool::Obfuscate
+        ) {
             let image_point = t.view_to_image_clamped(view_point);
 
             // If an action is already selected and we're dragging it, continue.
@@ -448,6 +451,9 @@ pub(super) fn wire_canvas_drag(
                             }
                             crate::capture::editor::types::AnnotationAction::Circle { .. } => {
                                 st.selected_tool == Tool::Circle
+                            }
+                            crate::capture::editor::types::AnnotationAction::Obfuscate { .. } => {
+                                st.selected_tool == Tool::Obfuscate
                             }
                             _ => false,
                         };
@@ -514,6 +520,9 @@ pub(super) fn wire_canvas_drag(
                             }
                             crate::capture::editor::types::AnnotationAction::Circle { .. } => {
                                 st.selected_tool == Tool::Circle
+                            }
+                            crate::capture::editor::types::AnnotationAction::Obfuscate { .. } => {
+                                st.selected_tool == Tool::Obfuscate
                             }
                             _ => false,
                         };
@@ -654,7 +663,7 @@ pub(super) fn wire_canvas_drag(
                     && st.selected_action_index.is_some()
                     && st.active_text_input.is_none()
                     && !st.active_text_is_dragging)
-                || (matches!(st.selected_tool, Tool::Box | Tool::Circle)
+                || (matches!(st.selected_tool, Tool::Box | Tool::Circle | Tool::Obfuscate)
                     && st.selected_action_index.is_some()
                     && st.select_drag_anchor.is_some())
             {
@@ -799,7 +808,7 @@ pub(super) fn wire_canvas_drag(
                 || (st.selected_tool == Tool::Text
                     && st.active_text_input.is_none()
                     && !st.active_text_is_dragging)
-                || (matches!(st.selected_tool, Tool::Box | Tool::Circle)
+                || (matches!(st.selected_tool, Tool::Box | Tool::Circle | Tool::Obfuscate)
                     && st.selected_action_index.is_some()
                     && st.select_drag_anchor.is_some())
             {

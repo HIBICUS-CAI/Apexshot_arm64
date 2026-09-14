@@ -638,6 +638,8 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                         selected_action,
                         AnnotationAction::Box { .. } | AnnotationAction::Circle { .. }
                     ))
+                || (selected_tool == Tool::Obfuscate
+                    && matches!(selected_action, AnnotationAction::Obfuscate { .. }))
             {
                 if let AnnotationAction::Text { .. } = selected_action {
                     // Already handled above.

@@ -488,4 +488,34 @@ mod tests {
             other => panic!("expected obfuscate draft, got {other:?}"),
         }
     }
+
+    #[test]
+    fn obfuscate_method_switch_retints_selected_rect() {
+        let mut state = EditorState::new(RgbaImage::new(32, 32));
+        state.selected_tool = super::Tool::Obfuscate;
+        state.push_action(AnnotationAction::Obfuscate {
+            rect: Rect {
+                x: 2,
+                y: 2,
+                width: 8,
+                height: 8,
+            },
+            method: ObfuscateMethod::Pixelate,
+            amount: DEFAULT_OBFUSCATE_AMOUNT,
+        });
+        state.set_obfuscate_method(ObfuscateMethod::Blur);
+        match state.selected_action().expect("selected obfuscate") {
+            AnnotationAction::Obfuscate { method, .. } => {
+                assert_eq!(*method, ObfuscateMethod::Blur);
+            }
+            other => panic!("expected obfuscate action, got {other:?}"),
+        }
+        state.set_obfuscate_method(ObfuscateMethod::Blackout);
+        match state.selected_action().expect("selected obfuscate") {
+            AnnotationAction::Obfuscate { method, .. } => {
+                assert_eq!(*method, ObfuscateMethod::Blackout);
+            }
+            other => panic!("expected obfuscate action, got {other:?}"),
+        }
+    }
 }
