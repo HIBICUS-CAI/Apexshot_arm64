@@ -1,4 +1,4 @@
-//! Shared widgets for the per-tool floating bars (text, obfuscate, number, highlighter).
+//! Shared widgets for the per-tool floating bars (text, obfuscate, number, highlighter, pen, arrow, shape).
 //!
 //! Each bar is a small dark bar of pills that either follows the element being
 //! edited or docks in the chrome band above the canvas. The pill, popover row, and
@@ -312,11 +312,71 @@ mod tests {
             include_str!("number_bar.rs"),
             include_str!("highlighter_bar.rs"),
             include_str!("pen_bar.rs"),
+            include_str!("arrow_bar.rs"),
+            include_str!("shape_bar.rs"),
         ] {
             let production = bar.split("#[cfg(test)]").next().unwrap_or(bar);
             assert!(
                 !production.contains("set_visible(false)") && production.contains("set_bar_shown("),
                 "Docked bars must be shown/hidden through set_bar_shown, never set_visible"
+            );
+        }
+    }
+
+    #[test]
+    fn every_bar_reveals_itself_before_it_can_bail_out() {
+        // The bars are opacity-hidden, so a tick that returns before revealing leaves
+        // the bar invisible for good — exactly how the number bar went missing once.
+        // Docked bars only: the anchored ones (text, obfuscate, focus) come and go with
+        // the element they follow and are allowed to map/unmap.
+        for (name, bar) in [
+            ("number_bar.rs", include_str!("number_bar.rs")),
+            ("highlighter_bar.rs", include_str!("highlighter_bar.rs")),
+            ("pen_bar.rs", include_str!("pen_bar.rs")),
+            ("arrow_bar.rs", include_str!("arrow_bar.rs")),
+            ("shape_bar.rs", include_str!("shape_bar.rs")),
+        ] {
+            let production = bar.split("#[cfg(test)]").next().unwrap_or(bar);
+            let reveal = production
+                .find("set_bar_shown(&root, show);")
+                .unwrap_or_else(|| panic!("{name}: the bar never reveals itself"));
+            let bail_out = production
+                .find("return glib::ControlFlow::Continue;")
+                .unwrap_or_else(|| panic!("{name}: tick has no early return to compare"));
+            assert!(
+                reveal < bail_out,
+                "{name}: the bar must be revealed before the tick can return early"
+            );
+        }
+    }
+
+    #[test]
+    fn docked_bars_reserve_the_space_they_actually_need() {
+        // A remembered or guessed bar size (the number bar once kept a 320x44 default)
+        // makes one tool push the image down further than another with the same CSS.
+        for (name, bar) in [
+            ("number_bar.rs", include_str!("number_bar.rs")),
+            ("highlighter_bar.rs", include_str!("highlighter_bar.rs")),
+            ("pen_bar.rs", include_str!("pen_bar.rs")),
+            ("arrow_bar.rs", include_str!("arrow_bar.rs")),
+            ("shape_bar.rs", include_str!("shape_bar.rs")),
+        ] {
+            let production = bar.split("#[cfg(test)]").next().unwrap_or(bar);
+            assert!(
+                production
+                    .contains("let (bar_w, bar_h) = (root.width() as f64, root.height() as f64);")
+                    && !production.contains("Cell::new(("),
+                "{name}: reserve from the measured bar, not from a remembered guess"
+            );
+            let claimed = production.matches("dock_reserve(bar_h)").count();
+            let reserved = production.matches("dock_reserve(").count();
+            // `set_dock_reserve(` contains the same substring, so the claim is the one
+            // occurrence beyond the release calls.
+            let releases = production.matches("set_dock_reserve(").count();
+            assert_eq!(
+                claimed,
+                reserved - releases,
+                "{name}: the reserve must always come from the measured height"
             );
         }
     }

@@ -1,6 +1,6 @@
 use gtk4::{
     glib, prelude::*, Application, ApplicationWindow, Box as GtkBox, Button, CheckButton,
-    DrawingArea, Label, Overlay, Popover, Scale, ScrolledWindow,
+    DrawingArea, Label, Overlay, Scale, ScrolledWindow,
 };
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -90,7 +90,6 @@ pub(super) struct EventContext {
     pub color_buttons: Vec<Button>,
     pub color_picker_dot: GtkBox,
     pub color_class_names: Vec<&'static str>,
-    pub color_popover: Popover,
     pub size_slider: Scale,
     pub text_size_label: Label,
     pub font_family_label: Label,
@@ -180,7 +179,6 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         color_buttons,
         color_picker_dot,
         color_class_names,
-        color_popover,
         size_slider,
         text_size_label,
         font_family_label,
@@ -346,7 +344,7 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
             color_buttons: &color_buttons,
             color_picker_dot: &color_picker_dot,
             color_class_names: &color_class_names,
-            color_popover: &color_popover,
+            set_picker_panel_visibility: &set_picker_panel_visibility,
             size_slider: &size_slider,
         },
         &window,
@@ -394,7 +392,6 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         &color_buttons,
         &color_picker_dot,
         &color_class_names,
-        &color_popover,
         &space_pan_active,
         &eyedropper_mode,
         &eyedropper_from_sidebar,

@@ -6,7 +6,7 @@
 
 use gtk4::{
     gdk, glib, prelude::*, ApplicationWindow, Box as GtkBox, Button, DrawingArea,
-    EventControllerKey, GestureClick, Label, Popover,
+    EventControllerKey, GestureClick, Label,
 };
 use image::RgbaImage;
 use std::cell::{Cell, RefCell};
@@ -73,7 +73,6 @@ pub(super) fn wire_canvas_click(
     color_buttons: &[Button],
     color_picker_dot: &GtkBox,
     color_class_names: &[&'static str],
-    color_popover: &Popover,
     space_pan_active: &Rc<Cell<bool>>,
     eyedropper_mode: &Rc<Cell<bool>>,
     eyedropper_from_sidebar: &Rc<Cell<bool>>,
@@ -148,7 +147,6 @@ pub(super) fn wire_canvas_click(
     let eyedropper_from_sidebar_click = eyedropper_from_sidebar.clone();
     let eyedropper_point_click = eyedropper_point.clone();
     let eyedropper_rendered_click = eyedropper_rendered.clone();
-    let color_popover_canvas_click = color_popover.clone();
     let space_pan_active_click = space_pan_active.clone();
     let set_picker_panel_visibility_canvas_click = set_picker_panel_visibility.clone();
     let canvas_eyedropper_ring_click = canvas_eyedropper_ring.clone();
@@ -289,7 +287,7 @@ pub(super) fn wire_canvas_click(
                 }
             };
 
-            let mut reopen_color_popover = false;
+            let mut reopen_picker = false;
             let from_sidebar = eyedropper_from_sidebar_click.get();
             if let Some(color) = picked_color {
                 // Only add to custom colors when picked from sidebar
@@ -298,7 +296,7 @@ pub(super) fn wire_canvas_click(
                     // Only apply to editor and sync picker if not from sidebar
                     apply_picker_color_to_editor_canvas_click(color);
                     sync_picker_from_color_canvas_click(color);
-                    reopen_color_popover = true;
+                    reopen_picker = true;
                 }
             }
 
@@ -309,9 +307,8 @@ pub(super) fn wire_canvas_click(
             canvas_eyedropper_ring_click.set_visible(false);
             set_window_cursor_name(&window_click, None);
 
-            if reopen_color_popover {
+            if reopen_picker {
                 set_picker_panel_visibility_canvas_click(true);
-                color_popover_canvas_click.popup();
             }
 
             if let Some(area) = drawing_area_click.upgrade() {

@@ -645,6 +645,8 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     ))
                 || (selected_tool == Tool::Obfuscate
                     && matches!(selected_action, AnnotationAction::Obfuscate { .. }))
+                || (selected_tool == Tool::Focus
+                    && matches!(selected_action, AnnotationAction::Focus { .. }))
                 || (selected_tool == Tool::Number
                     && matches!(selected_action, AnnotationAction::Number { .. }))
             {

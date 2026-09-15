@@ -2,7 +2,7 @@ use gdk4x11::X11Surface;
 use gtk4::gdk;
 use gtk4::{
     glib, prelude::*, Application, ApplicationWindow, Box as GtkBox, Button, CheckButton,
-    DrawingArea, DropTarget, Entry, Image, Label, Orientation, Overlay, Popover, Scale, Stack,
+    DrawingArea, DropTarget, Entry, Label, Orientation, Overlay, Popover, Stack,
 };
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -203,7 +203,7 @@ fn selected_action_geometry(action: &AnnotationAction) -> String {
 use super::ui_support::{
     arrow_style_toolbar_icon, install_editor_css, prefers_dark_glass_theme,
     prefers_reduced_transparency, recommended_window_size_with_extra_width, set_active_tool_button,
-    tool_icon_widget, toolbar_icon_size, EDITOR_MIN_WINDOW_WIDTH,
+    tool_icon_widget, toolbar_icon_size, EDITOR_MIN_WINDOW_WIDTH, EDITOR_TOP_CHROME_HEIGHT,
 };
 
 const TEXT_SIZE_OPTIONS: [i32; 12] = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
@@ -331,6 +331,7 @@ fn sync_obfuscate_option_selection(list: &GtkBox, selected_index: usize) {
     }
 }
 
+mod arrow_bar;
 mod background_assets;
 pub mod background_panel;
 mod canvas;
@@ -345,6 +346,7 @@ mod effects;
 mod empty_state;
 mod events;
 mod floating_bar;
+mod focus_bar;
 mod footer;
 mod highlighter_bar;
 mod inspectors;
@@ -353,7 +355,9 @@ mod motion_mode;
 mod motion_render;
 mod motion_timeline;
 mod number_bar;
+mod obfuscate_bar;
 mod pen_bar;
+mod shape_bar;
 mod toolbar;
 
 use background_assets::BackgroundAssetCaches;
@@ -857,8 +861,7 @@ fn setup_editor_window_full(
         drawing_area_placeholder.clone(),
         annotate_config.show_color_names,
     );
-    let color_picker_trigger_host = color_picker_parts.trigger_host;
-    let color_popover = color_picker_parts.popover;
+    let color_floating_card = color_picker_parts.floating_card;
     let color_buttons = color_picker_parts.color_buttons;
     let color_picker_dot = color_picker_parts.color_picker_dot;
     let color_class_names = color_picker_parts.color_class_names;
@@ -1646,16 +1649,15 @@ fn setup_editor_window_full(
 
     *drawing_area_placeholder.borrow_mut() = Some(drawing_area.downgrade());
 
-    // Floating text toolbar (Shotbase-style): font + size + color, anchored above the
+    // Floating text toolbar (Shotbase-style): font + size, anchored above the
     // blue text outline (active_text_bounds). Lives in canvas_overlay so it scrolls/zooms with the image.
+    // (Color lives in the toolbar chip next to -/□/×, which opens the picker.)
     let text_floating_bar = GtkBox::new(Orientation::Horizontal, 8);
     text_floating_bar.add_css_class("editor-text-floating-bar");
     text_floating_bar.set_halign(gtk4::Align::Start);
     text_floating_bar.set_valign(gtk4::Align::Start);
-    color_picker_trigger_host.set_hexpand(false);
     text_floating_bar.append(&font_family_group);
     text_floating_bar.append(&text_size_group);
-    text_floating_bar.append(&color_picker_trigger_host);
     text_floating_bar.set_visible(false);
     canvas_overlay.add_overlay(&text_floating_bar);
 
@@ -1722,385 +1724,6 @@ fn setup_editor_window_full(
         });
     }
 
-    // Floating obfuscate bars (mirrors the text bar): the method picker pill stays
-    // on top of the active obfuscate rect, while a separate intensity slider pill
-    // sits at the bottom of it.
-    let obfuscate_method_bar = GtkBox::new(Orientation::Horizontal, 8);
-    obfuscate_method_bar.add_css_class("editor-text-floating-bar");
-    obfuscate_method_bar.set_halign(gtk4::Align::Start);
-    obfuscate_method_bar.set_valign(gtk4::Align::Start);
-
-    let obfuscate_slider_bar = GtkBox::new(Orientation::Horizontal, 4);
-    obfuscate_slider_bar.add_css_class("editor-text-floating-bar");
-    obfuscate_slider_bar.add_css_class("editor-obfuscate-slider-bar");
-    obfuscate_slider_bar.set_halign(gtk4::Align::Start);
-    obfuscate_slider_bar.set_valign(gtk4::Align::Start);
-
-    let obfuscate_floating_method_button = Button::new();
-    obfuscate_floating_method_button.set_has_frame(false);
-    obfuscate_floating_method_button.set_focusable(false);
-    obfuscate_floating_method_button.add_css_class("editor-tool-button");
-    obfuscate_floating_method_button.add_css_class("flat");
-    obfuscate_floating_method_button.set_tooltip_text(Some(&t("Obfuscate method")));
-    let obfuscate_floating_btn_box = GtkBox::new(Orientation::Horizontal, 6);
-    obfuscate_floating_btn_box.set_halign(gtk4::Align::Center);
-    obfuscate_floating_btn_box.set_valign(gtk4::Align::Center);
-    let obfuscate_floating_icon = Image::from_icon_name(icon_names::VIEW_GRID);
-    obfuscate_floating_icon.set_pixel_size(14);
-    let obfuscate_floating_label = Label::new(Some("Pixelate"));
-    let obfuscate_floating_chevron = Image::from_icon_name(icon_names::CHEVRON_DOWN_REGULAR);
-    obfuscate_floating_chevron.set_pixel_size(10);
-    obfuscate_floating_btn_box.append(&obfuscate_floating_icon);
-    obfuscate_floating_btn_box.append(&obfuscate_floating_label);
-    obfuscate_floating_btn_box.append(&obfuscate_floating_chevron);
-    obfuscate_floating_method_button.set_child(Some(&obfuscate_floating_btn_box));
-
-    let obfuscate_floating_popover = Popover::new();
-    obfuscate_floating_popover.set_has_arrow(false);
-    obfuscate_floating_popover.set_autohide(true);
-    obfuscate_floating_popover.add_css_class("editor-popover");
-    obfuscate_floating_popover.set_parent(&obfuscate_floating_method_button);
-    let obfuscate_floating_method_list = GtkBox::new(Orientation::Vertical, 0);
-    obfuscate_floating_method_list.add_css_class("editor-popover-list");
-    obfuscate_floating_popover.set_child(Some(&obfuscate_floating_method_list));
-
-    {
-        let selected = state.lock().unwrap().obfuscate_method();
-        for (method, label) in OBFUSCATE_METHOD_OPTIONS {
-            let row = GtkBox::new(Orientation::Horizontal, 8);
-            row.set_margin_start(8);
-            row.set_margin_end(8);
-            row.set_margin_top(4);
-            row.set_margin_bottom(4);
-            let icon_name = match method {
-                super::types::ObfuscateMethod::Pixelate => icon_names::VIEW_GRID,
-                super::types::ObfuscateMethod::Blur => icon_names::BLUR,
-                super::types::ObfuscateMethod::Blackout => icon_names::MEDIA_PLAYBACK_STOP,
-            };
-            let icon = Image::from_icon_name(icon_name);
-            icon.set_pixel_size(14);
-            let lab = Label::new(Some(&t(label)));
-            lab.set_hexpand(true);
-            lab.set_xalign(0.0);
-            let check = Label::new(Some("✓"));
-            check.set_visible(method == selected);
-            check.add_css_class("editor-obfuscate-inspector-check");
-            row.append(&icon);
-            row.append(&lab);
-            row.append(&check);
-            let btn = Button::builder()
-                .has_frame(false)
-                .css_classes([
-                    "editor-popover-list-item",
-                    "flat",
-                    "editor-obfuscate-inspector-option",
-                ])
-                .child(&row)
-                .build();
-            if method == selected {
-                btn.add_css_class("editor-obfuscate-inspector-option-active");
-            }
-            obfuscate_floating_method_list.append(&btn);
-        }
-    }
-    {
-        let m = state.lock().unwrap().obfuscate_method();
-        let (icon_name, label) = match m {
-            super::types::ObfuscateMethod::Pixelate => (icon_names::VIEW_GRID, "Pixelate"),
-            super::types::ObfuscateMethod::Blur => (icon_names::BLUR, "Blur"),
-            super::types::ObfuscateMethod::Blackout => {
-                (icon_names::MEDIA_PLAYBACK_STOP, "Blackout")
-            }
-        };
-        obfuscate_floating_icon.set_icon_name(Some(icon_name));
-        obfuscate_floating_label.set_label(&t(label));
-    }
-
-    {
-        let p = obfuscate_floating_popover.clone();
-        obfuscate_floating_method_button.connect_clicked(move |_| {
-            p.popup();
-        });
-    }
-    obfuscate_method_bar.append(&obfuscate_floating_method_button);
-
-    let obfuscate_intensity_slider = Scale::with_range(
-        Orientation::Horizontal,
-        super::color::MIN_OBFUSCATE_AMOUNT,
-        super::color::MAX_OBFUSCATE_AMOUNT,
-        0.5,
-    );
-    obfuscate_intensity_slider.add_css_class("editor-toolbar-size-slider");
-    obfuscate_intensity_slider.add_css_class("editor-obfuscate-intensity-slider");
-    obfuscate_intensity_slider.set_draw_value(false);
-    obfuscate_intensity_slider.set_size_request(200, -1);
-    obfuscate_intensity_slider.set_halign(gtk4::Align::Fill);
-    obfuscate_intensity_slider.set_valign(gtk4::Align::Center);
-    obfuscate_intensity_slider.set_hexpand(true);
-    obfuscate_intensity_slider.set_value(state.lock().unwrap().current_obfuscate_amount());
-
-    obfuscate_slider_bar.append(&obfuscate_intensity_slider);
-    obfuscate_method_bar.set_visible(false);
-    obfuscate_slider_bar.set_visible(false);
-    canvas_overlay.add_overlay(&obfuscate_method_bar);
-    canvas_overlay.add_overlay(&obfuscate_slider_bar);
-
-    // Wire floating method list like the inspector list.
-    {
-        let methods = [
-            super::types::ObfuscateMethod::Pixelate,
-            super::types::ObfuscateMethod::Blur,
-            super::types::ObfuscateMethod::Blackout,
-        ];
-        let mut idx = 0usize;
-        let mut child_opt = obfuscate_floating_method_list.first_child();
-        while let Some(child) = child_opt {
-            child_opt = child.next_sibling();
-            let Ok(btn) = child.downcast::<Button>() else {
-                continue;
-            };
-            let Some(&method) = methods.get(idx) else {
-                break;
-            };
-            idx += 1;
-            let state_m = state.clone();
-            let drawing_area_m = drawing_area.clone();
-            let floating_list_m = obfuscate_floating_method_list.clone();
-            let inspector_list_m = obfuscate_method_list.clone();
-            let toolbar_button_m = obfuscate_method_button.clone();
-            let floating_icon_m = obfuscate_floating_icon.clone();
-            let floating_label_m = obfuscate_floating_label.clone();
-            let rebuild_m = rebuild_effects_async.clone();
-            let list_index = idx - 1;
-            btn.connect_clicked(move |b| {
-                {
-                    let mut st = state_m.lock().unwrap();
-                    st.set_obfuscate_method(method);
-                }
-                if let Some(child) = toolbar_button_m.child() {
-                    if let Ok(img) = child.downcast::<Image>() {
-                        let icon_name = match method {
-                            super::types::ObfuscateMethod::Pixelate => icon_names::VIEW_GRID,
-                            super::types::ObfuscateMethod::Blur => icon_names::BLUR,
-                            super::types::ObfuscateMethod::Blackout => {
-                                icon_names::MEDIA_PLAYBACK_STOP
-                            }
-                        };
-                        img.set_icon_name(Some(icon_name));
-                    }
-                }
-                let (icon_name, label) = match method {
-                    super::types::ObfuscateMethod::Pixelate => (icon_names::VIEW_GRID, "Pixelate"),
-                    super::types::ObfuscateMethod::Blur => (icon_names::BLUR, "Blur"),
-                    super::types::ObfuscateMethod::Blackout => {
-                        (icon_names::MEDIA_PLAYBACK_STOP, "Blackout")
-                    }
-                };
-                floating_icon_m.set_icon_name(Some(icon_name));
-                floating_label_m.set_label(&t(label));
-                sync_obfuscate_option_selection(&floating_list_m, list_index);
-                sync_obfuscate_option_selection(&inspector_list_m, list_index);
-                rebuild_m();
-                if let Some(popover) = b.ancestor(Popover::static_type()) {
-                    popover.downcast::<Popover>().unwrap().popdown();
-                }
-                drawing_area_m.queue_draw();
-            });
-        }
-    }
-
-    // Wire floating intensity slider like the toolbar size slider.
-    {
-        let state_s = state.clone();
-        let drawing_area_s = drawing_area.clone();
-        let toolbar_slider_s = size_slider.clone();
-        let rebuild_s = rebuild_effects_async.clone();
-        obfuscate_intensity_slider.connect_value_changed(move |slider| {
-            let value = slider.value();
-            if state_s
-                .lock()
-                .unwrap()
-                .set_active_size_without_rebuild(value)
-            {
-                if (toolbar_slider_s.value() - value).abs() > f64::EPSILON {
-                    toolbar_slider_s.set_value(value);
-                }
-                rebuild_s();
-                drawing_area_s.queue_draw();
-            }
-        });
-    }
-
-    // Tick: method picker pill stays on top of the active obfuscate rect (draft or
-    // selected), intensity slider pill sits at the bottom of it. Owns visibility:
-    // Obfuscate/Select tool + rect shows them.
-    {
-        let state_t = state.clone();
-        let transform_t = transform.clone();
-        let method_bar = obfuscate_method_bar.clone();
-        let slider_bar = obfuscate_slider_bar.clone();
-        let slider = obfuscate_intensity_slider.clone();
-        let floating_list = obfuscate_floating_method_list.clone();
-        let floating_icon = obfuscate_floating_icon.clone();
-        let floating_label = obfuscate_floating_label.clone();
-        let toolbar_slider = size_slider.clone();
-        let known_method = Rc::new(Cell::new((200.0f64, 48.0f64)));
-        let known_slider = Rc::new(Cell::new((220.0f64, 48.0f64)));
-        drawing_area.add_tick_callback(move |widget, _| {
-            let (show_bar, rect_opt, method, amount, view) = {
-                let st = state_t.lock().unwrap();
-                // Live draft first; otherwise the selected rect (reselect) when the
-                // Obfuscate or Select tool is active. Prefer the rect's own
-                // method/amount so re-editing shows the truth.
-                let mut show = false;
-                let mut rect_opt = None;
-                let mut method = st.obfuscate_method();
-                let mut amount = st.current_obfuscate_amount();
-                if st.selected_tool == Tool::Obfuscate {
-                    if let Some(AnnotationAction::Obfuscate { rect, .. }) = st.draft_action() {
-                        show = true;
-                        rect_opt = Some(rect);
-                    }
-                }
-                if rect_opt.is_none() {
-                    if let Some(AnnotationAction::Obfuscate {
-                        rect,
-                        method: m,
-                        amount: a,
-                    }) = st.selected_action()
-                    {
-                        if matches!(st.selected_tool, Tool::Obfuscate | Tool::Select) {
-                            show = true;
-                            rect_opt = Some(*rect);
-                            method = *m;
-                            amount = *a;
-                        }
-                    }
-                }
-                drop(st);
-                let view = *transform_t.lock().unwrap();
-                (show, rect_opt, method, amount, view)
-            };
-            let Some(rect) = rect_opt.filter(|_| show_bar) else {
-                if method_bar.is_visible() {
-                    method_bar.set_visible(false);
-                }
-                if slider_bar.is_visible() {
-                    slider_bar.set_visible(false);
-                }
-                return glib::ControlFlow::Continue;
-            };
-            // Sync method UI + intensity UI from state.
-            let (icon_name, label, tooltip) = match method {
-                super::types::ObfuscateMethod::Pixelate => {
-                    (icon_names::VIEW_GRID, "Pixelate", "Pixelate intensity")
-                }
-                super::types::ObfuscateMethod::Blur => (icon_names::BLUR, "Blur", "Blur intensity"),
-                super::types::ObfuscateMethod::Blackout => (
-                    icon_names::MEDIA_PLAYBACK_STOP,
-                    "Blackout",
-                    "Blackout has no intensity control",
-                ),
-            };
-            floating_icon.set_icon_name(Some(icon_name));
-            floating_label.set_label(&t(label));
-            if let Some(pos) = OBFUSCATE_METHOD_OPTIONS
-                .iter()
-                .position(|(m, _)| *m == method)
-            {
-                sync_obfuscate_option_selection(&floating_list, pos);
-            }
-            let has_slider = method.has_slider();
-            if has_slider {
-                slider.set_sensitive(true);
-                slider.set_tooltip_text(Some(tooltip));
-                if (slider.value() - amount).abs() > f64::EPSILON {
-                    slider.set_value(amount);
-                }
-                // Keep the toolbar slider in sync while the floating pills own the tool.
-                if (toolbar_slider.value() - amount).abs() > f64::EPSILON {
-                    toolbar_slider.set_range(
-                        super::color::MIN_OBFUSCATE_AMOUNT,
-                        super::color::MAX_OBFUSCATE_AMOUNT,
-                    );
-                    toolbar_slider.set_value(amount);
-                }
-                toolbar_slider.set_tooltip_text(Some(tooltip));
-            }
-            let area_w = widget.width() as f64;
-            let area_h = widget.height() as f64;
-            let x = rect.x as f64 * view.scale + view.offset_x;
-            let y = rect.y as f64 * view.scale + view.offset_y;
-            let rect_h = rect.height as f64 * view.scale;
-            let rect_cx = x + rect.width as f64 * view.scale / 2.0;
-            let gap = 12.0;
-            // Picker pill on top; flip below only when there is no room.
-            let (mut method_w, mut method_h) = known_method.get();
-            let (mbw, mbh) = (method_bar.width() as f64, method_bar.height() as f64);
-            if mbw > 1.0 {
-                method_w = mbw;
-            }
-            if mbh > 1.0 {
-                method_h = method_h.max(mbh);
-            }
-            known_method.set((method_w, method_h));
-            let mut method_top = y - method_h - gap;
-            if method_top < 0.0 {
-                method_top = y + rect_h + gap;
-            }
-            if method_top + method_h > area_h {
-                method_top = (area_h - method_h).max(0.0);
-            }
-            let method_left = (rect_cx - method_w / 2.0)
-                .max(0.0)
-                .min((area_w - method_w).max(0.0));
-            if (method_bar.margin_start() as f64 - method_left).abs() >= 1.0
-                || (method_bar.margin_top() as f64 - method_top).abs() >= 1.0
-            {
-                method_bar.set_margin_start(method_left as i32);
-                method_bar.set_margin_top(method_top as i32);
-            }
-            if !method_bar.is_visible() {
-                method_bar.set_visible(true);
-            }
-            // Slider pill at the bottom; flip above only when there is no room.
-            if slider_bar.is_visible() != has_slider {
-                slider_bar.set_visible(has_slider);
-            }
-            if has_slider {
-                let (mut slider_w, mut slider_h) = known_slider.get();
-                let (sbw, sbh) = (slider_bar.width() as f64, slider_bar.height() as f64);
-                if sbw > 1.0 {
-                    slider_w = sbw;
-                }
-                if sbh > 1.0 {
-                    slider_h = slider_h.max(sbh);
-                }
-                known_slider.set((slider_w, slider_h));
-                let mut slider_top = y + rect_h + gap;
-                if slider_top + slider_h > area_h {
-                    slider_top = y - slider_h - gap;
-                }
-                if slider_top < 0.0 {
-                    slider_top = (area_h - slider_h).max(0.0);
-                }
-                let slider_left = (rect_cx - slider_w / 2.0)
-                    .max(0.0)
-                    .min((area_w - slider_w).max(0.0));
-                if (slider_bar.margin_start() as f64 - slider_left).abs() >= 1.0
-                    || (slider_bar.margin_top() as f64 - slider_top).abs() >= 1.0
-                {
-                    slider_bar.set_margin_start(slider_left as i32);
-                    slider_bar.set_margin_top(slider_top as i32);
-                }
-                if !slider_bar.is_visible() {
-                    slider_bar.set_visible(true);
-                }
-            }
-            glib::ControlFlow::Continue
-        });
-    }
-
     // Vertical space docked tool bars claim from the canvas (see `DockedBarInset`).
     // Docked tool bars reflow the canvas: they claim a band above it through this
     // shared inset (the layout and the draw transform both read it), so the image
@@ -2144,6 +1767,73 @@ fn setup_editor_window_full(
     let pen_bar = pen_bar::build_pen_bar(&state, &drawing_area);
     canvas_overlay.add_overlay(&pen_bar.root);
     pen_bar::install_pen_bar_tick(&pen_bar, &drawing_area, &state, &dock_refs, &docked_inset);
+
+    // Floating arrow bar: style and thickness. Docked while the tool is armed,
+    // and while the Select tool has an arrow selected.
+    let arrow_bar = arrow_bar::build_arrow_bar(&state, &drawing_area);
+    canvas_overlay.add_overlay(&arrow_bar.root);
+    arrow_bar::install_arrow_bar_tick(&arrow_bar, &drawing_area, &state, &dock_refs, &docked_inset);
+
+    // Floating shape bar: thickness for line, box, and circle. Same docked
+    // placement as the pen bar so it never covers the image being drawn on.
+    let shape_bar = shape_bar::build_shape_bar(&state, &drawing_area);
+    canvas_overlay.add_overlay(&shape_bar.root);
+    shape_bar::install_shape_bar_tick(&shape_bar, &drawing_area, &state, &dock_refs, &docked_inset);
+
+    // Floating obfuscate bars: method picker above the active rect, intensity
+    // slider below it. Anchored to the rect they edit, like the text bar.
+    let obfuscate_bar = obfuscate_bar::build_obfuscate_bar(
+        &state,
+        &drawing_area,
+        &obfuscate_method_button,
+        &obfuscate_method_list,
+        &size_slider,
+        &rebuild_effects_async,
+    );
+    canvas_overlay.add_overlay(&obfuscate_bar.method_bar);
+    canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);
+    obfuscate_bar::install_obfuscate_bar_tick(
+        &obfuscate_bar,
+        &drawing_area,
+        &state,
+        &transform,
+        &size_slider,
+    );
+
+    // Floating focus bar: intensity slider below the active rect. Anchored to
+    // the rect it edits, like the obfuscate slider — no method pill.
+    let focus_bar =
+        focus_bar::build_focus_bar(&state, &drawing_area, &size_slider, &rebuild_effects_async);
+    canvas_overlay.add_overlay(&focus_bar.slider_bar);
+    focus_bar::install_focus_bar_tick(&focus_bar, &drawing_area, &state, &transform, &size_slider);
+
+    // Floating color card: the picker panel floats over the right edge of the
+    // canvas pane, flush against the sidebar. It hangs off the canvas overlay
+    // (a fixed layer — the canvas image scrolls inside it), so it never
+    // scrolls away, never covers the sidebar, and never leaves the window.
+    //
+    // It starts below the chrome strip on purpose: the transparent top chrome
+    // spans that band and would swallow clicks on the card's own header (the
+    // eyedropper lives there). Same offset the docked tool bars use.
+    // Toggled by the toolbar color chip next to -/□/×.
+    color_status.set_tooltip_text(Some(&t("Colors")));
+    color_status.set_cursor_from_name(Some("pointer"));
+    color_floating_card.add_css_class("editor-color-floating-card");
+    color_floating_card.set_halign(gtk4::Align::End);
+    color_floating_card.set_valign(gtk4::Align::Start);
+    color_floating_card.set_margin_end(8);
+    color_floating_card.set_margin_top(EDITOR_TOP_CHROME_HEIGHT + 8);
+    color_floating_card.set_visible(false);
+    canvas_with_toolbar.add_overlay(&color_floating_card);
+    {
+        let card = color_floating_card.clone();
+        let chip_click = gtk4::GestureClick::new();
+        chip_click.connect_pressed(move |_, _, _, _| {
+            let next = !card.is_visible();
+            card.set_visible(next);
+        });
+        color_status.add_controller(chip_click);
+    }
 
     // Wire the toolbar font/size popover lists (built dead in toolbar.rs) like the inspector lists.
     {
@@ -2655,7 +2345,7 @@ fn setup_editor_window_full(
     let eyedropper_rendered = eyedropper.rendered.clone();
 
     *sidebar_eyedropper_activation.borrow_mut() = Some(Rc::new({
-        let color_popover = color_popover.clone();
+        let color_floating_card = color_floating_card.clone();
         let state = state.clone();
         let eyedropper_mode = eyedropper_mode.clone();
         let eyedropper_from_sidebar = eyedropper_from_sidebar.clone();
@@ -2667,7 +2357,7 @@ fn setup_editor_window_full(
         move || {
             eyedropper_from_sidebar.set(true);
             color_picker::activate_eyedropper(
-                &color_popover,
+                &color_floating_card,
                 state.clone(),
                 eyedropper_mode.clone(),
                 eyedropper_point.clone(),
@@ -2786,7 +2476,7 @@ fn setup_editor_window_full(
     // Eyedropper
     color_picker::connect_eyedropper_activation(
         &eyedropper_btn,
-        &color_popover,
+        &color_floating_card,
         state.clone(),
         eyedropper_mode.clone(),
         eyedropper_point.clone(),
@@ -3000,7 +2690,6 @@ fn setup_editor_window_full(
         color_buttons: color_buttons.clone(),
         color_picker_dot: color_picker_dot.clone(),
         color_class_names: color_class_names.clone(),
-        color_popover: color_popover.clone(),
         size_slider: size_slider.clone(),
         text_size_label: text_size_label.clone(),
         font_family_label: font_family_label.clone(),
@@ -3216,6 +2905,32 @@ mod tests {
                 && colors_production_source.contains("apply_picker_color(DRAW_COLORS[index]);")
                 && colors_production_source.contains("apply_picker_color_click(color);"),
             "Toolbar color status should follow palette and My colors selections from the Colors panel",
+        );
+    }
+
+    #[test]
+    fn toolbar_color_chip_toggles_an_inside_left_picker_card() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let picker_source = include_str!("color_picker.rs");
+        let picker_production = picker_source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(picker_source);
+        assert!(
+            production_source.contains("canvas_with_toolbar.add_overlay(&color_floating_card);")
+                && production_source.contains("color_floating_card.set_visible(false);")
+                && production_source
+                    .contains("card.set_visible(next)")
+                && production_source.contains("color_floating_card.set_margin_end(8);")
+                && production_source
+                    .contains("color_floating_card.set_margin_top(EDITOR_TOP_CHROME_HEIGHT + 8);")
+                && production_source.contains("editor-color-floating-card")
+                && production_source.contains("workspace.append(&inspector);")
+                && picker_production.contains("pub floating_card: GtkBox")
+                && !picker_production.contains("set_popover(Some(&color_popover))")
+                && !production_source.contains("color_popover.set_parent(&color_status);"),
+            "The color chip next to -/□/× should toggle a picker card floating over the canvas right edge, never a popover that can leave the window"
         );
     }
 
@@ -3639,6 +3354,11 @@ mod tests {
                 && production.contains("canvas_overlay.add_overlay(&number_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&highlighter_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&pen_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&arrow_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&shape_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.method_bar);")
+                && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);")
+                && production.contains("canvas_overlay.add_overlay(&focus_bar.slider_bar);")
                 && production.contains("let docked_inset = super::ui_support::DockedBarInset::new();")
                 && production.contains("let dock_refs = floating_bar::DockRefs {")
                 && production.contains("scroller: canvas_scroller.clone(),")

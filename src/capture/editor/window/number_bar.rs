@@ -6,8 +6,6 @@
 //! re-selects it, which is how the bar comes back for an older marker. Mirrors
 //! the text and obfuscate floating bars owned by `window/mod.rs`.
 
-use std::cell::Cell;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use gtk4::{
@@ -156,8 +154,6 @@ pub(super) fn install_number_bar_tick(
     };
     // Sticky max height (never underestimate, so the bar never covers the circle);
     // last measured width, since a max would off-center a narrower bar.
-    let known = Rc::new(Cell::new((320.0f64, 44.0f64)));
-
     drawing_area.add_tick_callback(move |widget, _| {
         let (show, marker, style, size, start_display) = {
             let st = state.lock().unwrap();
@@ -179,12 +175,13 @@ pub(super) fn install_number_bar_tick(
             )
         };
 
+        // Show or hide first: a tick that bails out before revealing would
+        // leave the bar transparent for good.
+        set_bar_shown(&root, show);
         if !show {
-            set_bar_shown(&root, false);
             set_dock_reserve(&inset, "number", 0.0, widget);
             return glib::ControlFlow::Continue;
         }
-
         style_label.set_label(&short_style_label(style));
         sync_option_selection(&style_list, style.index(), STYLE_ACTIVE_CLASS);
         size_label.set_label(&t(size.label()));
@@ -197,23 +194,17 @@ pub(super) fn install_number_bar_tick(
         let view = *transform.lock().unwrap();
         let area_w = widget.width() as f64;
         let area_h = widget.height() as f64;
-        let (mut known_w, mut known_h) = known.get();
+        // Live size, like every other docked bar: a remembered guess would reserve
+        // more (or less) canvas than the bar actually needs.
         let (bar_w, bar_h) = (root.width() as f64, root.height() as f64);
-        if bar_w > 1.0 {
-            known_w = bar_w;
-        }
-        if bar_h > 1.0 {
-            known_h = known_h.max(bar_h);
-        }
-        known.set((known_w, known_h));
 
         let Some((position, marker_size)) = marker else {
             // Armed but nothing selected: dock in the chrome band so style, start, and
             // size can be set before the first marker is placed. Claiming the reserve
             // moves the image down, so the bar never covers the top of it.
-            let (left, top) = dock_position(&dock_refs, known_w);
+            let (left, top) = dock_position(&dock_refs, bar_w);
             move_bar(&root, left, top);
-            set_dock_reserve(&inset, "number", dock_reserve(known_h), widget);
+            set_dock_reserve(&inset, "number", dock_reserve(bar_h), widget);
             return glib::ControlFlow::Continue;
         };
 
@@ -223,16 +214,14 @@ pub(super) fn install_number_bar_tick(
         let x = position.x * view.scale + view.offset_x;
         let y = position.y * view.scale + view.offset_y;
         let radius = marker_size.radius() * view.scale;
-        let mut top = y - radius - known_h - BAR_GAP;
+        let mut top = y - radius - bar_h - BAR_GAP;
         if top < 0.0 {
             top = y + radius + BAR_GAP;
         }
-        if top + known_h > area_h {
-            top = (area_h - known_h).max(0.0);
+        if top + bar_h > area_h {
+            top = (area_h - bar_h).max(0.0);
         }
-        let left = (x - known_w / 2.0)
-            .max(0.0)
-            .min((area_w - known_w).max(0.0));
+        let left = (x - bar_w / 2.0).max(0.0).min((area_w - bar_w).max(0.0));
         move_bar(&root, left, top);
         glib::ControlFlow::Continue
     });

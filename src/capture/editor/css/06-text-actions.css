@@ -63,7 +63,7 @@
             .editor-obfuscate-slider-bar {
                 padding: 2px 8px;
                 min-width: 240px;
-                border-radius: 999px;
+                border-radius: 12px;
             }
 
             .editor-obfuscate-intensity-slider {
@@ -75,7 +75,7 @@
                 background-color: alpha(white, 0.20);
                 border-radius: 999px;
                 border: none;
-                min-height: 6px;
+                min-height: 4px;
             }
 
             .editor-obfuscate-intensity-slider highlight {
@@ -86,10 +86,10 @@
 
             .editor-obfuscate-intensity-slider slider {
                 background: #b05c38;
-                border: 3px solid white;
+                border: 2px solid white;
                 border-radius: 50%;
-                min-width: 10px;
-                min-height: 10px;
+                min-width: 8px;
+                min-height: 8px;
             }
 
             .editor-obfuscate-intensity-slider slider:hover {
@@ -100,11 +100,14 @@
                 background: #8a4a2d;
             }
 
-            /* Floating tool bars: number (style + stepper + size) and highlighter
-               (mode + thickness) share one compact rounded-rect shell. */
+            /* Floating tool bars: number (style + stepper + size), highlighter
+               (mode + thickness), pen (thickness), arrow (style + thickness),
+               and shape (thickness) share one compact rounded-rect shell. */
             .editor-number-floating-bar,
             .editor-highlighter-floating-bar,
-            .editor-pen-floating-bar {
+            .editor-pen-floating-bar,
+            .editor-arrow-floating-bar,
+            .editor-shape-floating-bar {
                 padding: 4px 8px;
                 border-radius: 12px;
             }

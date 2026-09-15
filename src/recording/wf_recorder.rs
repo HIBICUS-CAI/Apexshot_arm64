@@ -89,8 +89,7 @@ pub(super) fn should_use_vaapi() -> bool {
             return detect_vaapi_device().is_some();
         }
     }
-    detect_vaapi_device().is_some()
-        && super::backend::ffmpeg_encoder_available("h264_vaapi")
+    detect_vaapi_device().is_some() && super::backend::ffmpeg_encoder_available("h264_vaapi")
 }
 
 pub(super) fn ffmpeg_vaapi_args(width: u32, height: u32, qp: u32) -> Vec<String> {

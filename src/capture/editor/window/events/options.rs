@@ -111,7 +111,7 @@ pub(super) struct ToolOptionsParts<'a> {
     pub color_buttons: &'a [Button],
     pub color_picker_dot: &'a GtkBox,
     pub color_class_names: &'a [&'static str],
-    pub color_popover: &'a Popover,
+    pub set_picker_panel_visibility: &'a Rc<dyn Fn(bool)>,
     pub size_slider: &'a Scale,
 }
 
@@ -147,7 +147,7 @@ pub(super) fn wire_tool_options(
         color_buttons,
         color_picker_dot,
         color_class_names,
-        color_popover,
+        set_picker_panel_visibility,
         size_slider,
     } = parts;
 
@@ -648,7 +648,7 @@ pub(super) fn wire_tool_options(
         let color_buttons_group = color_buttons.to_vec();
         let color_picker_dot_group = color_picker_dot.clone();
         let color_class_names_group = color_class_names.to_vec();
-        let color_popover_group = color_popover.clone();
+        let set_picker_visible_group = set_picker_panel_visibility.clone();
         let sync_picker_from_color_group = sync_picker_from_color.clone();
         let sync_picker_for_active_tool_group = sync_picker_for_active_tool.clone();
         button.connect_clicked(move |_| {
@@ -678,7 +678,7 @@ pub(super) fn wire_tool_options(
                 &color_class_names_group,
                 index,
             );
-            color_popover_group.popdown();
+            set_picker_visible_group(false);
             if let Some(area) = drawing_area_color.upgrade() {
                 if has_active_text {
                     area.grab_focus();

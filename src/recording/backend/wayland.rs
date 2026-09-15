@@ -138,8 +138,10 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
 
     // Build ffmpeg command
     // Encoder preference: NVENC CQP > VAAPI QP > x264 CRF. All auto when HW present.
-    let use_nvenc =
-        super::wf_recorder::should_use_nvenc() && encoder_name != "libvpx-vp9" && encoder_name != "libvpx" && encoder_name != "libtheora";
+    let use_nvenc = super::wf_recorder::should_use_nvenc()
+        && encoder_name != "libvpx-vp9"
+        && encoder_name != "libvpx"
+        && encoder_name != "libtheora";
     let use_vaapi = !use_nvenc && super::wf_recorder::should_use_vaapi();
     let mut ffmpeg_cmd = Command::new("ffmpeg");
     ffmpeg_cmd
@@ -625,9 +627,7 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
                     let _ = std::fs::write(&path, pixels);
                     let _ = std::fs::write(
                         format!("{path}.info"),
-                        format!(
-                            "{input_width}x{input_height} {pix_fmt} fps={fps} {video_desc}"
-                        ),
+                        format!("{input_width}x{input_height} {pix_fmt} fps={fps} {video_desc}"),
                     );
                     eprintln!("[recording] dumped first frame to {path}");
                 }

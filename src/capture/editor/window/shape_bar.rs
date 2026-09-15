@@ -1,18 +1,19 @@
-//! Floating pen bar: stroke thickness.
+//! Floating shape bar: thickness for the line, box, and circle tools.
 //!
-//! Like the highlighter bar this one never anchors to an element — the pen paints, and
-//! a freehand bounding box is no place to hang controls. It stays docked in the chrome
-//! band above the canvas (see [`super::floating_bar::dock_position`]) while the tool is
-//! armed or the Select tool holds a pen stroke, and it shows that stroke's own
-//! thickness so an existing line can be re-thickened from the same place. The pen's
-//! thickness list lives in the right inspector today; this bar replaces reaching for it.
+//! One bar covers all three: thickness is their only pill-worthy control, so
+//! three copies would triple the tick for an identical pill. Like the pen bar
+//! it never anchors to an element — it stays docked in the chrome band above
+//! the canvas (see [`super::floating_bar::dock_position`]) while a shape tool
+//! is armed or the Select tool holds a shape, and it shows that shape's own
+//! thickness so an existing outline can be re-thickened from the same place.
 
 use std::sync::{Arc, Mutex};
 
 use gtk4::{glib, prelude::*, Align, Box as GtkBox, DrawingArea, Label, Orientation};
 
 use crate::capture::editor::{
-    pen_weight::PenWeight, state::EditorState, types::Tool, ui_support::DockedBarInset,
+    pen_weight::PenWeight, state::EditorState, types::AnnotationAction, types::Tool,
+    ui_support::DockedBarInset,
 };
 use crate::i18n::t;
 
@@ -22,26 +23,53 @@ use super::floating_bar::{
     set_bar_shown, set_dock_reserve, sync_option_selection, wire_option_rows, DockRefs,
 };
 
-const WEIGHT_ROW_CLASS: &str = "editor-pen-weight-option";
-const WEIGHT_ACTIVE_CLASS: &str = "editor-pen-weight-option-active";
+/// Shape thickness steps, matching the line/arrow inspector lists
+/// (`window/mod.rs`, `window/events/options.rs`).
+const SHAPE_SIZES: [(PenWeight, f64); 4] = [
+    (PenWeight::Small, 2.0),
+    (PenWeight::Medium, 4.0),
+    (PenWeight::Large, 7.0),
+    (PenWeight::ExtraLarge, 12.0),
+];
 
-pub(super) struct PenBar {
+fn weight_for_size(size: f64) -> PenWeight {
+    SHAPE_SIZES
+        .into_iter()
+        .min_by(|a, b| (a.1 - size).abs().total_cmp(&(b.1 - size).abs()))
+        .map(|(weight, _)| weight)
+        .unwrap_or_default()
+}
+
+fn size_for_weight(weight: PenWeight) -> f64 {
+    SHAPE_SIZES
+        .into_iter()
+        .find_map(|(candidate, size)| (candidate == weight).then_some(size))
+        .unwrap_or(4.0)
+}
+
+const WEIGHT_ROW_CLASS: &str = "editor-shape-weight-option";
+const WEIGHT_ACTIVE_CLASS: &str = "editor-shape-weight-option-active";
+
+pub(super) struct ShapeBar {
     pub(super) root: GtkBox,
     weight_label: Label,
     weight_list: GtkBox,
 }
 
-pub(super) fn build_pen_bar(state: &Arc<Mutex<EditorState>>, drawing_area: &DrawingArea) -> PenBar {
+pub(super) fn build_shape_bar(
+    state: &Arc<Mutex<EditorState>>,
+    drawing_area: &DrawingArea,
+) -> ShapeBar {
     let root = GtkBox::new(Orientation::Horizontal, 8);
     root.add_css_class("editor-text-floating-bar");
-    root.add_css_class("editor-pen-floating-bar");
+    root.add_css_class("editor-shape-floating-bar");
     root.set_halign(Align::Start);
     root.set_valign(Align::Start);
     set_bar_shown(&root, false);
 
-    let weight_pill = build_pill("Pen thickness");
+    let weight_pill = build_pill("Stroke Thickness");
     for weight in PenWeight::ALL {
-        let row = build_option_row(&t(weight.label()), "editor-pen-thickness-check");
+        let row = build_option_row(&t(weight.label()), "editor-shape-thickness-check");
         row.add_css_class(WEIGHT_ROW_CLASS);
         prepend_thickness_preview(&row, weight);
         weight_pill.list.append(&row);
@@ -53,7 +81,13 @@ pub(super) fn build_pen_bar(state: &Arc<Mutex<EditorState>>, drawing_area: &Draw
             let Some(weight) = PenWeight::ALL.get(index).copied() else {
                 return;
             };
-            let changed = state.lock().unwrap().set_pen_weight_and_apply(weight);
+            let changed = {
+                let mut st = state.lock().unwrap();
+                let size = size_for_weight(weight);
+                let default_changed = st.set_stroke_size(size);
+                let selected_changed = st.set_selected_action_stroke_size(size);
+                default_changed || selected_changed
+            };
             popdown_for(button);
             if changed {
                 queue_draw(&area);
@@ -63,7 +97,7 @@ pub(super) fn build_pen_bar(state: &Arc<Mutex<EditorState>>, drawing_area: &Draw
 
     root.append(&weight_pill.button);
 
-    PenBar {
+    ShapeBar {
         root,
         weight_label: weight_pill.label,
         weight_list: weight_pill.list,
@@ -71,8 +105,8 @@ pub(super) fn build_pen_bar(state: &Arc<Mutex<EditorState>>, drawing_area: &Draw
 }
 
 /// Own the bar's visibility and keep the thickness label in sync with the tool state.
-pub(super) fn install_pen_bar_tick(
-    bar: &PenBar,
+pub(super) fn install_shape_bar_tick(
+    bar: &ShapeBar,
     drawing_area: &DrawingArea,
     state: &Arc<Mutex<EditorState>>,
     dock_refs: &DockRefs,
@@ -91,17 +125,24 @@ pub(super) fn install_pen_bar_tick(
     drawing_area.add_tick_callback(move |widget, _| {
         let (show, weight) = {
             let st = state.lock().unwrap();
-            let pen_tool = st.selected_tool == Tool::Pen;
-            let has_stroke =
-                st.selected_tool == Tool::Select && st.selected_pen_stroke_size().is_some();
-            (pen_tool || has_stroke, st.active_pen_weight())
+            let shape_tool = matches!(st.selected_tool, Tool::Line | Tool::Box | Tool::Circle);
+            let selected_size = match st.selected_action() {
+                Some(
+                    AnnotationAction::Line { stroke_size, .. }
+                    | AnnotationAction::Box { stroke_size, .. }
+                    | AnnotationAction::Circle { stroke_size, .. },
+                ) if st.selected_tool == Tool::Select => Some(*stroke_size),
+                _ => None,
+            };
+            let size = selected_size.unwrap_or(st.stroke_size);
+            (shape_tool || selected_size.is_some(), weight_for_size(size))
         };
 
         // Show or hide first: a tick that bails out before revealing would
         // leave the bar transparent for good.
         set_bar_shown(&root, show);
         if !show {
-            set_dock_reserve(&inset, "pen", 0.0, widget);
+            set_dock_reserve(&inset, "shape", 0.0, widget);
             return glib::ControlFlow::Continue;
         }
 
@@ -114,7 +155,7 @@ pub(super) fn install_pen_bar_tick(
         // same step, and the bar is only placed once GTK knows its size — placing
         // it at 0 would park it half a bar off centre for a frame.
         let (bar_w, bar_h) = (root.width() as f64, root.height() as f64);
-        set_dock_reserve(&inset, "pen", dock_reserve(bar_h), widget);
+        set_dock_reserve(&inset, "shape", dock_reserve(bar_h), widget);
         let (left, top) = dock_position(&dock_refs, bar_w);
         if (root.margin_start() as f64 - left).abs() >= 1.0
             || (root.margin_top() as f64 - top).abs() >= 1.0
@@ -142,32 +183,35 @@ fn prepend_thickness_preview(row: &gtk4::Button, weight: PenWeight) {
 #[cfg(test)]
 mod tests {
     fn production_source() -> &'static str {
-        let source = include_str!("pen_bar.rs");
+        let source = include_str!("shape_bar.rs");
         source.split("#[cfg(test)]").next().unwrap_or(source)
     }
 
     #[test]
-    fn pen_bar_offers_thickness_for_the_tool_and_a_selected_stroke() {
+    fn shape_bar_offers_thickness_for_line_box_and_circle() {
         let source = production_source();
         assert!(
-            source.contains("pub(super) fn build_pen_bar(")
-                && source.contains("pub(super) fn install_pen_bar_tick(")
-                && source.contains("st.selected_tool == Tool::Pen")
+            source.contains("pub(super) fn build_shape_bar(")
+                && source.contains("pub(super) fn install_shape_bar_tick(")
+                && source.contains("Tool::Line | Tool::Box | Tool::Circle")
                 && source.contains("st.selected_tool == Tool::Select")
-                && source.contains("st.selected_pen_stroke_size().is_some()")
+                && source.contains("AnnotationAction::Line { stroke_size, .. }")
+                && source.contains("AnnotationAction::Box { stroke_size, .. }")
+                && source.contains("AnnotationAction::Circle { stroke_size, .. }")
                 && source.contains("PenWeight::ALL"),
-            "The pen bar replaces the inspector thickness list while the tool is armed and for a selected stroke"
+            "One bar covers the line, box, and circle thickness while armed and for a selected shape"
         );
     }
 
     #[test]
-    fn pen_bar_routes_through_the_state_setter() {
+    fn shape_bar_routes_through_the_state_setters() {
         let source = production_source();
         assert!(
-            source.contains("set_pen_weight_and_apply(weight)")
+            source.contains("set_stroke_size(size)")
+                && source.contains("set_selected_action_stroke_size(size)")
                 && source.contains("dock_position(")
                 && source.contains("&dock_refs,"),
-            "Pen picks must go through the state setter and use the shared docked placement"
+            "Shape picks must go through the state setters and use the shared docked placement"
         );
     }
 }

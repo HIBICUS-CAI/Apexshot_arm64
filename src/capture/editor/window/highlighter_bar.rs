@@ -166,8 +166,10 @@ pub(super) fn install_highlighter_bar_tick(
             )
         };
 
+        // Show or hide first: a tick that bails out before revealing would
+        // leave the bar transparent for good.
+        set_bar_shown(&root, show);
         if !show {
-            set_bar_shown(&root, false);
             set_dock_reserve(&inset, "highlighter", 0.0, widget);
             return glib::ControlFlow::Continue;
         }
@@ -206,7 +208,6 @@ pub(super) fn install_highlighter_bar_tick(
             root.set_margin_start(left as i32);
             root.set_margin_top(top as i32);
         }
-        set_bar_shown(&root, true);
         glib::ControlFlow::Continue
     });
 }

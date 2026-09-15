@@ -588,6 +588,14 @@ fn is_interactive_widget(widget: &gtk4::Widget) -> bool {
             return true;
         }
 
+        // The toolbar color chip and its floating picker card are controls:
+        // dragging from them would fight the popover/card click.
+        if widget.has_css_class("editor-toolbar-color-status")
+            || widget.has_css_class("editor-color-floating-card")
+        {
+            return true;
+        }
+
         if matches!(
             widget.type_().name(),
             "GtkButton"
@@ -679,6 +687,18 @@ mod tests {
         arrow_style_toolbar_icon, custom_toolbar_icon_inset, toolbar_icon_size, EditorToolIcon,
     };
     use crate::capture::editor::types::ArrowStyle;
+
+    #[test]
+    fn window_drag_treats_color_chip_as_interactive() {
+        let source = include_str!("ui_support.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("if widget.has_css_class(\"editor-toolbar-color-status\")")
+                && production_source
+                    .contains("|| widget.has_css_class(\"editor-color-floating-card\")"),
+            "the color chip and its floating picker card must not begin_move() the window"
+        );
+    }
 
     #[test]
     fn window_drag_hit_test_treats_canvas_as_interactive() {

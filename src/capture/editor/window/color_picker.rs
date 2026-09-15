@@ -3,7 +3,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, Button, CssProvider, Entry, EventControllerMotion, GestureClick, Image, Label,
-    MenuButton, Orientation, Overlay, Popover, Scale,
+    Orientation, Overlay, Scale,
 };
 use image::RgbaImage;
 use std::cell::{Cell, RefCell};
@@ -25,7 +25,10 @@ const PICKER_GRADIENT_HEIGHT: i32 = 200;
 
 pub struct ColorPickerParts {
     pub trigger_host: Overlay,
-    pub popover: Popover,
+    /// The styled picker card (gradient + hue + hex). The caller mounts this
+    /// as a floating overlay card — it must never be a popover child, or the
+    /// overlay mount fails with "already has parent GtkPopoverContent".
+    pub floating_card: GtkBox,
     pub color_buttons: Vec<Button>,
     pub color_picker_dot: GtkBox,
     pub color_class_names: Vec<&'static str>,
@@ -70,31 +73,16 @@ pub fn build_color_picker(
         .map(|(tooltip, class_name)| color_swatch_button(class_name, tooltip))
         .collect();
 
-    // Color picker trigger (unchanged).
-    let color_picker_trigger = MenuButton::new();
-    color_picker_trigger.set_has_frame(false);
-    color_picker_trigger.set_focusable(false);
-    color_picker_trigger.set_can_target(false);
-    color_picker_trigger.set_tooltip_text(Some(&t("Colors")));
-    color_picker_trigger.set_icon_name("");
-    color_picker_trigger.set_hexpand(true);
-    color_picker_trigger.set_vexpand(true);
-    color_picker_trigger.set_halign(gtk4::Align::Fill);
-    color_picker_trigger.set_valign(gtk4::Align::Fill);
-    color_picker_trigger.add_css_class("editor-color-trigger-menu-button");
-    color_picker_trigger.add_css_class("flat");
-
+    // Trigger dot: hidden swatch kept only so the color-sync helpers keep a
+    // widget to tint. The visible color control is the toolbar color chip.
     let color_picker_dot = GtkBox::new(Orientation::Horizontal, 0);
     color_picker_dot.set_size_request(20, 20);
-    color_picker_dot.set_halign(gtk4::Align::Center);
-    color_picker_dot.set_valign(gtk4::Align::Center);
     color_picker_dot.add_css_class("editor-color-trigger-dot");
     color_picker_dot.add_css_class(color_specs[DEFAULT_COLOR_INDEX].1);
     color_picker_dot.set_widget_name("editor-color-trigger-dot");
 
-    // Exact-color override for the trigger dot: the free gradient picker can
-    // produce any color, so the dot shows the real pick instead of the
-    // nearest palette swatch. ID selector outranks the palette classes.
+    // Exact-color override for the dot: the free gradient picker can produce any
+    // color, so the dot shows the real pick instead of the nearest palette swatch.
     let trigger_dot_css = CssProvider::new();
     if let Some(display) = gdk::Display::default() {
         gtk4::style_context_add_provider_for_display(
@@ -119,47 +107,11 @@ pub fn build_color_picker(
             trigger_dot_css.load_from_data("");
         }
     });
-
-    let trigger_divider = GtkBox::new(Orientation::Vertical, 0);
-    trigger_divider.add_css_class("editor-color-trigger-divider");
-
-    let color_picker_arrow_box = GtkBox::new(Orientation::Horizontal, 0);
-    color_picker_arrow_box.add_css_class("editor-color-trigger-arrow-box");
-    color_picker_arrow_box.set_halign(gtk4::Align::Center);
-    color_picker_arrow_box.set_valign(gtk4::Align::Center);
-    let color_picker_arrow = Image::from_icon_name(icon_names::CHEVRON_DOWN_REGULAR);
-    color_picker_arrow.set_pixel_size(10);
-    color_picker_arrow.add_css_class("editor-color-trigger-arrow");
-    color_picker_arrow_box.append(&color_picker_arrow);
-
-    let color_picker_trigger_shell = GtkBox::new(Orientation::Horizontal, 0);
-    color_picker_trigger_shell.add_css_class("editor-color-trigger-shell");
-    color_picker_trigger_shell.set_valign(gtk4::Align::Center);
-    color_picker_trigger_shell.append(&color_picker_dot);
-    color_picker_trigger_shell.append(&trigger_divider);
-    color_picker_trigger_shell.append(&color_picker_arrow_box);
-
     let color_picker_trigger_host = Overlay::new();
-    color_picker_trigger_host.set_child(Some(&color_picker_trigger_shell));
-    color_picker_trigger_host.add_overlay(&color_picker_trigger);
+    color_picker_trigger_host.set_child(Some(&color_picker_dot));
 
-    let color_picker_trigger_popup = color_picker_trigger.clone();
-    let color_picker_shell_click = GestureClick::new();
-    color_picker_shell_click.connect_pressed(move |_, _, _, _| {
-        color_picker_trigger_popup.popup();
-    });
-    color_picker_trigger_shell.add_controller(color_picker_shell_click);
-
-    // Popover
-    let color_popover = Popover::new();
-    color_popover.set_has_arrow(false);
-    color_popover.set_autohide(true);
-    color_popover.set_position(gtk4::PositionType::Bottom);
-    color_popover.set_offset(0, 4);
-    color_popover.add_css_class("editor-color-popover");
-
-    // Shared custom colors stay alive for the sidebar panel; this popover
-    // no longer renders its own slots.
+    // Shared custom colors stay alive for the sidebar panel; the picker card
+    // never renders its own slots.
     let custom_slot_colors = Rc::new(RefCell::new(load_persisted_custom_slot_colors(
         color_buttons.len(),
     )));
@@ -299,17 +251,6 @@ pub fn build_color_picker(
     popover_root.set_halign(gtk4::Align::Start);
     popover_root.set_hexpand(false);
     popover_root.append(&picker_panel);
-
-    // Panel is always expanded now; keep the hook as a no-op for callers.
-    let set_picker_panel_visibility: Rc<dyn Fn(bool)> = Rc::new({
-        let picker_panel = picker_panel.clone();
-        move |_| {
-            picker_panel.set_visible(true);
-        }
-    });
-
-    color_popover.set_child(Some(&popover_root));
-    color_picker_trigger.set_popover(Some(&color_popover));
 
     let update_picker_ui: Rc<dyn Fn(PickerColorState)> = Rc::new({
         let hue_slider = hue_slider.clone();
@@ -534,9 +475,14 @@ pub fn build_color_picker(
         }
     });
 
+    let set_picker_panel_visibility: Rc<dyn Fn(bool)> = Rc::new({
+        let card = popover_root.clone();
+        move |show| card.set_visible(show)
+    });
+
     ColorPickerParts {
         trigger_host: color_picker_trigger_host,
-        popover: color_popover,
+        floating_card: popover_root,
         color_buttons,
         color_picker_dot,
         color_class_names,
@@ -586,7 +532,7 @@ pub fn set_color_picker_trigger_dot_state(
 }
 
 pub fn activate_eyedropper(
-    color_popover: &Popover,
+    picker_card: &GtkBox,
     state: Arc<Mutex<EditorState>>,
     eyedropper_mode: Rc<Cell<bool>>,
     eyedropper_point: Rc<RefCell<Option<Point>>>,
@@ -595,7 +541,8 @@ pub fn activate_eyedropper(
     drawing_area: &gtk4::DrawingArea,
     set_cursor_crosshair: Rc<dyn Fn()>,
 ) {
-    color_popover.popdown();
+    // Get the card out of the way: the next click lands on the canvas.
+    picker_card.set_visible(false);
     eyedropper_mode.set(true);
     *eyedropper_point.borrow_mut() = None;
     *eyedropper_rendered.borrow_mut() = state.lock().unwrap().to_rendered_image().ok();
@@ -608,7 +555,7 @@ pub fn activate_eyedropper(
 
 pub fn connect_eyedropper_activation(
     eyedropper_btn: &Button,
-    color_popover: &Popover,
+    picker_card: &GtkBox,
     state: Arc<Mutex<EditorState>>,
     eyedropper_mode: Rc<Cell<bool>>,
     eyedropper_point: Rc<RefCell<Option<Point>>>,
@@ -617,12 +564,12 @@ pub fn connect_eyedropper_activation(
     drawing_area: &gtk4::DrawingArea,
     set_cursor_crosshair: Rc<dyn Fn()>,
 ) {
-    let color_popover = color_popover.clone();
+    let picker_card = picker_card.clone();
     let canvas_eyedropper_ring = canvas_eyedropper_ring.clone();
     let drawing_area = drawing_area.clone();
     eyedropper_btn.connect_clicked(move |_| {
         activate_eyedropper(
-            &color_popover,
+            &picker_card,
             state.clone(),
             eyedropper_mode.clone(),
             eyedropper_point.clone(),
