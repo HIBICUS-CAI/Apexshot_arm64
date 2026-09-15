@@ -26,7 +26,7 @@ use crate::capture::editor::{
     selection::{action_bounds_with_padding, action_resize_handles},
     state::{render_shadow_layer, EditorState},
     types::{AnnotationAction, BackgroundStyle, Rect, Tool, ViewTransform},
-    ui_support::EDITOR_TOP_CHROME_HEIGHT,
+    ui_support::{DockedBarInset, EDITOR_TOP_CHROME_HEIGHT},
 };
 
 const MAX_PREVIEW_SHADOW_DIM: u32 = 1200;
@@ -60,6 +60,7 @@ impl CanvasRenderCaches {
 pub(super) struct CanvasDrawInputs<'a> {
     pub state: &'a Arc<Mutex<EditorState>>,
     pub transform: &'a Arc<Mutex<ViewTransform>>,
+    pub docked_inset: &'a DockedBarInset,
     pub drawing_area: &'a DrawingArea,
     pub zoom_level: &'a Rc<Cell<f64>>,
     pub undo_btn: &'a Button,
@@ -77,6 +78,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
     let CanvasDrawInputs {
         state,
         transform,
+        docked_inset,
         drawing_area,
         zoom_level,
         undo_btn,
@@ -91,6 +93,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
 
     let state_draw = state.clone();
     let transform_draw = transform.clone();
+    let docked_inset_draw = docked_inset.clone();
     let zoom_level_draw = zoom_level.clone();
     let undo_btn_draw = undo_btn.clone();
     let redo_btn_draw = redo_btn.clone();
@@ -206,7 +209,9 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             background_layout = Some(layout);
         }
 
-        let toolbar_clearance = f64::from(EDITOR_TOP_CHROME_HEIGHT);
+        // Docked tool bars reserve real space: the image is drawn below them so a
+        // bar can never sit on top of the canvas (see `DockedBarInset`).
+        let toolbar_clearance = f64::from(EDITOR_TOP_CHROME_HEIGHT) + docked_inset_draw.px();
         let top_pad = canvas_padding_draw + toolbar_clearance;
         let side_pad = canvas_padding_draw;
         let base_view_width = (width as f64 - side_pad * 2.0).max(1.0);
@@ -640,6 +645,8 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     ))
                 || (selected_tool == Tool::Obfuscate
                     && matches!(selected_action, AnnotationAction::Obfuscate { .. }))
+                || (selected_tool == Tool::Number
+                    && matches!(selected_action, AnnotationAction::Number { .. }))
             {
                 if let AnnotationAction::Text { .. } = selected_action {
                     // Already handled above.

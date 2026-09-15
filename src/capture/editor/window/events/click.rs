@@ -110,6 +110,24 @@ pub(super) fn wire_canvas_click(
                 }
                 return glib::Propagation::Stop;
             }
+
+            // Escape drops the selected number marker so the floating bar returns to
+            // its "next marker" state instead of editing that marker.
+            let deselected = {
+                let mut st = state_key.lock().unwrap();
+                if st.selected_tool == Tool::Number && st.selected_action_index.is_some() {
+                    st.clear_selection();
+                    true
+                } else {
+                    false
+                }
+            };
+            if deselected {
+                if let Some(area) = drawing_area_key.upgrade() {
+                    area.queue_draw();
+                }
+                return glib::Propagation::Stop;
+            }
         }
 
         glib::Propagation::Proceed
@@ -561,7 +579,15 @@ pub(super) fn wire_canvas_click(
                 }
             }
             Tool::Number => {
-                state_click.lock().unwrap().add_number_marker(image_point);
+                {
+                    let mut st = state_click.lock().unwrap();
+                    // Clicking an existing marker re-opens its bar instead of stacking a
+                    // second marker on top of it (mirrors the Box/Circle/Obfuscate
+                    // reselect path). Empty canvas still places a new marker.
+                    if !st.select_number_action_at_point_with_scale(image_point, t.scale) {
+                        st.add_number_marker(image_point);
+                    }
+                }
                 sync_size_control_canvas_click();
                 if let Some(area) = drawing_area_click.upgrade() {
                     area.queue_draw();

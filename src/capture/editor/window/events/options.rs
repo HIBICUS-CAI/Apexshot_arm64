@@ -224,11 +224,17 @@ pub(super) fn wire_tool_options(
             button.connect_clicked(move |b| {
                 {
                     let mut st = state_for_weight.lock().unwrap();
-                    st.set_pen_weight(weight);
                     let is_highlighter = st.selected_tool == Tool::Highlighter;
                     let is_pen = st.selected_tool == Tool::Pen;
                     if is_highlighter {
-                        st.set_highlighter_mode(HighlighterMode::Freehand);
+                        // Same path as the floating highlighter bar: leave text-aware
+                        // sizing, apply the preset to the selected stroke, and keep it
+                        // as the brush for the next stroke.
+                        st.set_highlighter_weight(weight);
+                    } else {
+                        // Same path as the floating pen bar: remember the brush weight
+                        // and resize the selected stroke with it.
+                        st.set_pen_weight_and_apply(weight);
                     }
                     drop(st);
 
@@ -501,7 +507,7 @@ pub(super) fn wire_tool_options(
         let number_start_entry = number_start_entry.clone();
         move || {
             let st = state.lock().unwrap();
-            number_start_entry.set_text(&st.numbering_style.format(st.numbering_start));
+            number_start_entry.set_text(&st.active_number_start_display());
         }
     });
 
@@ -539,11 +545,7 @@ pub(super) fn wire_tool_options(
         let number_options_list_sync = number_options_list.clone();
 
         button.connect_clicked(move |_| {
-            {
-                let mut st = state_style.lock().unwrap();
-                st.numbering_style = style;
-                st.next_number = st.numbering_start;
-            }
+            state_style.lock().unwrap().set_numbering_style(style);
             sync_number_option_selection(
                 &number_options_list_sync,
                 style_idx - 1,
@@ -564,8 +566,8 @@ pub(super) fn wire_tool_options(
         move |_| {
             {
                 let mut st = state.lock().unwrap();
-                st.numbering_start = st.numbering_start.saturating_add(1);
-                st.next_number = st.numbering_start;
+                let next = st.active_number_start().saturating_add(1);
+                st.set_active_number_start(next);
             }
             refresh_number_start_display_inc();
         }
@@ -577,9 +579,9 @@ pub(super) fn wire_tool_options(
         move |_| {
             {
                 let mut st = state.lock().unwrap();
-                if st.numbering_start > 1 {
-                    st.numbering_start -= 1;
-                    st.next_number = st.numbering_start;
+                let current = st.active_number_start();
+                if current > 1 {
+                    st.set_active_number_start(current - 1);
                 }
             }
             refresh_number_start_display_dec();
@@ -614,10 +616,7 @@ pub(super) fn wire_tool_options(
         let number_size_list_sync = number_size_list.clone();
 
         button.connect_clicked(move |b| {
-            {
-                let mut st = state_size.lock().unwrap();
-                st.number_size = size;
-            }
+            state_size.lock().unwrap().set_number_size(size);
 
             sync_number_option_selection(
                 &number_size_list_sync,

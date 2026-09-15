@@ -46,7 +46,11 @@ impl AnnotateRuntimeConfig {
     }
 }
 
-fn build_arrow_thickness_preview(weight: super::pen_weight::PenWeight, light: bool) -> DrawingArea {
+/// Stroke sample the pen/highlighter thickness rows and popovers use.
+pub(super) fn build_arrow_thickness_preview(
+    weight: super::pen_weight::PenWeight,
+    light: bool,
+) -> DrawingArea {
     let preview = DrawingArea::new();
     preview.set_content_width(22);
     preview.set_content_height(16);
@@ -340,12 +344,16 @@ mod cursor;
 mod effects;
 mod empty_state;
 mod events;
+mod floating_bar;
 mod footer;
+mod highlighter_bar;
 mod inspectors;
 mod motion_host;
 mod motion_mode;
 mod motion_render;
 mod motion_timeline;
+mod number_bar;
+mod pen_bar;
 mod toolbar;
 
 use background_assets::BackgroundAssetCaches;
@@ -2093,6 +2101,50 @@ fn setup_editor_window_full(
         });
     }
 
+    // Vertical space docked tool bars claim from the canvas (see `DockedBarInset`).
+    // Docked tool bars reflow the canvas: they claim a band above it through this
+    // shared inset (the layout and the draw transform both read it), so the image
+    // moves down while a bar is docked and returns when it goes away.
+    let docked_inset = super::ui_support::DockedBarInset::new();
+    let dock_refs = floating_bar::DockRefs {
+        scroller: canvas_scroller.clone(),
+        drawing_area: drawing_area.clone(),
+    };
+
+    // Floating number bar (mirrors the text/obfuscate bars): one contextual bar that
+    // follows the selected marker — or docks above the canvas while the Number tool is
+    // armed — instead of one bar per marker. Clicking an existing marker with the
+    // Number tool re-selects it, which is how it comes back.
+    let number_bar = number_bar::build_number_bar(&state, &drawing_area);
+    canvas_overlay.add_overlay(&number_bar.root);
+    number_bar::install_number_bar_tick(
+        &number_bar,
+        &drawing_area,
+        &state,
+        &transform,
+        &dock_refs,
+        &docked_inset,
+    );
+
+    // Floating highlighter bar: mode (text-aware / freehand) and thickness. Docked
+    // while the tool is armed, and while the Select tool has a stroke selected, so
+    // it never parks over a long freehand bounding box.
+    let highlighter_bar = highlighter_bar::build_highlighter_bar(&state, &drawing_area, &window);
+    canvas_overlay.add_overlay(&highlighter_bar.root);
+    highlighter_bar::install_highlighter_bar_tick(
+        &highlighter_bar,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+    );
+
+    // Floating pen bar: stroke thickness, replacing the inspector list. Same docked
+    // placement as the highlighter so it never covers the image being drawn on.
+    let pen_bar = pen_bar::build_pen_bar(&state, &drawing_area);
+    canvas_overlay.add_overlay(&pen_bar.root);
+    pen_bar::install_pen_bar_tick(&pen_bar, &drawing_area, &state, &dock_refs, &docked_inset);
+
     // Wire the toolbar font/size popover lists (built dead in toolbar.rs) like the inspector lists.
     {
         let state_c = state.clone();
@@ -2728,6 +2780,7 @@ fn setup_editor_window_full(
         &zoom_label,
         &zoom_header_label,
         canvas_padding,
+        &docked_inset,
     );
 
     // Eyedropper
@@ -2878,6 +2931,7 @@ fn setup_editor_window_full(
         delete_selected_btn: &delete_selected_btn,
         canvas_padding,
         prefers_dark,
+        docked_inset: &docked_inset,
         caches: &render_caches,
         gradient_surfaces: &gradient_surfaces,
         wallpaper_cache: &wallpaper_cache,
@@ -3365,7 +3419,9 @@ mod tests {
         let source = include_str!("mod.rs");
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            production_source.contains("fn build_arrow_thickness_preview(weight: super::pen_weight::PenWeight, light: bool) -> DrawingArea")
+            production_source.contains("pub(super) fn build_arrow_thickness_preview(")
+                && production_source.contains("weight: super::pen_weight::PenWeight,")
+                && production_source.contains("light: bool,")
                 && production_source.contains("let icon = build_arrow_thickness_preview(weight, !prefers_dark);")
                 && !production_source.contains("let icon = Image::from_icon_name(weight.icon_name());\n        icon.set_pixel_size(weight.icon_pixel_size());\n        let label_widget = Label::new(Some(&t(label)));"),
             "Arrow thickness inspector options should use dedicated stroke previews instead of stock symbolic icons",
@@ -3569,6 +3625,42 @@ mod tests {
         assert!(
             !handler.contains("save_edited_image"),
             "Image close must not flatten the PNG"
+        );
+    }
+
+    #[test]
+    fn floating_bars_live_on_the_canvas_overlay_and_dock_above_the_image() {
+        let source = include_str!("mod.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let click = include_str!("events/click.rs");
+        let click_production = click.split("#[cfg(test)]").next().unwrap_or(click);
+        assert!(
+            production.contains("let number_bar = number_bar::build_number_bar(&state, &drawing_area);")
+                && production.contains("canvas_overlay.add_overlay(&number_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&highlighter_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&pen_bar.root);")
+                && production.contains("let docked_inset = super::ui_support::DockedBarInset::new();")
+                && production.contains("let dock_refs = floating_bar::DockRefs {")
+                && production.contains("scroller: canvas_scroller.clone(),")
+                && production.contains("number_bar::install_number_bar_tick(")
+                && production.contains("&dock_refs,")
+                && production.contains("&docked_inset,")
+                && production.contains("docked_inset: &docked_inset,"),
+            "Every docked bar belongs on the canvas overlay and reserves its band through the shared inset"
+        );
+        assert!(
+            production.contains(
+                "canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset)"
+            ) || include_str!("canvas_layout.rs").contains(
+                "canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset)"
+            ),
+            "The layout must add the docked inset so the image moves down instead of being covered"
+        );
+        assert!(
+            click_production
+                .contains("select_number_action_at_point_with_scale(image_point, t.scale)")
+                && click_production.contains("st.add_number_marker(image_point);"),
+            "The Number tool must reselect an existing marker before placing a new one"
         );
     }
 }

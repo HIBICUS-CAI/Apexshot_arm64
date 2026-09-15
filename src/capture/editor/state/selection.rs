@@ -17,6 +17,13 @@ impl EditorState {
             .and_then(|index| self.actions.get(index))
     }
 
+    /// Drop the current selection without touching the actions.
+    pub fn clear_selection(&mut self) {
+        self.selected_action_index = None;
+        self.select_drag_anchor = None;
+        self.select_resize_handle = None;
+    }
+
     pub fn select_action_at_point_with_scale(&mut self, point: Point, view_scale: f64) -> bool {
         let hit_padding = selection_hit_padding_for_scale(view_scale);
 
@@ -26,6 +33,32 @@ impl EditorState {
             .enumerate()
             .rev()
             .find(|(_, action)| action_contains_point_with_padding(action, point, hit_padding))
+            .map(|(index, _)| index);
+        self.select_drag_anchor = None;
+        self.select_resize_handle = None;
+        self.selected_action_index.is_some()
+    }
+
+    /// Select an existing number marker under the point, ignoring other actions.
+    ///
+    /// The Number tool uses this to re-open the floating bar on a marker instead
+    /// of stacking a second marker on top of it; `false` means "place a new one".
+    pub fn select_number_action_at_point_with_scale(
+        &mut self,
+        point: Point,
+        view_scale: f64,
+    ) -> bool {
+        let hit_padding = selection_hit_padding_for_scale(view_scale);
+
+        self.selected_action_index = self
+            .actions
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, action)| {
+                matches!(action, AnnotationAction::Number { .. })
+                    && action_contains_point_with_padding(action, point, hit_padding)
+            })
             .map(|(index, _)| index);
         self.select_drag_anchor = None;
         self.select_resize_handle = None;

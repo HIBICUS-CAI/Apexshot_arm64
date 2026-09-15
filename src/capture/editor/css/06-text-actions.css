@@ -100,6 +100,51 @@
                 background: #8a4a2d;
             }
 
+            /* Floating tool bars: number (style + stepper + size) and highlighter
+               (mode + thickness) share one compact rounded-rect shell. */
+            .editor-number-floating-bar,
+            .editor-highlighter-floating-bar,
+            .editor-pen-floating-bar {
+                padding: 4px 8px;
+                border-radius: 12px;
+            }
+
+            .editor-number-floating-bar .editor-number-bar-stepper {
+                background: alpha(white, 0.04);
+                border-radius: 8px;
+                padding: 1px 2px;
+            }
+
+            .editor-number-floating-bar .editor-number-start-entry {
+                min-height: 22px;
+                min-width: 34px;
+                padding: 0 4px;
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            .editor-number-floating-bar button.editor-number-start-stepper {
+                min-width: 22px;
+                min-height: 22px;
+                padding: 0;
+                border: none;
+                border-radius: 6px;
+                background: alpha(white, 0.10);
+                font-size: 13px;
+                font-weight: 700;
+            }
+
+            .editor-number-floating-bar button.editor-number-start-stepper:hover {
+                background: alpha(white, 0.18);
+            }
+
+            .editor-number-floating-bar button.editor-number-start-stepper:active {
+                background: alpha(white, 0.26);
+            }
+
             .editor-text-floating-bar .editor-tools-group {
                 background: transparent;
                 border: none;

@@ -3,13 +3,58 @@ use gtk4::gdk;
 use gtk4::{
     prelude::*, Box as GtkBox, Button, CssProvider, DrawingArea, Image, Orientation, Widget,
 };
+use std::cell::RefCell;
 use std::process::Command;
+use std::rc::Rc;
 
 pub const EDITOR_MIN_WINDOW_WIDTH: i32 = 980;
 
 /// Reserved strip above the canvas for the floating toolbar + window drag.
 /// The image viewport starts below this so zoomed content cannot cover the tools.
 pub const EDITOR_TOP_CHROME_HEIGHT: i32 = 56;
+
+/// Vertical space docked tool bars have claimed above the canvas, in view pixels.
+///
+/// Docked bars reflow the canvas instead of floating over it: the layout sizing and
+/// the draw transform both read this, so the image slides down when a bar appears and
+/// returns to its place when the bar goes away.
+///
+/// Every bar keeps its own claim rather than writing one shared number — the bars tick
+/// independently, so a hidden bar resetting a single value would wipe out the claim of
+/// the bar that is actually showing. The canvas reserves the tallest claim.
+#[derive(Clone, Default)]
+pub struct DockedBarInset {
+    claims: Rc<RefCell<Vec<(&'static str, f64)>>>,
+}
+
+impl DockedBarInset {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Claim the band `bar` needs, or release it with `0.0`. Returns whether the
+    /// effective reserve changed, so the caller can repaint the canvas.
+    pub fn set(&self, bar: &'static str, px: f64) -> bool {
+        let before = self.px();
+        {
+            let mut claims = self.claims.borrow_mut();
+            match claims.iter_mut().find(|(name, _)| *name == bar) {
+                Some(claim) => claim.1 = px,
+                None => claims.push((bar, px)),
+            }
+        }
+        (self.px() - before).abs() >= 1.0
+    }
+
+    /// Tallest claim; what the canvas gives up.
+    pub fn px(&self) -> f64 {
+        self.claims
+            .borrow()
+            .iter()
+            .map(|(_, px)| *px)
+            .fold(0.0, f64::max)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorToolIcon {

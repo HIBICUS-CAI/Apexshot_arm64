@@ -13,8 +13,13 @@ use std::sync::{Arc, Mutex};
 use super::super::composition::BackgroundComposition;
 use super::super::state::EditorState;
 use super::super::types::{BackgroundAlignment, BackgroundStyle, Tool};
-use super::super::ui_support::EDITOR_TOP_CHROME_HEIGHT;
+use super::super::ui_support::{DockedBarInset, EDITOR_TOP_CHROME_HEIGHT};
 use super::canvas;
+
+/// Rounded pixel inset the docked bars reserved, as the layout math wants integers.
+fn docked_bar_inset_px(inset: &DockedBarInset) -> i32 {
+    inset.px().round().max(0.0) as i32
+}
 
 /// Install canvas layout updates + scroller tick; returns `update_canvas_content_size`.
 ///
@@ -27,6 +32,7 @@ pub(super) fn install_canvas_layout(
     zoom_label: &Label,
     zoom_header_label: &Label,
     canvas_padding: i32,
+    docked_inset: &DockedBarInset,
 ) -> Rc<dyn Fn()> {
     let update_canvas_content_size: Rc<dyn Fn()> = Rc::new({
         let state = state.clone();
@@ -35,6 +41,7 @@ pub(super) fn install_canvas_layout(
         let zoom_header_label = zoom_header_label.clone();
         let drawing_area = drawing_area.clone();
         let canvas_scroller = canvas_scroller.clone();
+        let docked_inset = docked_inset.clone();
         move || {
             let (
                 image_w,
@@ -80,7 +87,9 @@ pub(super) fn install_canvas_layout(
             let scroller_width = canvas_scroller.allocated_width().max(1) as f64;
             let scroller_height = canvas_scroller.allocated_height().max(1) as f64;
             // Keep fit-to-view math below the floating toolbar strip.
-            let top_inset = canvas_padding + EDITOR_TOP_CHROME_HEIGHT;
+            // Docked tool bars push the image down; see `DockedBarInset`.
+            let top_inset =
+                canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset);
             let available_width = (scroller_width - (canvas_padding * 2 + 2) as f64).max(1.0);
             let available_height =
                 (scroller_height - (top_inset + canvas_padding + 2) as f64).max(1.0);
@@ -149,11 +158,13 @@ pub(super) fn install_canvas_layout(
             0_i32, // crop mode active
             0_i32, // zoom percentage
             0_i32, // background enabled
+            0_i32, // docked tool bar inset (px)
             0_i32, // background padding (tenths)
             0_i32, // background insert (tenths)
             0_i32, // background aspect ratio
         ]));
         let last_canvas_signature_tick = last_canvas_signature.clone();
+        let docked_inset = docked_inset.clone();
         canvas_scroller.add_tick_callback(move |scroller, _| {
             let width = scroller.allocated_width();
             let height = scroller.allocated_height();
@@ -173,7 +184,8 @@ pub(super) fn install_canvas_layout(
                 // same overflow values without duplicating the full layout calculation.
                 let virtual_w = img_w as f64;
                 let virtual_h = img_h as f64;
-                let top_inset = canvas_padding + EDITOR_TOP_CHROME_HEIGHT;
+                let top_inset =
+                    canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset);
                 let available_w = (width as f64 - (canvas_padding * 2 + 2) as f64).max(1.0);
                 let available_h =
                     (height as f64 - (top_inset + canvas_padding + 2) as f64).max(1.0);
@@ -206,6 +218,7 @@ pub(super) fn install_canvas_layout(
                     if crop_mode_active { 1 } else { 0 },
                     zoom_percentage,
                     if has_background { 1 } else { 0 },
+                    docked_bar_inset_px(&docked_inset),
                     background_padding,
                     background_insert,
                     background_aspect_ratio,
