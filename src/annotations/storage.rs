@@ -955,7 +955,7 @@ mod tests {
             image.height(),
             &[],
             &EditorBackgroundStyle::None,
-            24.0,
+            0.0,
             15.0,
             0.0,
             false,

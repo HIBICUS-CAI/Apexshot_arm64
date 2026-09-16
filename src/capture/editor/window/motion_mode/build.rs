@@ -34,8 +34,9 @@ use super::MotionSession;
 pub(in crate::capture::editor::window) fn build_motion_mode(
     window: &ApplicationWindow,
     prefers_dark: bool,
+    background_padding: f64,
 ) -> (MotionModeParts, MotionSession) {
-    let session = MotionSession::new(prefers_dark);
+    let session = MotionSession::new(prefers_dark, background_padding);
 
     let static_toolbar = GtkBox::new(Orientation::Horizontal, 0);
     static_toolbar.add_css_class("editor-toolbar");

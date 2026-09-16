@@ -105,9 +105,9 @@ fn final_image_background_keeps_screenshot_at_native_scale_by_default() {
 
     let final_image = state.to_final_image().expect("final image");
 
-    assert_eq!(final_image.dimensions(), (448, 348));
-    assert_eq!(*final_image.get_pixel(24, 24), *image.get_pixel(0, 0));
-    assert_eq!(*final_image.get_pixel(423, 323), *image.get_pixel(399, 299));
+    assert_eq!(final_image.dimensions(), (400, 300));
+    assert_eq!(*final_image.get_pixel(0, 0), *image.get_pixel(0, 0));
+    assert_eq!(*final_image.get_pixel(399, 299), *image.get_pixel(399, 299));
 }
 
 #[test]

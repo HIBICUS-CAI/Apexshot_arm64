@@ -77,13 +77,39 @@ mod tests {
     #[test]
     fn entering_motion_starts_with_an_empty_track() {
         let state = blank_state();
-        let session = MotionSession::new(true);
+        let session = MotionSession::new(true, 0.0);
         session.capture_snapshot(&state);
         // Motion shows the hint and waits for a click or drag; nothing plays
         // until the user adds a clip.
         assert!(!session.has_segments());
         let identity = session.runtime.borrow().motion.sample(1.5);
         assert!((identity.scale - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn background_tool_opens_at_zero_for_fresh_images() {
+        let session = MotionSession::new(true, 0.0);
+        let padding = {
+            let runtime = session.runtime.borrow();
+            runtime.motion.appearance.background_padding
+        };
+        assert!(
+            padding.abs() < f64::EPSILON,
+            "a fresh image should open with 0px padding"
+        );
+    }
+
+    #[test]
+    fn background_tool_restores_the_images_own_padding() {
+        let session = MotionSession::new(true, 48.0);
+        let padding = {
+            let runtime = session.runtime.borrow();
+            runtime.motion.appearance.background_padding
+        };
+        assert!(
+            (padding - 48.0).abs() < f64::EPSILON,
+            "reopening an edited image should restore its saved padding"
+        );
     }
 
     #[test]
@@ -94,7 +120,7 @@ mod tests {
             // Environments without the bundled catalog keep the old default.
             return;
         };
-        let session = MotionSession::new(true);
+        let session = MotionSession::new(true, 0.0);
         let runtime = session.runtime.borrow();
         assert_eq!(
             runtime.motion.appearance.background_fill_type,

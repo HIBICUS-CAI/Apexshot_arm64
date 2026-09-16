@@ -39,7 +39,8 @@ impl Default for MotionAppearance {
         Self {
             // Preserve the established Motion card framing until the user
             // changes it; unlike the fill, there is no recoverable numeric
-            // default for this field.
+            // default for this field. Capture's Background tool overrides this
+            // to 0px (see `MotionSession::new`).
             background_padding: 96.0,
             background_fill_type: MotionBackgroundFillType::None,
             background_color: [0.0, 0.0, 0.0, 1.0],

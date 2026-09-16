@@ -40,8 +40,10 @@ impl MotionHost {
         window: &ApplicationWindow,
         prefers_dark: bool,
         empty_drop_zone: bool,
+        background_padding: f64,
     ) -> Self {
-        let (parts, session) = motion_mode::build_motion_mode(window, prefers_dark);
+        let (parts, session) =
+            motion_mode::build_motion_mode(window, prefers_dark, background_padding);
         if empty_drop_zone {
             parts.shell.motion_btn.set_sensitive(false);
         }

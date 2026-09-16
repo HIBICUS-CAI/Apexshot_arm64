@@ -61,7 +61,7 @@ impl BackgroundComposition {
             screenshot_w,
             screenshot_h,
             style: BackgroundStyle::None,
-            padding: 24.0,
+            padding: 0.0,
             shadow: 15.0,
             insert: 0.0,
             alignment: BackgroundAlignment::Center,

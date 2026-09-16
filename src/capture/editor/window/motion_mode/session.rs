@@ -279,8 +279,15 @@ pub(in crate::capture::editor::window) struct MotionSession {
 }
 
 impl MotionSession {
-    pub(in crate::capture::editor::window) fn new(prefers_dark: bool) -> Self {
+    pub(in crate::capture::editor::window) fn new(
+        prefers_dark: bool,
+        background_padding: f64,
+    ) -> Self {
         let runtime = Rc::new(RefCell::new(MotionRuntime::new()));
+        // Per-image padding (0px for a fresh image) seeds the shared runtime;
+        // the Motion model's 96px card framing stays a video-editor default
+        // and the global prefs padding is never applied here.
+        runtime.borrow_mut().motion.appearance.background_padding = background_padding;
         // Motion opens with a bundled wallpaper already selected so the first
         // static → motion switch composes against a real scene instead of the
         // black default. Setting it before the appearance panel is built keeps

@@ -5,9 +5,19 @@
 
             .editor-toolbar-color-status {
                 min-height: 22px;
-                padding: 0 6px;
+                padding: 0 8px;
                 border: none;
-                background: transparent;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.12);
+                transition: background 140ms ease;
+            }
+
+            .editor-toolbar-color-status:hover {
+                background: rgba(255, 255, 255, 0.18);
+            }
+
+            .editor-toolbar-color-status:active {
+                background: rgba(255, 255, 255, 0.22);
             }
 
             .editor-toolbar-color-status-swatch {

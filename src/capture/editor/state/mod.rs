@@ -258,7 +258,7 @@ impl EditorState {
             drag_path: Vec::new(),
             drag_shift_active: false,
             background_style: BackgroundStyle::None,
-            background_padding: 24.0,
+            background_padding: 0.0,
             background_shadow: 15.0,
             background_insert: 0.0,
             auto_balance: false,

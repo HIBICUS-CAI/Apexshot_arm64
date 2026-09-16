@@ -1019,7 +1019,6 @@ pub(super) fn build_toolbar_right_controls(
 
 pub(super) fn build_toolbar_tool_updater(
     toolbar_mode_stack: &Stack,
-    inspector_stack: &Stack,
     inspector_tabs: &GtkBox,
     background_tab_btn: &Button,
     colors_tab_btn: &Button,
@@ -1033,7 +1032,6 @@ pub(super) fn build_toolbar_tool_updater(
     canvas_scroller: &gtk4::ScrolledWindow,
 ) -> Rc<dyn Fn(Tool)> {
     let toolbar_mode_stack = toolbar_mode_stack.clone();
-    let inspector_stack = inspector_stack.clone();
     let inspector_tabs = inspector_tabs.clone();
     let background_tab_btn = background_tab_btn.clone();
     let colors_tab_btn = colors_tab_btn.clone();
@@ -1067,58 +1065,12 @@ pub(super) fn build_toolbar_tool_updater(
 
         canvas_scroller.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
 
-        let primary_surface = match tool {
-            Tool::Background => Some(("Background", "background")),
-            Tool::Select => Some(("Select", "select")),
-            Tool::Crop => Some(("Crop", "crop")),
-            Tool::Pen => Some(("Pen", "pen")),
-            Tool::Arrow => Some(("Arrow", "arrow")),
-            Tool::Line => Some(("Line", "line")),
-            Tool::Text => Some(("Text", "text")),
-            Tool::Highlighter => Some(("Highlighter", "highlighter")),
-            Tool::Obfuscate => Some(("Obfuscate", "obfuscate")),
-            Tool::Number => Some(("Number", "number")),
-            _ => None,
-        };
-        let colors_mode = matches!(
-            tool,
-            Tool::Crop
-                | Tool::Background
-                | Tool::Pen
-                | Tool::Arrow
-                | Tool::Line
-                | Tool::Box
-                | Tool::Circle
-                | Tool::Text
-                | Tool::Number
-                | Tool::Highlighter
-                | Tool::Focus
-        );
-        let primary_label = primary_surface
-            .map(|(label, _)| t(label))
-            .unwrap_or_else(|| t("Background"));
-        background_tab_btn.set_label(&primary_label);
-        colors_tab_btn.set_label(&t("Colors"));
-        // Background already hosts its color section (Appearance), so the
-        // Background/Colors switches are redundant. Keep auto-routing below;
-        // ponytail: hide switches, not surfaces.
+        // Static mode docks the Appearance (Background) panel permanently:
+        // selecting a tool never swaps in a per-tool inspector dock, and the
+        // Background/Colors switches stay hidden since Appearance hosts color.
         inspector_tabs.set_visible(false);
         background_tab_btn.set_visible(false);
         colors_tab_btn.set_visible(false);
-
-        if let Some((_, surface)) = primary_surface {
-            inspector_stack.set_visible_child_name(surface);
-            background_tab_btn.add_css_class("active-inspector-tab");
-            colors_tab_btn.remove_css_class("active-inspector-tab");
-        } else if colors_mode {
-            inspector_stack.set_visible_child_name("colors");
-            colors_tab_btn.add_css_class("active-inspector-tab");
-            background_tab_btn.remove_css_class("active-inspector-tab");
-        } else {
-            inspector_stack.set_visible_child_name("placeholder");
-            background_tab_btn.remove_css_class("active-inspector-tab");
-            colors_tab_btn.remove_css_class("active-inspector-tab");
-        }
     })
 }
 
@@ -1152,17 +1104,15 @@ mod tests {
     }
 
     #[test]
-    fn background_tool_defaults_to_background_inspector_surface() {
+    fn static_tool_changes_never_swap_in_per_tool_inspector_docks() {
         let source = include_str!("toolbar.rs");
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            production_source.contains("let primary_surface = match tool {")
-                && production_source.contains("Tool::Background => Some((\"Background\", \"background\"))")
-                && production_source.contains("if let Some((_, surface)) = primary_surface {")
-                && production_source.contains("inspector_stack.set_visible_child_name(surface);")
-                && production_source.contains("background_tab_btn.add_css_class(\"active-inspector-tab\");")
-                && production_source.contains("colors_tab_btn.remove_css_class(\"active-inspector-tab\");"),
-            "Background mode should open on the Background inspector surface instead of the Colors surface",
+            !production_source.contains("let primary_surface = match tool {")
+                && !production_source.contains("let colors_mode = matches!(")
+                && !production_source.contains("inspector_stack.set_visible_child_name(")
+                && !production_source.contains("inspector_stack:"),
+            "Static mode keeps the Appearance panel docked; tool changes must not route to per-tool docks",
         );
     }
 
@@ -1206,50 +1156,6 @@ mod tests {
     }
 
     #[test]
-    fn line_and_shape_tools_without_primary_tabs_still_default_to_colors_inspector_surface() {
-        let source = include_str!("toolbar.rs");
-        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
-        assert!(
-            production_source.contains("inspector_stack.set_visible_child_name(\"colors\");")
-                && production_source.contains("} else if colors_mode {")
-                && production_source.contains("Tool::Box")
-                && production_source.contains("Tool::Circle")
-                && !production_source.contains("Tool::Arrow => Some((\"Arrow\", \"colors\"))")
-                && !production_source.contains("Tool::Text => Some((\"Text\", \"colors\"))")
-                && !production_source.contains("Tool::Number => Some((\"Number\", \"colors\"))")
-                && !production_source.contains("Tool::Pen => Some((\"Pen\", \"colors\"))")
-                && !production_source.contains("Tool::Line => Some((\"Line\", \"colors\"))")
-                && !production_source.contains("Tool::Highlighter => Some((\"Highlighter\", \"colors\"))")
-                && !production_source.contains("| Tool::Obfuscate"),
-            "Color-capable tools without dedicated primary tabs should still switch the right inspector to the Colors surface",
-        );
-    }
-
-    #[test]
-    fn obfuscate_routes_to_a_dedicated_primary_tab_instead_of_shared_colors() {
-        let source = include_str!("toolbar.rs");
-        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
-        assert!(
-            production_source.contains("Tool::Obfuscate => Some((\"Obfuscate\", \"obfuscate\"))")
-                && !production_source.contains("| Tool::Obfuscate"),
-            "Obfuscate should stop using the shared Colors inspector flow and route to its own primary tab",
-        );
-    }
-
-    #[test]
-    fn pen_line_and_highlighter_route_to_dedicated_primary_tabs_before_colors() {
-        let source = include_str!("toolbar.rs");
-        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
-        assert!(
-            production_source.contains("Tool::Pen => Some((\"Pen\", \"pen\"))")
-                && production_source.contains("Tool::Line => Some((\"Line\", \"line\"))")
-                && production_source.contains("Tool::Highlighter => Some((\"Highlighter\", \"highlighter\"))")
-                && production_source.contains("\"Colors\""),
-            "Pen, Line, and Highlighter should route to dedicated primary inspector tabs alongside the shared Colors tab",
-        );
-    }
-
-    #[test]
     fn toolbar_no_longer_exposes_arrow_text_and_number_detail_groups() {
         let source = include_str!("toolbar.rs");
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
@@ -1270,9 +1176,8 @@ mod tests {
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
             production_source.contains("selection_group.append(crop_btn);")
-                && !production_source.contains("toolbar_mode_stack.add_named(&crop_mode_group, Some(\"crop\"));")
-                && production_source.contains("Tool::Crop => Some((\"Crop\", \"crop\"))"),
-            "Toolbar should keep the Crop tool button in the selection group while routing Crop through the inspector instead of a toolbar mode stack",
+                && !production_source.contains("toolbar_mode_stack.add_named(&crop_mode_group, Some(\"crop\"));"),
+            "Toolbar should keep the Crop tool button in the selection group while crop detail lives in the inspector",
         );
     }
 

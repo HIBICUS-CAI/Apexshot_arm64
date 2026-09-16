@@ -153,6 +153,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         initial_shadow_blur,
         initial_shadow_position,
         initial_fill_type,
+        initial_padding,
     ) = {
         let runtime = session.runtime.borrow();
         let appearance = &runtime.motion.appearance;
@@ -165,6 +166,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             appearance.shadow_blur,
             appearance.shadow_position,
             appearance.background_fill_type.clone(),
+            appearance.background_padding,
         )
     };
     let root = GtkBox::new(Orientation::Vertical, 12);
@@ -479,7 +481,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     });
     background_section.append(&fill_section);
 
-    let padding = motion_appearance_slider("Padding", 0.0, 200.0, 96.0, "px");
+    let padding = motion_appearance_slider("Padding", 0.0, 200.0, initial_padding, "px");
     padding.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();

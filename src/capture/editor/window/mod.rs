@@ -671,6 +671,9 @@ fn setup_editor_window_full(
                 st.background_style = crate::annotations::background_style_from_serializable(
                     &annotation_file.background.style,
                 );
+                // Per-image padding is part of that image's saved composition,
+                // so it restores when the same image is reopened. Only the
+                // global prefs value is ignored (see `EditorPreferences`).
                 st.background_padding = annotation_file.background.padding;
                 st.background_shadow = annotation_file.background.shadow;
                 st.background_insert = annotation_file.background.insert;
@@ -1363,7 +1366,16 @@ fn setup_editor_window_full(
         save_btn.set_sensitive(false);
     }
 
-    let motion_host = motion_host::MotionHost::new(&window, prefers_dark, empty_drop_zone);
+    // The Background tool runs on the shared Motion runtime: seed its padding
+    // from the restored per-image state (0px for a fresh image) before the
+    // appearance panels are built and the static sync starts.
+    let restored_background_padding = state.lock().unwrap().background_padding;
+    let motion_host = motion_host::MotionHost::new(
+        &window,
+        prefers_dark,
+        empty_drop_zone,
+        restored_background_padding,
+    );
     let last_inspector = motion_host.last_inspector();
     let in_motion = motion_host.in_motion();
 
@@ -1978,7 +1990,6 @@ fn setup_editor_window_full(
 
     let update_toolbar_for_tool_base = toolbar::build_toolbar_tool_updater(
         &toolbar_mode_stack,
-        &inspector_stack,
         &inspector_tabs,
         &background_tab_btn,
         &colors_tab_btn,
@@ -1994,8 +2005,17 @@ fn setup_editor_window_full(
     let update_toolbar_for_tool: Rc<dyn Fn(Tool)> = Rc::new({
         let update_toolbar_for_tool_base = update_toolbar_for_tool_base.clone();
         let sync_inspector_thickness_controls = sync_inspector_thickness_controls.clone();
+        let inspector_stack = inspector_stack.clone();
+        let last_inspector = last_inspector.clone();
+        let in_motion = in_motion.clone();
         move |tool| {
             update_toolbar_for_tool_base(tool);
+            // Static mode keeps the Appearance panel docked: tool changes must
+            // not swap in the retired per-tool inspector docks.
+            if !in_motion.get() {
+                inspector_stack.set_visible_child_name("background");
+                *last_inspector.borrow_mut() = "background".to_string();
+            }
             if matches!(
                 tool,
                 Tool::Crop | Tool::Pen | Tool::Arrow | Tool::Line | Tool::Highlighter
@@ -3043,28 +3063,16 @@ mod tests {
     }
 
     #[test]
-    fn crop_pen_arrow_line_text_number_and_highlighter_route_to_tool_specific_inspector_tabs() {
+    fn static_tools_keep_the_appearance_inspector_docked() {
         let source = include_str!("mod.rs");
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            production_source.contains("Tool::Crop")
-                && production_source.contains("Tool::Select")
-                && production_source.contains("Tool::Pen")
-                && production_source.contains("\"select\"")
-                && production_source.contains("\"crop\"")
-                && production_source.contains("\"pen\"")
-                && production_source.contains("Tool::Arrow")
-                && production_source.contains("Tool::Line")
-                && production_source.contains("Tool::Text")
-                && production_source.contains("Tool::Number")
-                && production_source.contains("Tool::Highlighter")
-                && production_source.contains("\"arrow\"")
-                && production_source.contains("\"line\"")
-                && production_source.contains("\"text\"")
-                && production_source.contains("\"number\"")
-                && production_source.contains("\"highlighter\"")
-                && production_source.contains("\"colors\""),
-            "Inspector routing should expose Pen, Arrow, Line, Text, Number, and Highlighter primary panels alongside the shared Colors surface",
+            production_source.contains("if !in_motion.get() {")
+                && production_source
+                    .contains("inspector_stack.set_visible_child_name(\"background\");")
+                && production_source
+                    .contains("*last_inspector.borrow_mut() = \"background\".to_string();"),
+            "Static tool changes must pin the Appearance (Background) inspector and restore it after Motion",
         );
     }
 
