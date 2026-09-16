@@ -766,39 +766,6 @@ mod tests {
     }
 
     #[test]
-    fn editor_background_slider_css_does_not_override_internal_contents_nodes() {
-        let production_source = super::EDITOR_CSS;
-        assert!(
-            !production_source.contains(".editor-background-padding-slider > contents")
-                && !production_source.contains(".editor-background-compact-slider > contents"),
-            "editor background slider CSS still overrides internal GTK contents nodes"
-        );
-    }
-
-    #[test]
-    fn editor_background_alignment_css_uses_larger_button_and_marker_sizes() {
-        let production_source = super::EDITOR_CSS;
-        assert!(
-            production_source.contains("min-height: 24px;")
-                && production_source.contains("min-width: 34px;")
-                && production_source.contains("min-width: 10px;")
-                && production_source.contains("min-height: 6px;"),
-            "alignment CSS should keep the larger button shell and marker sizes",
-        );
-    }
-
-    #[test]
-    fn editor_background_alignment_active_state_uses_orange_accent() {
-        let production_source = super::EDITOR_CSS;
-        assert!(
-            production_source
-                .contains("button.editor-background-alignment-button.active-alignment-option {")
-                && production_source.contains("box-shadow: inset 0 0 0 1px #b05c38;"),
-            "alignment selected state should use the #B05C38 editor accent",
-        );
-    }
-
-    #[test]
     fn editor_toolbar_active_tool_uses_flat_white_alpha_matching_settings_nav() {
         let production_source = super::EDITOR_CSS;
         assert!(
@@ -829,9 +796,7 @@ mod tests {
                 && production_source.contains(".editor-inspector-tabs {\n                margin-top: 16px;\n                margin-bottom: 12px;")
                 && production_source.contains(".editor-right-inspector {\n                min-width: 210px;")
                 && production_source.contains(".editor-inspector-placeholder-shell {\n                min-width: 210px;")
-                && production_source.contains(".editor-background-sidebar {\n                min-width: 210px;")
                 && production_source.contains(".editor-colors-panel {\n                min-width: 210px;")
-                && !production_source.contains(".editor-background-sidebar {\n                min-width: 210px;\n                width: 210px;")
                 && !production_source.contains(".editor-colors-panel {\n                min-width: 210px;\n                width: 210px;"),
             "inspector tabs should be text-only, with a fixed shell width but flexible inner panel surfaces",
         );

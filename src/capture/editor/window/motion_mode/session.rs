@@ -77,6 +77,14 @@ pub(in crate::capture::editor::window) struct MotionRuntime {
     /// Pixel scale from `card` to `card_preview` (1.0 when no preview texture).
     pub(in crate::capture::editor::window) card_scale: f64,
     pub(in crate::capture::editor::window) background_surface: Option<gtk4::cairo::ImageSurface>,
+    /// Path whose pixels `background_surface` holds, so the static canvas can
+    /// reuse the inspector's decode instead of decoding the same file again on
+    /// the UI thread.
+    pub(in crate::capture::editor::window) background_surface_path: Option<String>,
+    /// True while `background_surface` only holds the cached thumbnail shown
+    /// until the full-size decode lands. The static canvas keeps its previous
+    /// surface while this is set instead of stretching a 256px thumb.
+    pub(in crate::capture::editor::window) background_surface_is_preview: bool,
     pub(in crate::capture::editor::window) watermark_surface: Option<gtk4::cairo::ImageSurface>,
     pub(in crate::capture::editor::window) backdrop_cache: Option<MotionBackdropCache>,
     pub(in crate::capture::editor::window) motion: MotionState,
@@ -123,6 +131,8 @@ impl MotionRuntime {
             card_preview: None,
             card_scale: 1.0,
             background_surface: None,
+            background_surface_path: None,
+            background_surface_is_preview: false,
             watermark_surface: None,
             backdrop_cache: None,
             motion: MotionState::default(),
@@ -169,6 +179,22 @@ impl MotionRuntime {
             self.undo_stack.remove(0);
         }
         self.redo_stack.clear();
+    }
+
+    /// Record the pixels behind the current Wallpaper/Image fill. The static
+    /// canvas reads this instead of decoding the same file on the UI thread;
+    /// `is_preview` marks the cached thumbnail shown until the full-size decode
+    /// lands, which the canvas must not stretch over a whole canvas.
+    pub(in crate::capture::editor::window) fn set_background_surface(
+        &mut self,
+        path: Option<String>,
+        surface: Option<gtk4::cairo::ImageSurface>,
+        is_preview: bool,
+    ) {
+        self.background_surface = surface;
+        self.background_surface_path = path;
+        self.background_surface_is_preview = is_preview;
+        self.backdrop_cache = None;
     }
 
     pub(in crate::capture::editor::window) fn undo_motion(&mut self) -> bool {
@@ -225,20 +251,30 @@ impl MotionRuntime {
             }
             _ => None,
         };
-        self.background_surface =
-            scene_path.and_then(super::super::motion_render::load_motion_background_surface);
+        let surface = scene_path.and_then(|path| {
+            super::super::motion_render::load_motion_background_preview_surface(
+                path,
+                super::super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+            )
+        });
+        self.set_background_surface(scene_path.map(str::to_owned), surface, false);
         self.watermark_surface = self
             .motion
             .watermark
             .image_file_name
             .as_deref()
-            .and_then(super::super::motion_render::load_motion_background_surface);
+            .and_then(|path| {
+                super::super::motion_render::load_motion_background_preview_surface(
+                    path,
+                    super::super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                )
+            });
     }
 }
 
 #[derive(Clone)]
 pub(in crate::capture::editor::window) struct MotionSession {
-    pub(super) runtime: Rc<RefCell<MotionRuntime>>,
+    pub(in crate::capture::editor::window) runtime: Rc<RefCell<MotionRuntime>>,
     pub(super) prefers_dark: bool,
 }
 
@@ -256,6 +292,9 @@ impl MotionSession {
             let mut runtime = runtime.borrow_mut();
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Wallpaper;
             runtime.motion.appearance.wallpaper_image_name = Some(wallpaper);
+            // Decode the default scene once here. The static canvas reads these
+            // pixels instead of decoding the wallpaper itself on first paint.
+            runtime.refresh_motion_surfaces();
         }
         Self {
             runtime,
@@ -325,7 +364,7 @@ impl MotionSession {
         runtime.card = None;
         runtime.card_preview = None;
         runtime.card_scale = 1.0;
-        runtime.background_surface = None;
+        runtime.set_background_surface(None, None, false);
         runtime.watermark_surface = None;
         runtime.backdrop_cache = None;
         runtime.playing = false;

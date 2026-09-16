@@ -84,6 +84,7 @@ dependencies = [
  "gtk4",
  "gtk4-layer-shell",
  "image 0.24.9",
+ "jpeg-decoder",
  "ksni",
  "libc",
  "libspa-sys",

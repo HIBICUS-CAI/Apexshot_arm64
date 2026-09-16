@@ -15,6 +15,7 @@ mod transition;
 mod watermark;
 mod widgets;
 
+pub(super) use appearance::build_motion_appearance_panel;
 pub(super) use build::build_motion_mode;
 pub(super) use controls::wire_motion_controls;
 pub(super) use parts::MotionModeParts;

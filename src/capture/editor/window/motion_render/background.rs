@@ -102,6 +102,21 @@ pub(super) fn load_motion_background_surface(path: &str) -> Option<ImageSurface>
     crate::capture::editor::render::rgba_image_to_surface(&image)
 }
 
+/// Preview-sized sibling of [`load_motion_background_surface`]. The Motion
+/// runtime and the inspector only ever draw backgrounds at screen resolution,
+/// so they decode bounded (JPEG via DCT scale) and leave full resolution to
+/// the export path.
+pub(super) fn load_motion_background_preview_surface(
+    path: &str,
+    max_edge: u32,
+) -> Option<ImageSurface> {
+    let image = crate::capture::editor::window::background_panel::load_background_preview_image(
+        std::path::Path::new(path),
+        max_edge,
+    )?;
+    crate::capture::editor::render::rgba_image_to_surface(&image)
+}
+
 /// Export-default wrapper kept for tests; release code always passes an
 /// explicit `max_render_edge`.
 #[cfg(test)]

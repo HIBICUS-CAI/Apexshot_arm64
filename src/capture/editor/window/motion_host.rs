@@ -58,6 +58,10 @@ impl MotionHost {
         self.last_inspector.clone()
     }
 
+    pub(super) fn session(&self) -> Rc<MotionSession> {
+        self.session.clone()
+    }
+
     pub(super) fn in_motion(&self) -> Rc<Cell<bool>> {
         self.in_motion.clone()
     }

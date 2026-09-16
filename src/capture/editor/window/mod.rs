@@ -1380,7 +1380,6 @@ fn setup_editor_window_full(
     } = canvas::build_canvas_shell(
         img_width as i32,
         img_height as i32,
-        &GtkBox::new(Orientation::Vertical, 0), // Placeholder, will be replaced
         canvas::EYEDROPPER_LOUPE_SIZE,
     );
     // The zoom controls are added to the canvas pane later so they remain fixed
@@ -1391,22 +1390,18 @@ fn setup_editor_window_full(
     let BackgroundAssetCaches {
         gradient_surfaces,
         wallpaper_cache,
-        wallpaper_loader_sender,
     } = background_assets::install_background_asset_loading(&drawing_area);
 
     // Async Effects Pipeline (channels, worker, polling, watchdog, rebuild callback).
     let rebuild_effects_async = effects::install_async_effects_pipeline(&state, &drawing_area);
 
-    let background_panel_parts = background_panel::build_background_panel(
+    // Static Background shares Motion Appearance: same builder, same session,
+    // same side-panel tools (Appearance). No crop here.
+    let background_inspector = background_panel::build_shared_background_panel(
         &window,
-        state.clone(),
+        &motion_host.session(),
         &drawing_area,
-        wallpaper_loader_sender,
     );
-    let background_inspector = background_panel_parts.root;
-    let start_background_gradient_preview_loading =
-        background_panel_parts.start_gradient_preview_loading;
-    let sync_background_active_classes = background_panel_parts.sync_active_classes;
 
     let colors_panel_parts = colors_panel::build_colors_panel(
         state.clone(),
@@ -1467,12 +1462,10 @@ fn setup_editor_window_full(
         let sync_toolbar_color_status = sync_toolbar_color_status.clone();
         let sync_picker_for_active_tool = sync_picker_for_active_tool.clone();
         let sync_colors_panel_for_active_tool = sync_colors_panel_for_active_tool.clone();
-        let sync_background_active_classes = sync_background_active_classes.clone();
         move || {
             sync_toolbar_color_status();
             sync_picker_for_active_tool();
             sync_colors_panel_for_active_tool();
-            sync_background_active_classes();
         }
     });
     register_color_panel_sync(sync_shared_colors_for_active_tool.clone());
@@ -1997,7 +1990,6 @@ fn setup_editor_window_full(
         &arrow_style_group,
         &stroke_size_group,
         &canvas_scroller,
-        start_background_gradient_preview_loading.clone(),
     );
     let update_toolbar_for_tool: Rc<dyn Fn(Tool)> = Rc::new({
         let update_toolbar_for_tool_base = update_toolbar_for_tool_base.clone();
@@ -2607,6 +2599,23 @@ fn setup_editor_window_full(
         }
     });
     sync_size_control();
+    // Shared Background->static sync: Appearance edits Motion runtime; static
+    // preview/export read EditorState, so copy across each frame. No crop here.
+    // ponytail: one sync point, not per-callback dual-write.
+    {
+        let motion_session = motion_host.session();
+        let state_sync = state.clone();
+        drawing_area.add_tick_callback(move |_, _| {
+            let (appearance, frame) = {
+                let rt = motion_session.runtime.borrow();
+                (rt.motion.appearance.clone(), rt.motion.frame.preset)
+            };
+            if let Ok(mut st) = state_sync.try_lock() {
+                background_panel::sync_motion_appearance_to_static(&appearance, frame, &mut st);
+            }
+            glib::ControlFlow::Continue
+        });
+    }
     let initial_tool = state.lock().unwrap().selected_tool;
     sync_select_inspector();
     update_toolbar_for_tool(initial_tool);
@@ -2625,6 +2634,7 @@ fn setup_editor_window_full(
         caches: &render_caches,
         gradient_surfaces: &gradient_surfaces,
         wallpaper_cache: &wallpaper_cache,
+        motion_runtime: &motion_host.session().runtime,
     });
 
     // Order must match `tool_button_index` in types.rs (used by click handlers + shortcuts).

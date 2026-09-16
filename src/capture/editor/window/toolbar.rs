@@ -1031,7 +1031,6 @@ pub(super) fn build_toolbar_tool_updater(
     arrow_style_group: &GtkBox,
     stroke_size_group: &GtkBox,
     canvas_scroller: &gtk4::ScrolledWindow,
-    start_background_gradient_preview_loading: Rc<dyn Fn()>,
 ) -> Rc<dyn Fn(Tool)> {
     let toolbar_mode_stack = toolbar_mode_stack.clone();
     let inspector_stack = inspector_stack.clone();
@@ -1081,7 +1080,6 @@ pub(super) fn build_toolbar_tool_updater(
             Tool::Number => Some(("Number", "number")),
             _ => None,
         };
-        let background_mode = matches!(tool, Tool::Background);
         let colors_mode = matches!(
             tool,
             Tool::Crop
@@ -1101,9 +1099,12 @@ pub(super) fn build_toolbar_tool_updater(
             .unwrap_or_else(|| t("Background"));
         background_tab_btn.set_label(&primary_label);
         colors_tab_btn.set_label(&t("Colors"));
-        inspector_tabs.set_visible(primary_surface.is_some() || colors_mode);
-        background_tab_btn.set_visible(primary_surface.is_some());
-        colors_tab_btn.set_visible(colors_mode);
+        // Background already hosts its color section (Appearance), so the
+        // Background/Colors switches are redundant. Keep auto-routing below;
+        // ponytail: hide switches, not surfaces.
+        inspector_tabs.set_visible(false);
+        background_tab_btn.set_visible(false);
+        colors_tab_btn.set_visible(false);
 
         if let Some((_, surface)) = primary_surface {
             inspector_stack.set_visible_child_name(surface);
@@ -1117,10 +1118,6 @@ pub(super) fn build_toolbar_tool_updater(
             inspector_stack.set_visible_child_name("placeholder");
             background_tab_btn.remove_css_class("active-inspector-tab");
             colors_tab_btn.remove_css_class("active-inspector-tab");
-        }
-
-        if background_mode {
-            start_background_gradient_preview_loading();
         }
     })
 }
@@ -1276,6 +1273,18 @@ mod tests {
                 && !production_source.contains("toolbar_mode_stack.add_named(&crop_mode_group, Some(\"crop\"));")
                 && production_source.contains("Tool::Crop => Some((\"Crop\", \"crop\"))"),
             "Toolbar should keep the Crop tool button in the selection group while routing Crop through the inspector instead of a toolbar mode stack",
+        );
+    }
+
+    #[test]
+    fn inspector_switches_stay_hidden_since_background_hosts_color() {
+        let source = include_str!("toolbar.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("inspector_tabs.set_visible(false);")
+                && production_source.contains("background_tab_btn.set_visible(false);")
+                && production_source.contains("colors_tab_btn.set_visible(false);"),
+            "Background/Colors switches must stay hidden; Appearance already hosts color",
         );
     }
 }

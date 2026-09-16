@@ -29,6 +29,8 @@ use crate::capture::editor::{
     ui_support::{DockedBarInset, EDITOR_TOP_CHROME_HEIGHT},
 };
 
+use super::motion_mode::MotionRuntime;
+
 const MAX_PREVIEW_SHADOW_DIM: u32 = 1200;
 const PREVIEW_SHADOW_BLUR_PASSES: usize = 2;
 
@@ -71,6 +73,9 @@ pub(super) struct CanvasDrawInputs<'a> {
     pub caches: &'a CanvasRenderCaches,
     pub gradient_surfaces: &'a Rc<RefCell<Vec<Option<ImageSurface>>>>,
     pub wallpaper_cache: &'a Rc<RefCell<HashMap<PathBuf, ImageSurface>>>,
+    /// The shared Motion runtime; its `background_surface` is where the
+    /// Appearance inspector already decoded the selected wallpaper.
+    pub motion_runtime: &'a Rc<RefCell<MotionRuntime>>,
 }
 
 /// Install the canvas draw function. Releases `EditorState` before Cairo work.
@@ -89,6 +94,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
         caches,
         gradient_surfaces,
         wallpaper_cache,
+        motion_runtime,
     } = input;
 
     let state_draw = state.clone();
@@ -107,6 +113,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
     let canvas_padding_draw = canvas_padding as f64;
     let gradient_surfaces = gradient_surfaces.clone();
     let wallpaper_cache = wallpaper_cache.clone();
+    let motion_runtime = motion_runtime.clone();
     drawing_area.set_draw_func(move |_, context, width, height| {
         // IMPORTANT: do not hold the state mutex while performing cairo drawing.
         // The async effects pipeline also locks this mutex on the GTK thread to apply results;
@@ -290,6 +297,10 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             if bg_signature_cache.as_ref() != Some(&current_background_signature)
                 || (needs_background_surface && bg_cache.is_none())
             {
+                // A Wallpaper whose pixels are not decoded yet keeps the
+                // previous surface and leaves the signature stale, so the next
+                // draw retries instead of caching a blank background.
+                let mut background_resolved = true;
                 if let BackgroundStyle::Gradient(idx) = &current_style {
                     let surfaces = gradient_surfaces.borrow();
                     if let Some(surface) = surfaces.get(*idx).and_then(|s| s.as_ref()) {
@@ -300,28 +311,32 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                         let path =
                             super::background_panel::background_gradient_asset_path(file_name);
                         *bg_cache = rgba_image_to_surface(
-                            &super::background_panel::load_background_image_optimized(&path)
-                                .unwrap_or_else(|| RgbaImage::new(1, 1)),
+                            &super::background_panel::load_background_preview_image(
+                                &path,
+                                super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                            )
+                            .unwrap_or_else(|| RgbaImage::new(1, 1)),
                         );
                     }
                 } else if let BackgroundStyle::Wallpaper(path) = &current_style {
-                    let cache = wallpaper_cache.borrow();
-                    if let Some(surface) = cache.get(path) {
+                    // The Appearance inspector decoded this wallpaper for its
+                    // own preview; reuse those pixels. Decoding here would run
+                    // a multi-megapixel JPEG decode on the UI thread.
+                    let motion_surface = {
+                        let runtime = motion_runtime.borrow();
+                        let is_selected = runtime.background_surface_path.as_deref()
+                            == Some(path.to_string_lossy().as_ref())
+                            && !runtime.background_surface_is_preview;
+                        is_selected.then(|| runtime.background_surface.clone()).flatten()
+                    };
+                    if let Some(surface) = motion_surface {
+                        *bg_cache = Some(surface);
+                    } else if let Some(surface) = wallpaper_cache.borrow().get(path) {
                         *bg_cache = Some(surface.clone());
                     } else {
-                        println!(
-                            "[DEBUG] Cache miss for wallpaper: {:?}, loading synchronously",
-                            path
-                        );
-                        if let Some(rgba) =
-                            super::background_panel::load_background_image_optimized(path)
-                        {
-                            let surface = rgba_image_to_surface(&rgba);
-                            *bg_cache = surface;
-                        } else {
-                            println!("[DEBUG] Failed to load wallpaper synchronously: {:?}", path);
-                            *bg_cache = None;
-                        }
+                        // Still decoding off-thread; it queues a redraw when it
+                        // lands. ponytail: never sync-decode on the UI thread.
+                        background_resolved = false;
                     }
                 } else if let BackgroundStyle::PlainColor(_color) = &current_style {
                     *bg_cache = None;
@@ -365,7 +380,9 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     );
                     *bg_cache = rgba_image_to_surface(&blurred_bg);
                 }
-                *bg_signature_cache = Some(current_background_signature);
+                if background_resolved {
+                    *bg_signature_cache = Some(current_background_signature);
+                }
             }
 
             if let Some(surface) = bg_cache.as_ref() {

@@ -42,6 +42,9 @@ tracing = "0.1.41"
 futures-util = "0.3.31"
 async-trait = "0.1.89"
 image = { version = "0.24.9", features = ["png", "jpeg", "gif", "webp"] }
+# Direct use of image's own JPEG backend so previews decode at a DCT-scaled
+# size; `image` does not expose `Decoder::scale`. Already in the lock tree.
+jpeg-decoder = "0.3"
 rayon = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"

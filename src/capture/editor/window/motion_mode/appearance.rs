@@ -5,6 +5,7 @@ use gtk4::{
     Stack,
 };
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -138,7 +139,7 @@ fn motion_gradient_preset_area(start: [f64; 4], end: [f64; 4]) -> DrawingArea {
 /// Motion appearance is a scene-level inspector rather than an
 /// animation clip. The five fill controls map one-to-one to the
 /// `BackgroundFillType` cases and only mutate the compositor state.
-pub(super) fn build_motion_appearance_panel(
+pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     window: &ApplicationWindow,
     session: &MotionSession,
     preview: &DrawingArea,
@@ -870,6 +871,35 @@ fn motion_appearance_section(title: &str) -> GtkBox {
     section
 }
 
+// Decoded wallpaper preview surfaces, shared by both Appearance panels
+// (motion + static-shared) and every grid row. Without this the shared
+// Background tool decodes each thumb twice on startup, blocking open.
+// Main-thread only (GTK), so thread-local: cairo surfaces are !Sync.
+// ponytail: one cache, not per-panel decode.
+thread_local! {
+    static WALLPAPER_PREVIEW_CACHE: RefCell<HashMap<String, gtk4::cairo::ImageSurface>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Bundled wallpaper thumbs are 256px wide; previews in the strip are 56px.
+const WALLPAPER_THUMB_MAX_EDGE: u32 = 256;
+
+fn cached_wallpaper_preview_surface(path: &str) -> Option<gtk4::cairo::ImageSurface> {
+    if let Some(hit) = WALLPAPER_PREVIEW_CACHE.with(|cache| cache.borrow().get(path).cloned())
+    {
+        return Some(hit);
+    }
+    let surface = crate::capture::editor::window::background_panel::load_background_preview_image(
+        std::path::Path::new(path),
+        WALLPAPER_THUMB_MAX_EDGE,
+    )
+    .and_then(|image| crate::capture::editor::render::rgba_image_to_surface(&image))?;
+    WALLPAPER_PREVIEW_CACHE.with(|cache| {
+        cache.borrow_mut().insert(path.to_owned(), surface.clone());
+    });
+    Some(surface)
+}
+
 /// Motion uses the app's bundled background catalog rather than requiring a
 /// file chooser for the common Wallpaper path.  The picker intentionally
 /// progresses from a short strip → the full grid, keeping the inspector
@@ -1003,31 +1033,46 @@ fn motion_wallpaper_catalog_section(
         let preview = preview.clone();
         let none_button = none_button.clone();
         let selection_buttons = selection_buttons.clone();
-        let default_path = paths.first().map(|(path, _)| path.clone());
+        let default_entry = paths.first().cloned();
         move || {
-            let Some(default_path) = default_path.clone() else {
+            let Some((default_path, default_preview)) = default_entry.clone() else {
                 return;
             };
-            let selected_path = {
-                let mut runtime = session.runtime.borrow_mut();
-                if !matches!(
-                    runtime.motion.appearance.background_fill_type,
-                    MotionBackgroundFillType::Wallpaper
-                ) {
+            let needs_switch = !matches!(
+                session.runtime.borrow().motion.appearance.background_fill_type,
+                MotionBackgroundFillType::Wallpaper
+            );
+            if needs_switch {
+                {
+                    let mut runtime = session.runtime.borrow_mut();
                     runtime.begin_motion_edit();
                     runtime.motion.appearance.wallpaper_image_name =
                         Some(default_path.to_string_lossy().into_owned());
                     runtime.motion.appearance.background_fill_type =
                         MotionBackgroundFillType::Wallpaper;
-                    runtime.background_surface =
-                        super::super::motion_render::load_motion_background_surface(
-                            &default_path.to_string_lossy(),
-                        );
+                    // Cached thumb now (no decode jank), full image off-thread.
+                    // ponytail: never sync-decode full wallpaper on click.
+                    runtime.set_background_surface(
+                        Some(default_path.to_string_lossy().into_owned()),
+                        cached_wallpaper_preview_surface(&default_preview.to_string_lossy()),
+                        true,
+                    );
                     none_button.remove_css_class("active-background-option");
                     preview.queue_draw();
                 }
-                runtime.motion.appearance.wallpaper_image_name.clone()
-            };
+                load_motion_wallpaper_asynchronously(
+                    default_path.clone(),
+                    session.clone(),
+                    preview.clone(),
+                );
+            }
+            let selected_path = session
+                .runtime
+                .borrow()
+                .motion
+                .appearance
+                .wallpaper_image_name
+                .clone();
             for (path, button) in selection_buttons.borrow().iter() {
                 if Some(path.to_string_lossy().as_ref()) == selected_path.as_deref() {
                     button.add_css_class("active-background-option");
@@ -1057,11 +1102,23 @@ fn motion_wallpaper_thumbnail(
     button.set_tooltip_text(path.file_stem().and_then(|name| name.to_str()));
     let path = path.to_path_buf();
     let preview_path = preview_path.to_path_buf();
-    let preview_surface = super::super::motion_render::load_motion_background_surface(
-        &preview_path.to_string_lossy(),
-    );
-    let thumbnail = motion_wallpaper_thumbnail_area(preview_surface);
+    // Build empty so the panel opens instantly; fill thumb off the critical
+    // path via cache (second panel + revisits are free). ponytail: async
+    // thumbs, not sync decode on open.
+    let thumbnail = motion_wallpaper_thumbnail_area(None);
     button.set_child(Some(&thumbnail));
+    {
+        let thumbnail = thumbnail.clone();
+        let key = preview_path.to_string_lossy().into_owned();
+        glib::idle_add_local_once(move || {
+            if let Some(surface) = cached_wallpaper_preview_surface(&key) {
+                thumbnail.set_draw_func(move |_, context, width, height| {
+                    paint_wallpaper_thumb(context, &surface, width, height);
+                });
+                thumbnail.queue_draw();
+            }
+        });
+    }
 
     if session
         .runtime
@@ -1084,18 +1141,30 @@ fn motion_wallpaper_thumbnail(
         let selection_buttons = selection_buttons.clone();
         let preview_path = preview_path.clone();
         move |_| {
+            // Re-clicking the active wallpaper must not re-decode + recomposite.
+            // ponytail: early return, not another async load.
+            let already_selected = {
+                let runtime = session.runtime.borrow();
+                runtime.motion.appearance.background_fill_type
+                    == MotionBackgroundFillType::Wallpaper
+                    && runtime.motion.appearance.wallpaper_image_name.as_deref()
+                        == Some(path.to_string_lossy().as_ref())
+            };
+            if already_selected {
+                return;
+            }
             let mut runtime = session.runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.wallpaper_image_name =
                 Some(path.to_string_lossy().into_owned());
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Wallpaper;
-            // The thumbnail is already inexpensive to decode. Show it now,
-            // then replace it with the full wallpaper from a worker thread.
-            runtime.background_surface =
-                super::super::motion_render::load_motion_background_surface(
-                    &preview_path.to_string_lossy(),
-                );
-            runtime.backdrop_cache = None;
+            // The thumbnail is cached. Show it now, then replace it with the
+            // full wallpaper from a worker thread. ponytail: cache hit, no decode.
+            runtime.set_background_surface(
+                Some(path.to_string_lossy().into_owned()),
+                cached_wallpaper_preview_surface(&preview_path.to_string_lossy()),
+                true,
+            );
             for (candidate_path, candidate) in selection_buttons.borrow().iter() {
                 if candidate_path == &path {
                     candidate.add_css_class("active-background-option");
@@ -1127,10 +1196,19 @@ fn motion_wallpaper_stack_thumbnail(
     button.add_css_class("editor-motion-wallpaper-thumbnail");
     button.add_css_class("editor-motion-wallpaper-stack-thumbnail");
     button.set_tooltip_text(Some(&t("Show all wallpapers")));
-    let surface = super::super::motion_render::load_motion_background_surface(
-        &preview_path.to_string_lossy(),
-    );
-    let thumbnail = motion_wallpaper_thumbnail_area(surface);
+    let thumbnail = motion_wallpaper_thumbnail_area(None);
+    {
+        let thumbnail = thumbnail.clone();
+        let key = preview_path.to_string_lossy().into_owned();
+        glib::idle_add_local_once(move || {
+            if let Some(surface) = cached_wallpaper_preview_surface(&key) {
+                thumbnail.set_draw_func(move |_, context, width, height| {
+                    paint_wallpaper_thumb(context, &surface, width, height);
+                });
+                thumbnail.queue_draw();
+            }
+        });
+    }
     let overlay = Overlay::new();
     overlay.set_child(Some(&thumbnail));
     let expand = Label::new(Some("⌄"));
@@ -1150,6 +1228,30 @@ fn motion_wallpaper_stack_thumbnail(
     button
 }
 
+fn paint_wallpaper_thumb(context: &Context, surface: &gtk4::cairo::ImageSurface, width: i32, height: i32) {
+    let source_w = f64::from(surface.width().max(1));
+    let source_h = f64::from(surface.height().max(1));
+    let scale = (f64::from(width) / source_w).max(f64::from(height) / source_h);
+    let _ = context.save();
+    motion_thumbnail_rounded_rectangle(
+        context,
+        0.0,
+        0.0,
+        f64::from(width),
+        f64::from(height),
+        11.0,
+    );
+    context.clip();
+    context.translate(
+        (f64::from(width) - source_w * scale) * 0.5,
+        (f64::from(height) - source_h * scale) * 0.5,
+    );
+    context.scale(scale, scale);
+    context.set_source_surface(surface, 0.0, 0.0).ok();
+    context.paint().ok();
+    context.restore().ok();
+}
+
 fn motion_wallpaper_thumbnail_area(surface: Option<gtk4::cairo::ImageSurface>) -> DrawingArea {
     let thumbnail = DrawingArea::new();
     thumbnail.set_content_width(56);
@@ -1158,27 +1260,7 @@ fn motion_wallpaper_thumbnail_area(surface: Option<gtk4::cairo::ImageSurface>) -
         let Some(surface) = surface.as_ref() else {
             return;
         };
-        let source_w = f64::from(surface.width().max(1));
-        let source_h = f64::from(surface.height().max(1));
-        let scale = (f64::from(width) / source_w).max(f64::from(height) / source_h);
-        let _ = context.save();
-        motion_thumbnail_rounded_rectangle(
-            context,
-            0.0,
-            0.0,
-            f64::from(width),
-            f64::from(height),
-            11.0,
-        );
-        context.clip();
-        context.translate(
-            (f64::from(width) - source_w * scale) * 0.5,
-            (f64::from(height) - source_h * scale) * 0.5,
-        );
-        context.scale(scale, scale);
-        context.set_source_surface(surface, 0.0, 0.0).ok();
-        context.paint().ok();
-        context.restore().ok();
+        paint_wallpaper_thumb(context, surface, width, height);
     });
     thumbnail
 }
@@ -1186,6 +1268,12 @@ fn motion_wallpaper_thumbnail_area(surface: Option<gtk4::cairo::ImageSurface>) -
 /// Decode a selected full-resolution wallpaper off the UI thread. The tile's
 /// small preview is already assigned as a temporary background, so the
 /// inspector remains responsive while the full image is prepared.
+/// The decoded image is downscaled to a preview-bounded edge before crossing
+/// to the UI thread: upload + cover-fit composite then stay cheap no matter
+/// how large the source file is. Export reloads full-res from disk itself.
+/// ponytail: bound preview pixels, not a loader pool; pool when still slow.
+const PREVIEW_WALLPAPER_MAX_EDGE: u32 = 1600;
+
 fn load_motion_wallpaper_asynchronously(
     path: PathBuf,
     session: MotionSession,
@@ -1195,7 +1283,13 @@ fn load_motion_wallpaper_asynchronously(
     std::thread::spawn({
         let path = path.clone();
         move || {
-            let image = image::open(&path).ok().map(|image| image.into_rgba8());
+            // Bounded decode: DCT-scaled for JPEG, so the 8000x6000 catalog
+            // entries cost a fraction of a full decode instead of seconds.
+            let image =
+                crate::capture::editor::window::background_panel::load_background_preview_image(
+                    &path,
+                    PREVIEW_WALLPAPER_MAX_EDGE,
+                );
             let _ = sender.send((path, image));
         }
     });
@@ -1208,9 +1302,11 @@ fn load_motion_wallpaper_asynchronously(
                     && runtime.motion.appearance.wallpaper_image_name.as_deref()
                         == Some(loaded_path.to_string_lossy().as_ref());
                 if still_selected {
-                    runtime.background_surface =
-                        crate::capture::editor::render::rgba_image_to_surface(&image);
-                    runtime.backdrop_cache = None;
+                    runtime.set_background_surface(
+                        Some(loaded_path.to_string_lossy().into_owned()),
+                        crate::capture::editor::render::rgba_image_to_surface(&image),
+                        false,
+                    );
                     preview.queue_draw();
                 }
                 glib::ControlFlow::Break
@@ -1323,16 +1419,27 @@ fn motion_image_section(
                 }
                 runtime.motion.appearance.background_fill_type = kind.clone();
                 let active_path = match kind {
-                    MotionBackgroundFillType::Wallpaper => {
-                        runtime.motion.appearance.wallpaper_image_name.as_deref()
-                    }
-                    MotionBackgroundFillType::Image => {
-                        runtime.motion.appearance.custom_background_image.as_deref()
-                    }
+                    MotionBackgroundFillType::Wallpaper => runtime
+                        .motion
+                        .appearance
+                        .wallpaper_image_name
+                        .as_deref()
+                        .map(str::to_owned),
+                    MotionBackgroundFillType::Image => runtime
+                        .motion
+                        .appearance
+                        .custom_background_image
+                        .as_deref()
+                        .map(str::to_owned),
                     _ => None,
                 };
-                runtime.background_surface = active_path
-                    .and_then(super::super::motion_render::load_motion_background_surface);
+                let surface = active_path.as_deref().and_then(|path| {
+                    super::super::motion_render::load_motion_background_preview_surface(
+                        path,
+                        PREVIEW_WALLPAPER_MAX_EDGE,
+                    )
+                });
+                runtime.set_background_surface(active_path, surface, false);
                 none_button.remove_css_class("active-background-option");
                 preview.queue_draw();
             });
@@ -1342,4 +1449,22 @@ fn motion_image_section(
     section.append(&label);
     section.append(&choose);
     section
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn wallpaper_thumbs_share_cache_and_load_off_critical_path() {
+        let source = include_str!("appearance.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("WALLPAPER_PREVIEW_CACHE")
+                && production_source.contains("cached_wallpaper_preview_surface")
+                && production_source.contains("idle_add_local_once")
+                && production_source.contains("load_motion_wallpaper_asynchronously(")
+                && production_source.contains("PREVIEW_WALLPAPER_MAX_EDGE")
+                && production_source.contains("already_selected"),
+            "wallpaper thumbs must share one cache and never sync-decode full images on open/click",
+        );
+    }
 }

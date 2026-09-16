@@ -19,6 +19,13 @@ TELEMETRY_CHANNEL="update"
 TELEMETRY_URL="${APEXSHOT_TELEMETRY_URL:-https://apexshot.org/api/download-telemetry}"
 INSTALL_ID=""
 
+# apt/dpkg must never prompt: installs run inside `run_spinner`, which
+# backgrounds them, so debconf/whiptail prompts (e.g. the gdm3 vs lightdm
+# display-manager question on Mint) get stdin=/dev/null, paint on screen,
+# and hang forever with a dead-looking dialog. Noninteractive answers such
+# prompts with their defaults instead (matches Docker/Tailscale installers).
+export DEBIAN_FRONTEND=noninteractive
+
 SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
 SCRIPT_DIR=""
 if [[ -n "$SCRIPT_SOURCE" ]]; then
