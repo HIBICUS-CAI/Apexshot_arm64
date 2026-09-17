@@ -184,7 +184,7 @@ pub(super) fn install(
             let stage = super::super::super::motion_render::MotionStage::preview(
                 width,
                 height,
-                runtime.motion.frame.preset.aspect(),
+                runtime.motion.frame.effective_aspect(),
             );
             let padding = runtime.motion.appearance.background_padding;
             let (pos_x, pos_y) =
@@ -233,7 +233,7 @@ pub(super) fn install(
                             super::super::super::motion_render::MotionStage::preview(
                                 width,
                                 height,
-                                runtime.motion.frame.preset.aspect(),
+                                runtime.motion.frame.effective_aspect(),
                             ),
                             runtime.motion.appearance.background_padding,
                             runtime.motion.sample(runtime.motion.playhead),

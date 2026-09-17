@@ -101,6 +101,12 @@ pub enum CropAspectRatio {
     TwentyOneNine,
     ThreeTwo,
     NineSixteen,
+    FiveFour,
+    FourFive,
+    ThreeFour,
+    TwoThree,
+    TenTwentyOne,
+    ThreeOne,
 }
 
 /// Serializable color (f64 -> u8 for JSON compactness)

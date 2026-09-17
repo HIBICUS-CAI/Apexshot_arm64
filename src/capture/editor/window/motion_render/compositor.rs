@@ -128,7 +128,7 @@ pub(super) fn draw_motion_foreground(
     // Padding, zoom, and titles all lay out against the background's
     // rectangle so the card can never sit outside the scene it belongs to.
     let stage = if checkerboard {
-        MotionStage::preview(f64::from(width), f64::from(height), motion.frame.preset.aspect())
+        MotionStage::preview(f64::from(width), f64::from(height), motion.frame.effective_aspect())
     } else {
         MotionStage::frame(f64::from(width), f64::from(height))
     };

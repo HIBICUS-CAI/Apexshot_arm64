@@ -14,7 +14,7 @@ use std::process::Command;
 use super::super::state::EditorState;
 use super::super::types::{BackgroundStyle, CropAspectRatio, DrawColor};
 use crate::recording::editor::model::{
-    MotionAppearance, MotionBackgroundFillType, MotionFramePreset,
+    MotionAppearance, MotionBackgroundFillType,
 };
 
 pub(super) const BACKGROUND_SIDEBAR_WIDTH: i32 = 210;
@@ -356,9 +356,74 @@ pub(super) fn detect_system_wallpaper_path() -> Option<PathBuf> {
 /// so static + motion truly share one background tool. Static preview/export
 /// still read EditorState, so this sync copies Motion -> static before draw.
 /// ponytail: one conversion fn, not two panels; render reuse follows.
+/// Map a Motion frame to the closest static crop ratio. Standard keeps the
+/// original canvas; every fixed ratio maps exactly now that the static
+/// crop list covers the picker grid. Legacy X (1.91:1 link-card) has no
+/// static twin, so it falls back to 16:9. Custom matches by nearest aspect
+/// so a manual W/H still previews close to its Motion output.
+fn frame_preset_to_crop_ratio(
+    frame: &crate::recording::editor::model::MotionFrame,
+) -> CropAspectRatio {
+    use crate::recording::editor::model::MotionFramePreset as Preset;
+    match frame.preset {
+        Preset::Standard => CropAspectRatio::Original,
+        Preset::Instagram | Preset::OneOne => CropAspectRatio::Square,
+        Preset::YouTube | Preset::SixteenNine => CropAspectRatio::SixteenNine,
+        Preset::ThreeTwo => CropAspectRatio::ThreeTwo,
+        Preset::FourThree => CropAspectRatio::FourThree,
+        Preset::FiveFour => CropAspectRatio::FiveFour,
+        Preset::FourFive => CropAspectRatio::FourFive,
+        Preset::ThreeFour => CropAspectRatio::ThreeFour,
+        Preset::TwoThree => CropAspectRatio::TwoThree,
+        Preset::NineSixteen | Preset::InstagramStory => CropAspectRatio::NineSixteen,
+        Preset::TenTwentyOne | Preset::PinterestLong => CropAspectRatio::TenTwentyOne,
+        Preset::YouTubeBanner | Preset::YouTubeThumbnail | Preset::YouTubeVideo => {
+            CropAspectRatio::SixteenNine
+        }
+        Preset::TwitterTweet => CropAspectRatio::SixteenNine,
+        Preset::TwitterCover => CropAspectRatio::ThreeOne,
+        Preset::InstagramPost | Preset::PinterestSquare => CropAspectRatio::Square,
+        Preset::InstagramPortrait => CropAspectRatio::FourFive,
+        Preset::PinterestOptimal => CropAspectRatio::TwoThree,
+        Preset::X => CropAspectRatio::SixteenNine,
+        Preset::Custom => {
+            let aspect = frame.effective_aspect().unwrap_or(0.0);
+            if aspect <= 0.0 {
+                return CropAspectRatio::Original;
+            }
+            let candidates = [
+                (CropAspectRatio::Square, 1.0),
+                (CropAspectRatio::FourThree, 4.0 / 3.0),
+                (CropAspectRatio::SixteenNine, 16.0 / 9.0),
+                (CropAspectRatio::ThreeTwo, 3.0 / 2.0),
+                (CropAspectRatio::NineSixteen, 9.0 / 16.0),
+                (CropAspectRatio::FiveFour, 5.0 / 4.0),
+                (CropAspectRatio::FourFive, 4.0 / 5.0),
+                (CropAspectRatio::ThreeFour, 3.0 / 4.0),
+                (CropAspectRatio::TwoThree, 2.0 / 3.0),
+                (CropAspectRatio::TenTwentyOne, 10.0 / 21.0),
+                (CropAspectRatio::ThreeOne, 3.0),
+            ];
+            // X link-card (1.91:1) still maps to 16:9 for static, so treat
+            // it as a candidate to keep Custom 1.91:1 close to the card.
+            let mut best = CropAspectRatio::Original;
+            let mut best_dist = f64::INFINITY;
+            for (ratio, target) in candidates {
+                let dist = (aspect - target).abs();
+                if dist < best_dist {
+                    best_dist = dist;
+                    best = ratio;
+                }
+            }
+            // Only snap when reasonably close; exotic customs keep Original.
+            if best_dist < 0.08 { best } else { CropAspectRatio::Original }
+        }
+    }
+}
+
 pub(super) fn sync_motion_appearance_to_static(
     motion: &MotionAppearance,
-    frame: MotionFramePreset,
+    frame: &crate::recording::editor::model::MotionFrame,
     state: &mut EditorState,
 ) {
     state.background_style = match &motion.background_fill_type {
@@ -398,13 +463,7 @@ pub(super) fn sync_motion_appearance_to_static(
     state.shadow_offset_y = motion.shadow_position.1;
     // Keep legacy single-value shadow driving current static render.
     state.background_shadow = (motion.shadow_opacity * 30.0).clamp(0.0, 60.0);
-    state.background_aspect_ratio = match frame {
-        MotionFramePreset::Standard => CropAspectRatio::Original,
-        MotionFramePreset::Instagram => CropAspectRatio::Square,
-        // X link-card 1.91:1 has no static variant yet; closest is 16:9.
-        // ponytail: add CropAspectRatio::NineteenTen when export needs exact.
-        MotionFramePreset::X | MotionFramePreset::YouTube => CropAspectRatio::SixteenNine,
-    };
+    state.background_aspect_ratio = frame_preset_to_crop_ratio(frame);
 }
 
 /// Build the static Background inspector with the Motion Appearance builder,
@@ -504,6 +563,122 @@ mod tests {
                 && production_source.contains("sync_motion_appearance_to_static"),
             "static Background must reuse Motion Appearance (same side-panel tools)",
         );
+    }
+
+    #[test]
+    fn frame_ratios_map_to_matching_static_crop() {
+        use crate::recording::editor::model::{MotionFrame, MotionFramePreset};
+        use super::super::super::types::CropAspectRatio;
+        let ratio_for = |preset: MotionFramePreset| {
+            super::frame_preset_to_crop_ratio(&MotionFrame {
+                preset,
+                custom_width: 1920,
+                custom_height: 1440,
+            })
+        };
+        assert_eq!(ratio_for(MotionFramePreset::Standard), CropAspectRatio::Original);
+        assert_eq!(ratio_for(MotionFramePreset::OneOne), CropAspectRatio::Square);
+        assert_eq!(ratio_for(MotionFramePreset::SixteenNine), CropAspectRatio::SixteenNine);
+        assert_eq!(ratio_for(MotionFramePreset::FourThree), CropAspectRatio::FourThree);
+        assert_eq!(ratio_for(MotionFramePreset::ThreeTwo), CropAspectRatio::ThreeTwo);
+        assert_eq!(ratio_for(MotionFramePreset::NineSixteen), CropAspectRatio::NineSixteen);
+        assert_eq!(ratio_for(MotionFramePreset::FiveFour), CropAspectRatio::FiveFour);
+        assert_eq!(ratio_for(MotionFramePreset::FourFive), CropAspectRatio::FourFive);
+        assert_eq!(ratio_for(MotionFramePreset::ThreeFour), CropAspectRatio::ThreeFour);
+        assert_eq!(ratio_for(MotionFramePreset::TwoThree), CropAspectRatio::TwoThree);
+        assert_eq!(
+            ratio_for(MotionFramePreset::TenTwentyOne),
+            CropAspectRatio::TenTwentyOne
+        );
+        // Legacy aliases resolve to the same static ratio as their canonical twin.
+        assert_eq!(ratio_for(MotionFramePreset::Instagram), CropAspectRatio::Square);
+        assert_eq!(ratio_for(MotionFramePreset::YouTube), CropAspectRatio::SixteenNine);
+        // Social fixed sizes resolve to their ratio twin; W/H shows exact dims.
+        assert_eq!(
+            ratio_for(MotionFramePreset::YouTubeBanner),
+            CropAspectRatio::SixteenNine
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::TwitterCover),
+            CropAspectRatio::ThreeOne
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::InstagramPortrait),
+            CropAspectRatio::FourFive
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::PinterestLong),
+            CropAspectRatio::TenTwentyOne
+        );
+        assert_eq!(
+            MotionFrame {
+                preset: MotionFramePreset::YouTubeBanner,
+                custom_width: 1920,
+                custom_height: 1440,
+            }
+            .output_size(),
+            (2560, 1440)
+        );
+        assert_eq!(
+            MotionFrame {
+                preset: MotionFramePreset::TwitterCover,
+                custom_width: 1920,
+                custom_height: 1440,
+            }
+            .output_size(),
+            (1500, 500)
+        );
+        assert_eq!(
+            MotionFrame {
+                preset: MotionFramePreset::InstagramPost,
+                custom_width: 1920,
+                custom_height: 1440,
+            }
+            .output_size(),
+            (1080, 1080)
+        );
+        // Custom 4:3 manual dims snap to the 4:3 static crop.
+        assert_eq!(
+            super::frame_preset_to_crop_ratio(&MotionFrame {
+                preset: MotionFramePreset::Custom,
+                custom_width: 1920,
+                custom_height: 1440,
+            }),
+            CropAspectRatio::FourThree
+        );
+    }
+
+    #[test]
+    fn custom_frame_output_respects_manual_dims_and_even_budget() {
+        use crate::recording::editor::model::{MotionFrame, MotionFramePreset};
+        let custom = MotionFrame {
+            preset: MotionFramePreset::Custom,
+            custom_width: 1920,
+            custom_height: 1440,
+        };
+        assert!((custom.effective_aspect().unwrap() - 4.0 / 3.0).abs() < 1e-9);
+        assert_eq!(custom.output_size(), (1920, 1440));
+        // Odd manual dims round to even for yuv420p; oversized longs scale to 1920.
+        let odd = MotionFrame {
+            preset: MotionFramePreset::Custom,
+            custom_width: 1921,
+            custom_height: 1081,
+        };
+        let (w, h) = odd.output_size();
+        assert_eq!((w % 2, h % 2), (0, 0));
+        let wide = MotionFrame {
+            preset: MotionFramePreset::Custom,
+            custom_width: 3840,
+            custom_height: 2160,
+        };
+        assert_eq!(wide.output_size(), (1920, 1080));
+        // Fixed ratios keep the established long-edge budget.
+        let square = MotionFrame {
+            preset: MotionFramePreset::OneOne,
+            custom_width: 1920,
+            custom_height: 1440,
+        };
+        assert_eq!(square.output_size(), (1920, 1920));
     }
 
 

@@ -94,11 +94,15 @@ pub(super) fn install_canvas_layout(
             let available_height =
                 (scroller_height - (top_inset + canvas_padding + 2) as f64).max(1.0);
 
-            // Use the minimum of width and height to maintain aspect ratio and prevent asymmetric growth
-            let available_size = available_width.min(available_height);
-
+            // Fit both dimensions so wide/tall frames (e.g. 3:1 cover) shrink
+            // to the viewport instead of overflowing one axis. This mirrors
+            // the draw scale in canvas_render, which already fits both sides.
+            // Manual zoom still multiplies on top; spacebar-drag pan covers
+            // inspection above 100%.
             // Layout scale without zoom - used for content size (prevents window from growing on zoom)
-            let layout_scale = (available_size / virtual_w.min(virtual_h)).min(1.0_f64);
+            let layout_scale = (available_width / virtual_w)
+                .min(available_height / virtual_h)
+                .min(1.0_f64);
             // Rendering scale includes zoom for visual display
             let scale = layout_scale * zoom_level.get().max(0.1_f64);
 
@@ -190,8 +194,9 @@ pub(super) fn install_canvas_layout(
                 let available_h =
                     (height as f64 - (top_inset + canvas_padding + 2) as f64).max(1.0);
 
-                let available_size = available_w.min(available_h);
-                let layout_scale = (available_size / virtual_w.min(virtual_h)).min(1.0_f64);
+                let layout_scale = (available_w / virtual_w)
+                    .min(available_h / virtual_h)
+                    .min(1.0_f64);
                 let _scale = layout_scale * zoom_level_tick.get().max(0.1_f64);
 
                 let (ol, ot, or_, ob) = if has_background {
@@ -249,6 +254,18 @@ mod tests {
                 && source.contains("no relayout churn occurs")
                 && source.contains("fn install_canvas_layout"),
             "canvas layout must size content, update zoom labels, and suppress crop-drag relayout churn"
+        );
+    }
+
+    #[test]
+    fn canvas_layout_fits_both_dimensions_so_frames_never_overflow() {
+        let source = include_str!("canvas_layout.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("available_width / virtual_w")
+                && production_source.contains("available_height / virtual_h")
+                && !production_source.contains("virtual_w.min(virtual_h)"),
+            "wide/tall frames must shrink to the viewport on both axes (matching the draw fit), keeping spacebar-drag for manual inspection",
         );
     }
 }

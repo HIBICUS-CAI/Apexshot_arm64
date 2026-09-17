@@ -188,6 +188,12 @@ pub fn crop_aspect_ratio_from_serializable(ratio: CropAspectRatio) -> EditorCrop
         CropAspectRatio::TwentyOneNine => EditorCropAspectRatio::TwentyOneNine,
         CropAspectRatio::ThreeTwo => EditorCropAspectRatio::ThreeTwo,
         CropAspectRatio::NineSixteen => EditorCropAspectRatio::NineSixteen,
+        CropAspectRatio::FiveFour => EditorCropAspectRatio::FiveFour,
+        CropAspectRatio::FourFive => EditorCropAspectRatio::FourFive,
+        CropAspectRatio::ThreeFour => EditorCropAspectRatio::ThreeFour,
+        CropAspectRatio::TwoThree => EditorCropAspectRatio::TwoThree,
+        CropAspectRatio::TenTwentyOne => EditorCropAspectRatio::TenTwentyOne,
+        CropAspectRatio::ThreeOne => EditorCropAspectRatio::ThreeOne,
     }
 }
 
@@ -638,6 +644,12 @@ fn crop_aspect_ratio_to_serializable(ratio: EditorCropAspectRatio) -> CropAspect
         EditorCropAspectRatio::TwentyOneNine => CropAspectRatio::TwentyOneNine,
         EditorCropAspectRatio::ThreeTwo => CropAspectRatio::ThreeTwo,
         EditorCropAspectRatio::NineSixteen => CropAspectRatio::NineSixteen,
+        EditorCropAspectRatio::FiveFour => CropAspectRatio::FiveFour,
+        EditorCropAspectRatio::FourFive => CropAspectRatio::FourFive,
+        EditorCropAspectRatio::ThreeFour => CropAspectRatio::ThreeFour,
+        EditorCropAspectRatio::TwoThree => CropAspectRatio::TwoThree,
+        EditorCropAspectRatio::TenTwentyOne => CropAspectRatio::TenTwentyOne,
+        EditorCropAspectRatio::ThreeOne => CropAspectRatio::ThreeOne,
     }
 }
 

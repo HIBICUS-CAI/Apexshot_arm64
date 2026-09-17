@@ -8,7 +8,7 @@ use std::process::Command;
 
 use crate::recording::editor::model::{
     affine_from_three_points as affine_components, card_depth, project_card_corners, project_point,
-    MotionAppearance, MotionBackgroundFillType, MotionBlurBudgetMode, MotionFramePreset,
+    MotionAppearance, MotionBackgroundFillType, MotionBlurBudgetMode,
     MotionSceneShadowPreset, MotionState, MotionTextSegment, MotionTransform, MOTION_EXPORT_FPS,
 };
 

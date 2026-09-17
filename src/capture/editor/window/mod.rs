@@ -2628,10 +2628,10 @@ fn setup_editor_window_full(
         drawing_area.add_tick_callback(move |_, _| {
             let (appearance, frame) = {
                 let rt = motion_session.runtime.borrow();
-                (rt.motion.appearance.clone(), rt.motion.frame.preset)
+                (rt.motion.appearance.clone(), rt.motion.frame.clone())
             };
             if let Ok(mut st) = state_sync.try_lock() {
-                background_panel::sync_motion_appearance_to_static(&appearance, frame, &mut st);
+                background_panel::sync_motion_appearance_to_static(&appearance, &frame, &mut st);
             }
             glib::ControlFlow::Continue
         });

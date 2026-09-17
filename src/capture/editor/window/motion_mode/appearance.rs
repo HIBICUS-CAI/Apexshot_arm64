@@ -1,8 +1,8 @@
 use gtk4::cairo::Context;
 use gtk4::{
-    glib, prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea,
+    glib, prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Entry, Grid,
     FileChooserAction, FileChooserNative, FileFilter, Label, Orientation, Overlay, ResponseType,
-    Stack,
+    Revealer, Separator, Stack,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use crate::i18n::t;
 use crate::recording::editor::model::{
-    MotionBackgroundFillType, MotionFramePreset, MotionSceneShadowPlacement,
+    MotionBackgroundFillType, MotionFrame, MotionFramePreset, MotionSceneShadowPlacement,
     MotionSceneShadowPreset,
 };
 
@@ -640,90 +640,620 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     border_section.append(&radius.widget());
     root.append(&border_section);
 
-    // Frame section: an independent layer with its own persisted
-    // preset id, not an Appearance field. Standard keeps the original canvas;
-    // the other presets re-fit the scene into a centered social format.
+    // Frame section: collapsed W/H inputs plus an expandable ratio grid.
+    // Collapsed shows the current canvas size (original dims for Standard,
+    // export size otherwise) and an arrow reveals aspect-correct shape tiles.
+    // The 3-column grid is sized to the fixed sidebar width so expanding
+    // never widens the panel. Selection paints only on the diagram itself.
+    fn frame_ratio_shape(aspect: f64, selected: Rc<Cell<bool>>) -> DrawingArea {
+        const MAX_W: f64 = 44.0;
+        const MAX_H: f64 = 46.0;
+        let (w, h) = if aspect >= 1.0 {
+            let w = MAX_W;
+            (w, (w / aspect).max(10.0))
+        } else {
+            let h = MAX_H;
+            ((h * aspect).max(10.0), h)
+        };
+        let area = DrawingArea::new();
+        area.set_content_width(w.ceil() as i32);
+        area.set_content_height(h.ceil() as i32);
+        area.set_can_target(false);
+        area.set_hexpand(false);
+        area.set_halign(Align::Center);
+        area.set_valign(Align::Center);
+        area.add_css_class("editor-frame-tile-shape");
+        area.set_draw_func(move |_, cr, width, height| {
+            let is_selected = selected.get();
+            let w = f64::from(width);
+            let h = f64::from(height);
+            if is_selected {
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.18);
+            } else {
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.13);
+            }
+            motion_thumbnail_rounded_rectangle(cr, 0.5, 0.5, w - 1.0, h - 1.0, 8.0);
+            cr.fill().ok();
+            if is_selected {
+                cr.set_source_rgb(0.75, 0.40, 0.25);
+                cr.set_line_width(2.0);
+                motion_thumbnail_rounded_rectangle(cr, 1.5, 1.5, w - 3.0, h - 3.0, 7.0);
+                cr.stroke().ok();
+            }
+        });
+        area
+    }
     let frame_section = motion_appearance_section("Frame");
-    let initial_frame_preset = {
+    frame_section.set_hexpand(false);
+    frame_section.set_halign(Align::Fill);
+    // Original canvas size backs Standard: W/H show the source image, not a
+    // fixed export default, so there is no separate Original button.
+    let (orig_w, orig_h) = {
         let runtime = session.runtime.borrow();
-        runtime.motion.frame.preset
+        if let Some(snap) = runtime.snapshot.as_ref() {
+            let (w, h) = snap.dimensions();
+            (w as i32, h as i32)
+        } else if let Some(card) = runtime.card.as_ref() {
+            (card.width(), card.height())
+        } else {
+            (1920, 1080)
+        }
     };
-    let frame_buttons: Rc<RefCell<Vec<(MotionFramePreset, Button)>>> =
-        Rc::new(RefCell::new(Vec::new()));
-    // Two chips per row keeps the longest labels ("Instagram", "Diagonal")
-    // inside the fixed sidebar width at the standard button text size; one
-    // four-button row forced the panel wider and left blank space beside the
-    // wallpaper grid.
-    let frame_rows = GtkBox::new(Orientation::Vertical, 6);
-    let mut frame_row: Option<GtkBox> = None;
-    for (index, (preset, label, tooltip)) in [
-        (
-            MotionFramePreset::Standard,
-            t("Standard"),
-            t("Original canvas aspect"),
-        ),
-        (
-            MotionFramePreset::Instagram,
-            t("Instagram"),
-            t("Square 1:1 output"),
-        ),
-        (
-            MotionFramePreset::X,
-            t("X"),
-            t("X (Twitter) link-card 1.91:1 output"),
-        ),
-        (
-            MotionFramePreset::YouTube,
-            t("YouTube"),
-            t("Widescreen 16:9 output"),
-        ),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        if index % 2 == 0 {
-            let row = GtkBox::new(Orientation::Horizontal, 6);
-            row.set_homogeneous(true);
-            frame_rows.append(&row);
-            frame_row = Some(row);
-        }
-        let button = Button::with_label(&label);
-        button.set_has_frame(false);
-        button.set_hexpand(true);
-        button.add_css_class("editor-background-option-button");
-        button.set_tooltip_text(Some(&tooltip));
-        if initial_frame_preset == preset {
-            button.add_css_class("active-background-option");
-        }
-        button.connect_clicked({
-            let runtime = session.runtime.clone();
-            let preview = preview.clone();
-            let frame_buttons = frame_buttons.clone();
-            move |_| {
-                {
-                    let mut runtime = runtime.borrow_mut();
-                    runtime.begin_motion_edit();
-                    runtime.motion.frame.preset = preset;
-                    // The scene rectangle changes with the preset, so the
-                    // cached backdrop is no longer valid.
-                    runtime.backdrop_cache = None;
-                    preview.queue_draw();
+    let initial_frame: MotionFrame = {
+        let runtime = session.runtime.borrow();
+        runtime.motion.frame.clone()
+    };
+    let (initial_out_w, initial_out_h) = if initial_frame.preset == MotionFramePreset::Standard {
+        (orig_w, orig_h)
+    } else {
+        initial_frame.output_size()
+    };
+    // (preset, aspect, selected flag, shape area, button) for diagram-only sync.
+    let frame_tiles: Rc<
+        RefCell<Vec<(MotionFramePreset, f64, Rc<Cell<bool>>, DrawingArea, Button)>>,
+    > = Rc::new(RefCell::new(Vec::new()));
+    // Single-select by exact preset: each tile owns one preset (social sizes
+    // carry fixed pixel dims), so only the picked tile strokes. Legacy files
+    // that persist a bare ratio fall back to the matching generic tile.
+    let sync_frame_selection = {
+        let frame_tiles = frame_tiles.clone();
+        Rc::new(move |frame: &MotionFrame| {
+            let mut exact_hit = false;
+            for (preset, _, _, _, button) in frame_tiles.borrow().iter() {
+                button.remove_css_class("active-background-option");
+                if *preset == frame.preset {
+                    exact_hit = true;
                 }
-                for (candidate, button) in frame_buttons.borrow().iter() {
-                    if *candidate == preset {
-                        button.add_css_class("active-background-option");
-                    } else {
-                        button.remove_css_class("active-background-option");
+            }
+            if exact_hit {
+                for (preset, _, flag, area, _) in frame_tiles.borrow().iter() {
+                    let active = *preset == frame.preset;
+                    flag.set(active);
+                    area.queue_draw();
+                }
+                return;
+            }
+            // No exact tile (Standard, Custom, or a legacy bare ratio):
+            // highlight at most one generic twin so old files still read.
+            let current_aspect = frame.effective_aspect();
+            let is_fixed = !matches!(
+                frame.preset,
+                MotionFramePreset::Standard | MotionFramePreset::Custom
+            );
+            let mut fallback: Option<MotionFramePreset> = None;
+            if is_fixed {
+                for (preset, _, _, _, _) in frame_tiles.borrow().iter() {
+                    let is_generic = matches!(
+                        preset,
+                        MotionFramePreset::SixteenNine
+                            | MotionFramePreset::ThreeTwo
+                            | MotionFramePreset::FourThree
+                            | MotionFramePreset::FiveFour
+                            | MotionFramePreset::OneOne
+                            | MotionFramePreset::FourFive
+                            | MotionFramePreset::ThreeFour
+                            | MotionFramePreset::TwoThree
+                            | MotionFramePreset::NineSixteen
+                            | MotionFramePreset::TenTwentyOne
+                    );
+                    if !is_generic {
+                        continue;
+                    }
+                    match (current_aspect, preset.aspect()) {
+                        (Some(a), Some(b)) if (a - b).abs() < 0.01 => {
+                            fallback = Some(*preset);
+                            break;
+                        }
+                        _ => {}
                     }
                 }
             }
-        });
-        frame_buttons.borrow_mut().push((preset, button.clone()));
-        if let Some(row) = frame_row.as_ref() {
-            row.append(&button);
-        }
+            for (preset, _, flag, area, _) in frame_tiles.borrow().iter() {
+                flag.set(fallback == Some(*preset));
+                area.queue_draw();
+            }
+        })
+    };
+    let w_entry = Entry::new();
+    w_entry.set_text(&initial_out_w.to_string());
+    w_entry.set_width_chars(4);
+    w_entry.set_max_width_chars(4);
+    w_entry.set_hexpand(true);
+    w_entry.set_halign(Align::Fill);
+    w_entry.add_css_class("editor-frame-dim-entry");
+    w_entry.set_tooltip_text(Some(&t("Frame width in pixels")));
+    let h_entry = Entry::new();
+    h_entry.set_text(&initial_out_h.to_string());
+    h_entry.set_width_chars(4);
+    h_entry.set_max_width_chars(4);
+    h_entry.set_hexpand(true);
+    h_entry.set_halign(Align::Fill);
+    h_entry.add_css_class("editor-frame-dim-entry");
+    h_entry.set_tooltip_text(Some(&t("Frame height in pixels")));
+    // Clicking the active tile toggles back to Standard (original canvas),
+    // so no separate Original button is needed. Toggle is exact-preset:
+    // same-aspect social sizes switch size instead of resetting.
+    let apply_preset: Rc<dyn Fn(MotionFramePreset)> = {
+        let runtime = session.runtime.clone();
+        let preview = preview.clone();
+        let w_entry = w_entry.clone();
+        let h_entry = h_entry.clone();
+        let sync_frame_selection = sync_frame_selection.clone();
+        Rc::new(move |preset| {
+            let (frame, display) = {
+                let mut runtime = runtime.borrow_mut();
+                let should_reset = runtime.motion.frame.preset == preset;
+                runtime.begin_motion_edit();
+                if should_reset {
+                    runtime.motion.frame.preset = MotionFramePreset::Standard;
+                } else {
+                    runtime.motion.frame.preset = preset;
+                }
+                runtime.backdrop_cache = None;
+                let frame = runtime.motion.frame.clone();
+                let display = if frame.preset == MotionFramePreset::Standard {
+                    (orig_w, orig_h)
+                } else {
+                    frame.output_size()
+                };
+                (frame, display)
+            };
+            preview.queue_draw();
+            sync_frame_selection(&frame);
+            let (w, h) = display;
+            if w_entry.text().as_str() != w.to_string() {
+                w_entry.set_text(&w.to_string());
+            }
+            if h_entry.text().as_str() != h.to_string() {
+                h_entry.set_text(&h.to_string());
+            }
+        })
+    };
+    let apply_custom: Rc<dyn Fn()> = {
+        let runtime = session.runtime.clone();
+        let preview = preview.clone();
+        let w_entry = w_entry.clone();
+        let h_entry = h_entry.clone();
+        let sync_frame_selection = sync_frame_selection.clone();
+        Rc::new(move || {
+            fn parse_dim(text: &str) -> Option<u32> {
+                text.trim().parse::<u32>().ok().filter(|v| *v >= 16 && *v <= 7680)
+            }
+            let w_text = w_entry.text().to_string();
+            let h_text = h_entry.text().to_string();
+            let (Some(w), Some(h)) = (parse_dim(&w_text), parse_dim(&h_text)) else {
+                return;
+            };
+            let frame = {
+                let mut runtime = runtime.borrow_mut();
+                if runtime.motion.frame.preset == MotionFramePreset::Custom
+                    && runtime.motion.frame.custom_width == w
+                    && runtime.motion.frame.custom_height == h
+                {
+                    return;
+                }
+                runtime.begin_motion_edit();
+                runtime.motion.frame.preset = MotionFramePreset::Custom;
+                runtime.motion.frame.custom_width = w;
+                runtime.motion.frame.custom_height = h;
+                runtime.backdrop_cache = None;
+                runtime.motion.frame.clone()
+            };
+            preview.queue_draw();
+            sync_frame_selection(&frame);
+            let (out_w, out_h) = frame.output_size();
+            if w_entry.text().as_str() != out_w.to_string() {
+                w_entry.set_text(&out_w.to_string());
+            }
+            if h_entry.text().as_str() != out_h.to_string() {
+                h_entry.set_text(&out_h.to_string());
+            }
+        })
+    };
+    {
+        let apply_custom = apply_custom.clone();
+        w_entry.connect_activate(move |_| apply_custom());
     }
-    frame_section.append(&frame_rows);
+    {
+        let apply_custom = apply_custom.clone();
+        h_entry.connect_activate(move |_| apply_custom());
+    }
+    {
+        let focus = gtk4::EventControllerFocus::new();
+        let apply_custom = apply_custom.clone();
+        focus.connect_leave(move |_| apply_custom());
+        w_entry.add_controller(focus);
+    }
+    {
+        let focus = gtk4::EventControllerFocus::new();
+        let apply_custom = apply_custom.clone();
+        focus.connect_leave(move |_| apply_custom());
+        h_entry.add_controller(focus);
+    }
+    let dim_row = GtkBox::new(Orientation::Horizontal, 6);
+    dim_row.add_css_class("editor-frame-dim-row");
+    dim_row.set_hexpand(false);
+    dim_row.set_halign(Align::Fill);
+    let w_pill = GtkBox::new(Orientation::Horizontal, 6);
+    w_pill.add_css_class("editor-frame-dim-pill");
+    w_pill.set_hexpand(true);
+    w_pill.set_halign(Align::Fill);
+    let w_unit = Label::new(Some("W"));
+    w_unit.add_css_class("editor-frame-dim-unit");
+    w_unit.set_hexpand(false);
+    w_pill.append(&w_unit);
+    w_pill.append(&w_entry);
+    let h_pill = GtkBox::new(Orientation::Horizontal, 6);
+    h_pill.add_css_class("editor-frame-dim-pill");
+    h_pill.set_hexpand(true);
+    h_pill.set_halign(Align::Fill);
+    let h_unit = Label::new(Some("H"));
+    h_unit.add_css_class("editor-frame-dim-unit");
+    h_unit.set_hexpand(false);
+    h_pill.append(&h_unit);
+    h_pill.append(&h_entry);
+    let expand_button = Button::with_label("\u{2304}");
+    expand_button.set_has_frame(false);
+    expand_button.add_css_class("editor-frame-expand-button");
+    expand_button.set_tooltip_text(Some(&t("More frame sizes")));
+    expand_button.set_hexpand(false);
+    expand_button.set_halign(Align::Center);
+    expand_button.set_valign(Align::Center);
+    dim_row.append(&w_pill);
+    dim_row.append(&h_pill);
+    dim_row.append(&expand_button);
+    let frame_revealer = Revealer::new();
+    frame_revealer.set_reveal_child(false);
+    frame_revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
+    frame_revealer.set_transition_duration(180);
+    frame_revealer.set_hexpand(false);
+    frame_revealer.set_halign(Align::Fill);
+    let frame_expanded = GtkBox::new(Orientation::Vertical, 10);
+    frame_expanded.add_css_class("editor-frame-expanded");
+    frame_expanded.set_hexpand(false);
+    frame_expanded.set_halign(Align::Fill);
+    frame_revealer.set_child(Some(&frame_expanded));
+    {
+        let frame_revealer = frame_revealer.clone();
+        expand_button.clone().connect_clicked(move |button| {
+            let revealed = frame_revealer.reveals_child();
+            frame_revealer.set_reveal_child(!revealed);
+            button.set_label(if revealed { "\u{2304}" } else { "\u{2303}" });
+        });
+    }
+    // Local tile builder: shape plus one or two centered labels, fixed to
+    // the sidebar width via small max widths and ellipsis. Selection lives
+    // on the diagram draw, not the button chrome.
+    let build_ratio_tile = {
+        let frame_tiles = frame_tiles.clone();
+        let apply_preset = apply_preset.clone();
+        move |preset: MotionFramePreset,
+              aspect: f64,
+              line1: String,
+              line2: Option<String>,
+              tooltip: String|
+              -> Button {
+            let button = Button::new();
+            button.set_has_frame(false);
+            button.add_css_class("editor-frame-tile");
+            button.set_tooltip_text(Some(&tooltip));
+            button.set_hexpand(false);
+            button.set_halign(Align::Center);
+            let cell = GtkBox::new(Orientation::Vertical, 4);
+            cell.set_hexpand(false);
+            cell.set_halign(Align::Center);
+            cell.add_css_class("editor-frame-tile-cell");
+            let selected: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+            let shape = frame_ratio_shape(aspect, selected.clone());
+            cell.append(&shape);
+            let top = Label::new(Some(&line1));
+            top.add_css_class("editor-frame-tile-label");
+            top.set_xalign(0.5);
+            top.set_halign(Align::Center);
+            top.set_hexpand(false);
+            top.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            top.set_max_width_chars(8);
+            cell.append(&top);
+            if let Some(second) = line2 {
+                let bottom = Label::new(Some(&second));
+                bottom.add_css_class("editor-frame-tile-sublabel");
+                bottom.set_xalign(0.5);
+                bottom.set_halign(Align::Center);
+                bottom.set_hexpand(false);
+                bottom.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                bottom.set_max_width_chars(8);
+                cell.append(&bottom);
+            }
+            button.set_child(Some(&cell));
+            {
+                let apply_preset = apply_preset.clone();
+                button.connect_clicked(move |_| apply_preset(preset));
+            }
+            frame_tiles
+                .borrow_mut()
+                .push((preset, aspect, selected, shape, button.clone()));
+            button
+        }
+    };
+    let generic_grid = Grid::new();
+    generic_grid.add_css_class("editor-frame-grid");
+    generic_grid.set_column_homogeneous(true);
+    generic_grid.set_row_homogeneous(false);
+    generic_grid.set_column_spacing(6);
+    generic_grid.set_row_spacing(8);
+    generic_grid.set_hexpand(false);
+    generic_grid.set_halign(Align::Fill);
+    let generic_ratios: [(MotionFramePreset, f64, &str, &str); 9] = [
+        (
+            MotionFramePreset::SixteenNine,
+            16.0 / 9.0,
+            "16:9",
+            "Widescreen 16:9 output",
+        ),
+        (
+            MotionFramePreset::ThreeTwo,
+            3.0 / 2.0,
+            "3:2",
+            "Photo 3:2 output",
+        ),
+        (
+            MotionFramePreset::FourThree,
+            4.0 / 3.0,
+            "4:3",
+            "Fullscreen 4:3 output",
+        ),
+        (
+            MotionFramePreset::FiveFour,
+            5.0 / 4.0,
+            "5:4",
+            "Large format 5:4 output",
+        ),
+        (
+            MotionFramePreset::OneOne,
+            1.0,
+            "1:1",
+            "Square 1:1 output",
+        ),
+        (
+            MotionFramePreset::FourFive,
+            4.0 / 5.0,
+            "4:5",
+            "Portrait 4:5 output",
+        ),
+        (
+            MotionFramePreset::ThreeFour,
+            3.0 / 4.0,
+            "3:4",
+            "Portrait 3:4 output",
+        ),
+        (
+            MotionFramePreset::TwoThree,
+            2.0 / 3.0,
+            "2:3",
+            "Portrait 2:3 output",
+        ),
+        (
+            MotionFramePreset::NineSixteen,
+            9.0 / 16.0,
+            "9:16",
+            "Vertical 9:16 output",
+        ),
+    ];
+    for (index, (preset, aspect, label, tip)) in generic_ratios.into_iter().enumerate() {
+        let tile = build_ratio_tile(preset, aspect, t(label), None, t(tip));
+        let col = (index % 3) as i32;
+        let row = (index / 3) as i32;
+        generic_grid.attach(&tile, col, row, 1, 1);
+    }
+    frame_expanded.append(&generic_grid);
+    let sep_one = Separator::new(Orientation::Horizontal);
+    sep_one.add_css_class("editor-frame-separator");
+    sep_one.set_hexpand(false);
+    sep_one.set_halign(Align::Fill);
+    frame_expanded.append(&sep_one);
+    let instagram_header = Label::new(Some(&t("Instagram")));
+    instagram_header.add_css_class("editor-frame-subheader");
+    instagram_header.set_xalign(0.0);
+    instagram_header.set_halign(Align::Fill);
+    instagram_header.set_hexpand(false);
+    instagram_header.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    frame_expanded.append(&instagram_header);
+    let instagram_grid = Grid::new();
+    instagram_grid.add_css_class("editor-frame-grid");
+    instagram_grid.set_column_homogeneous(true);
+    instagram_grid.set_row_homogeneous(false);
+    instagram_grid.set_column_spacing(6);
+    instagram_grid.set_row_spacing(8);
+    instagram_grid.set_hexpand(false);
+    instagram_grid.set_halign(Align::Fill);
+    let instagram_tiles: [(MotionFramePreset, f64, &str, &str, &str); 3] = [
+        (
+            MotionFramePreset::InstagramPost,
+            1.0,
+            "Post",
+            "1:1",
+            "Instagram Post 1080x1080",
+        ),
+        (
+            MotionFramePreset::InstagramPortrait,
+            4.0 / 5.0,
+            "Portrait",
+            "4:5",
+            "Instagram Portrait 1080x1350",
+        ),
+        (
+            MotionFramePreset::InstagramStory,
+            9.0 / 16.0,
+            "Story",
+            "9:16",
+            "Instagram Story 1080x1920",
+        ),
+    ];
+    for (index, (preset, aspect, name, ratio, tip)) in instagram_tiles.into_iter().enumerate() {
+        let tile = build_ratio_tile(preset, aspect, t(name), Some(t(ratio)), t(tip));
+        instagram_grid.attach(&tile, index as i32, 0, 1, 1);
+    }
+    frame_expanded.append(&instagram_grid);
+    let sep_two = Separator::new(Orientation::Horizontal);
+    sep_two.add_css_class("editor-frame-separator");
+    sep_two.set_hexpand(false);
+    sep_two.set_halign(Align::Fill);
+    frame_expanded.append(&sep_two);
+    let twitter_header = Label::new(Some(&t("Twitter")));
+    twitter_header.add_css_class("editor-frame-subheader");
+    twitter_header.set_xalign(0.0);
+    twitter_header.set_halign(Align::Fill);
+    twitter_header.set_hexpand(false);
+    twitter_header.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    frame_expanded.append(&twitter_header);
+    let twitter_grid = Grid::new();
+    twitter_grid.add_css_class("editor-frame-grid");
+    twitter_grid.set_column_homogeneous(true);
+    twitter_grid.set_row_homogeneous(false);
+    twitter_grid.set_column_spacing(6);
+    twitter_grid.set_row_spacing(8);
+    twitter_grid.set_hexpand(false);
+    twitter_grid.set_halign(Align::Fill);
+    let twitter_tiles: [(MotionFramePreset, f64, &str, &str, &str); 2] = [
+        (
+            MotionFramePreset::TwitterTweet,
+            16.0 / 9.0,
+            "Tweet",
+            "16:9",
+            "Twitter Tweet 1200x675",
+        ),
+        (
+            MotionFramePreset::TwitterCover,
+            3.0,
+            "Cover",
+            "3:1",
+            "Twitter Cover 1500x500",
+        ),
+    ];
+    for (index, (preset, aspect, name, ratio, tip)) in twitter_tiles.into_iter().enumerate() {
+        let tile = build_ratio_tile(preset, aspect, t(name), Some(t(ratio)), t(tip));
+        twitter_grid.attach(&tile, index as i32, 0, 1, 1);
+    }
+    frame_expanded.append(&twitter_grid);
+    let sep_three = Separator::new(Orientation::Horizontal);
+    sep_three.add_css_class("editor-frame-separator");
+    sep_three.set_hexpand(false);
+    sep_three.set_halign(Align::Fill);
+    frame_expanded.append(&sep_three);
+    let youtube_header = Label::new(Some(&t("YouTube")));
+    youtube_header.add_css_class("editor-frame-subheader");
+    youtube_header.set_xalign(0.0);
+    youtube_header.set_halign(Align::Fill);
+    youtube_header.set_hexpand(false);
+    youtube_header.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    frame_expanded.append(&youtube_header);
+    let youtube_grid = Grid::new();
+    youtube_grid.add_css_class("editor-frame-grid");
+    youtube_grid.set_column_homogeneous(true);
+    youtube_grid.set_row_homogeneous(false);
+    youtube_grid.set_column_spacing(6);
+    youtube_grid.set_row_spacing(8);
+    youtube_grid.set_hexpand(false);
+    youtube_grid.set_halign(Align::Fill);
+    let youtube_tiles: [(MotionFramePreset, f64, &str, &str, &str); 3] = [
+        (
+            MotionFramePreset::YouTubeBanner,
+            16.0 / 9.0,
+            "Banner",
+            "16:9",
+            "YouTube Banner 2560x1440",
+        ),
+        (
+            MotionFramePreset::YouTubeThumbnail,
+            16.0 / 9.0,
+            "Thumbnail",
+            "16:9",
+            "YouTube Thumbnail 1280x720",
+        ),
+        (
+            MotionFramePreset::YouTubeVideo,
+            16.0 / 9.0,
+            "Video",
+            "16:9",
+            "YouTube Video 1920x1080",
+        ),
+    ];
+    for (index, (preset, aspect, name, ratio, tip)) in youtube_tiles.into_iter().enumerate() {
+        let tile = build_ratio_tile(preset, aspect, t(name), Some(t(ratio)), t(tip));
+        youtube_grid.attach(&tile, index as i32, 0, 1, 1);
+    }
+    frame_expanded.append(&youtube_grid);
+    let sep_four = Separator::new(Orientation::Horizontal);
+    sep_four.add_css_class("editor-frame-separator");
+    sep_four.set_hexpand(false);
+    sep_four.set_halign(Align::Fill);
+    frame_expanded.append(&sep_four);
+    let pinterest_header = Label::new(Some(&t("Pinterest")));
+    pinterest_header.add_css_class("editor-frame-subheader");
+    pinterest_header.set_xalign(0.0);
+    pinterest_header.set_halign(Align::Fill);
+    pinterest_header.set_hexpand(false);
+    pinterest_header.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    frame_expanded.append(&pinterest_header);
+    let pinterest_grid = Grid::new();
+    pinterest_grid.add_css_class("editor-frame-grid");
+    pinterest_grid.set_column_homogeneous(true);
+    pinterest_grid.set_row_homogeneous(false);
+    pinterest_grid.set_column_spacing(6);
+    pinterest_grid.set_row_spacing(8);
+    pinterest_grid.set_hexpand(false);
+    pinterest_grid.set_halign(Align::Fill);
+    let pinterest_tiles: [(MotionFramePreset, f64, &str, &str, &str); 3] = [
+        (
+            MotionFramePreset::PinterestLong,
+            10.0 / 21.0,
+            "Long",
+            "10:21",
+            "Pinterest Long 1000x2100",
+        ),
+        (
+            MotionFramePreset::PinterestOptimal,
+            2.0 / 3.0,
+            "Optimal",
+            "2:3",
+            "Pinterest Optimal 1000x1500",
+        ),
+        (
+            MotionFramePreset::PinterestSquare,
+            1.0,
+            "Square",
+            "1:1",
+            "Pinterest Square 1000x1000",
+        ),
+    ];
+    for (index, (preset, aspect, name, ratio, tip)) in pinterest_tiles.into_iter().enumerate() {
+        let tile = build_ratio_tile(preset, aspect, t(name), Some(t(ratio)), t(tip));
+        pinterest_grid.attach(&tile, index as i32, 0, 1, 1);
+    }
+    frame_expanded.append(&pinterest_grid);
+    sync_frame_selection(&initial_frame);
+    frame_section.append(&dim_row);
+    frame_section.append(&frame_revealer);
     root.append(&frame_section);
 
     // Scene Shadows: an independent overlay layer with its own
@@ -1455,6 +1985,110 @@ fn motion_image_section(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn frame_picker_collapses_to_manual_dims_with_expandable_shape_grid() {
+        let source = include_str!("appearance.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("editor-frame-dim-row")
+                && production_source.contains("editor-frame-dim-pill")
+                && production_source.contains("w_entry")
+                && production_source.contains("h_entry")
+                && production_source.contains("frame_revealer")
+                && production_source.contains("reveals_child")
+                && production_source.contains("editor-frame-grid")
+                && production_source.contains("frame_ratio_shape")
+                && production_source.contains("\"Instagram\"")
+                && production_source.contains("\"Twitter\"")
+                && production_source.contains("\"YouTube\"")
+                && production_source.contains("\"Pinterest\""),
+            "Frame should collapse to W/H inputs with an arrow revealing shape tiles plus social groups",
+        );
+        assert!(
+            !production_source.contains("frame_rows"),
+            "old two-chip Frame rows should be replaced by the expandable grid",
+        );
+        assert!(
+            !production_source.contains("t(\"Original canvas\")")
+                && !production_source.contains("editor-frame-standard-button"),
+            "Standard is the bare W/H state (original canvas dims); no separate Original button",
+        );
+    }
+
+    #[test]
+    fn frame_shape_tiles_fit_the_fixed_sidebar_width() {
+        let source = include_str!("appearance.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("set_column_homogeneous(true)")
+                && production_source.contains("set_column_spacing(6)")
+                && production_source.contains("index % 3")
+                && production_source.contains("MAX_W")
+                && production_source.contains("MAX_H")
+                && production_source.contains("set_max_width_chars(8)")
+                && production_source.contains("EllipsizeMode::End")
+                && production_source.contains("set_hexpand(false)"),
+            "ratio tiles must stay in a 3-column homogeneous grid with small capped shapes and ellipsized labels so expand never widens the panel",
+        );
+    }
+
+    #[test]
+    fn frame_selection_is_single_exact_with_fixed_social_sizes() {
+        let source = include_str!("appearance.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("TwitterTweet")
+                && production_source.contains("TwitterCover")
+                && production_source.contains("YouTubeBanner")
+                && production_source.contains("YouTubeThumbnail")
+                && production_source.contains("YouTubeVideo")
+                && production_source.contains("InstagramPost")
+                && production_source.contains("InstagramPortrait")
+                && production_source.contains("InstagramStory")
+                && production_source.contains("PinterestLong")
+                && production_source.contains("PinterestOptimal")
+                && production_source.contains("PinterestSquare"),
+            "social tiles must own distinct fixed-size presets so W/H shows the picked size",
+        );
+        assert!(
+            production_source.contains("*preset == frame.preset")
+                && production_source.contains("runtime.motion.frame.preset == preset"),
+            "selection and toggle must be exact-preset single-select, not aspect-wide multi-highlight",
+        );
+    }
+
+    #[test]
+    fn frame_selection_paints_on_diagrams_without_button_borders() {
+        let source = include_str!("appearance.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("frame_ratio_shape(aspect, selected")
+                && production_source.contains("selected: Rc<Cell<bool>>")
+                && production_source.contains("set_line_width(2.0)")
+                && production_source.contains("should_reset"),
+            "active ratio must stroke the diagram draw with toggle-back to Standard, not a button border",
+        );
+        let css = include_str!("../../css/12-background-choices.css");
+        assert!(
+            css.contains(".editor-frame-dim-pill:focus-within")
+                && css.contains("outline: none")
+                && css.contains("button.editor-frame-tile:hover"),
+            "frame inputs/tiles must be borderless filled controls with inset focus, matching hex-entry/slider style",
+        );
+        assert!(
+            !css.contains("button.editor-frame-tile.active-background-option {")
+                || !css
+                    .split("button.editor-frame-tile.active-background-option {")
+                    .nth(1)
+                    .unwrap_or("")
+                    .split('}')
+                    .next()
+                    .unwrap_or("")
+                    .contains("box-shadow: inset"),
+            "tile buttons must not paint their own selection ring; the diagram stroke carries it",
+        );
+    }
+
     #[test]
     fn wallpaper_thumbs_share_cache_and_load_off_critical_path() {
         let source = include_str!("appearance.rs");

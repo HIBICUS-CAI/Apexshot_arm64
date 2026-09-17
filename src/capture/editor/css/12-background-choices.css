@@ -113,3 +113,155 @@
                 background-color: transparent;
                 border: none;
             }
+
+            /* Frame picker: collapsed W/H plus expandable ratio grid.
+             * Borderless filled controls mirror the hex-entry/slider style:
+             * filled troughs, no outer borders, subtle inset focus ring.
+             * Selection paints on the diagram draw itself, never on the
+             * button chrome. Grids stay 3-column homogeneous with capped
+             * tiles so expanding never widens the fixed sidebar. */
+            .editor-frame-dim-row {
+                min-width: 0;
+            }
+
+            .editor-frame-dim-pill {
+                min-width: 0;
+                min-height: 32px;
+                padding: 0 10px;
+                border-radius: 8px;
+                background: alpha(white, 0.08);
+                border: none;
+                box-shadow: none;
+                outline: none;
+            }
+
+            .editor-frame-dim-pill:focus-within {
+                background: alpha(white, 0.11);
+                box-shadow: inset 0 0 0 1px #c06540;
+            }
+
+            .editor-frame-dim-unit {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.52);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            entry.editor-frame-dim-entry,
+            entry.editor-frame-dim-entry:focus,
+            entry.editor-frame-dim-entry:hover,
+            entry.editor-frame-dim-entry:active,
+            entry.editor-frame-dim-entry:focus-visible {
+                min-width: 0;
+                min-height: 0;
+                padding: 0;
+                background: transparent;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 12px;
+            }
+
+            entry.editor-frame-dim-entry:focus {
+                color: #ffffff;
+            }
+
+            entry.editor-frame-dim-entry selection {
+                background: alpha(#c06540, 0.55);
+                color: #ffffff;
+            }
+
+            button.editor-frame-expand-button,
+            button.editor-frame-expand-button:focus,
+            button.editor-frame-expand-button:focus-visible {
+                min-width: 28px;
+                min-height: 28px;
+                padding: 0;
+                border-radius: 8px;
+                background: alpha(white, 0.08);
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 14px;
+            }
+
+            button.editor-frame-expand-button:hover {
+                background: alpha(white, 0.11);
+                color: #ffffff;
+                border: none;
+                box-shadow: none;
+                outline: none;
+            }
+
+            .editor-frame-expanded {
+                min-width: 0;
+            }
+
+            .editor-frame-grid {
+                min-width: 0;
+            }
+
+            button.editor-frame-tile,
+            button.editor-frame-tile:focus,
+            button.editor-frame-tile:focus-visible,
+            button.editor-frame-tile:hover,
+            button.editor-frame-tile:active,
+            button.editor-frame-tile.active-background-option,
+            button.editor-frame-tile.active-background-option:hover {
+                min-width: 0;
+                min-height: 0;
+                padding: 4px 2px;
+                background: transparent;
+                background-image: none;
+                border: none;
+                border-radius: 10px;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+            }
+
+            button.editor-frame-tile:hover {
+                background: alpha(white, 0.05);
+            }
+
+            .editor-frame-tile-cell {
+                min-width: 0;
+                outline: none;
+            }
+
+            .editor-frame-tile-shape {
+                min-width: 0;
+                outline: none;
+            }
+
+            .editor-frame-tile-label {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.78);
+                font-size: 10px;
+                font-weight: 600;
+            }
+
+            .editor-frame-tile-sublabel {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.48);
+                font-size: 10px;
+            }
+
+            .editor-frame-subheader {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.86);
+                font-size: 13px;
+                font-weight: 700;
+            }
+
+            .editor-frame-separator {
+                min-width: 0;
+                background: alpha(white, 0.10);
+                min-height: 1px;
+            }

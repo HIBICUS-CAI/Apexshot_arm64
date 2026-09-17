@@ -25,7 +25,7 @@ fn paint_backdrop(
         Some(motion_preview_scene_rect(
             f64::from(width),
             f64::from(height),
-            motion.frame.preset.aspect(),
+            motion.frame.effective_aspect(),
         ))
     } else {
         None

@@ -166,10 +166,16 @@ pub enum CropAspectRatio {
     TwentyOneNine,
     ThreeTwo,
     NineSixteen,
+    FiveFour,
+    FourFive,
+    ThreeFour,
+    TwoThree,
+    TenTwentyOne,
+    ThreeOne,
 }
 
 impl CropAspectRatio {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 14] = [
         Self::Freeform,
         Self::Original,
         Self::Square,
@@ -178,6 +184,12 @@ impl CropAspectRatio {
         Self::TwentyOneNine,
         Self::ThreeTwo,
         Self::NineSixteen,
+        Self::FiveFour,
+        Self::FourFive,
+        Self::ThreeFour,
+        Self::TwoThree,
+        Self::TenTwentyOne,
+        Self::ThreeOne,
     ];
 
     pub fn label(self) -> &'static str {
@@ -190,6 +202,12 @@ impl CropAspectRatio {
             Self::TwentyOneNine => "21:9",
             Self::ThreeTwo => "3:2",
             Self::NineSixteen => "9:16",
+            Self::FiveFour => "5:4",
+            Self::FourFive => "4:5",
+            Self::ThreeFour => "3:4",
+            Self::TwoThree => "2:3",
+            Self::TenTwentyOne => "10:21",
+            Self::ThreeOne => "3:1",
         }
     }
 
@@ -209,6 +227,12 @@ impl CropAspectRatio {
             Self::TwentyOneNine => Some(21.0 / 9.0),
             Self::ThreeTwo => Some(3.0 / 2.0),
             Self::NineSixteen => Some(9.0 / 16.0),
+            Self::FiveFour => Some(5.0 / 4.0),
+            Self::FourFive => Some(4.0 / 5.0),
+            Self::ThreeFour => Some(3.0 / 4.0),
+            Self::TwoThree => Some(2.0 / 3.0),
+            Self::TenTwentyOne => Some(10.0 / 21.0),
+            Self::ThreeOne => Some(3.0),
         }
     }
 }
