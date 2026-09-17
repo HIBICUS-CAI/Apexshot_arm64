@@ -16,6 +16,7 @@ use crate::recording::editor::model::{
     MotionBackgroundFillType, MotionFrame, MotionFramePreset, MotionSceneShadowPlacement,
     MotionSceneShadowPreset,
 };
+use crate::capture::editor::types::FrameStyle;
 
 use super::widgets::{
     motion_appearance_slider, motion_color_control, motion_gradient_color_control, motion_rgba,
@@ -137,6 +138,89 @@ fn motion_gradient_preset_area(start: [f64; 4], end: [f64; 4]) -> DrawingArea {
 }
 
 /// Motion appearance is a scene-level inspector rather than an
+/// Mini preview for one frame-style preset: gray card with the preset's
+/// outside border (and accent strokes) drawn around it, matching the static
+/// and motion card renderers.
+fn frame_style_preset_area(style: FrameStyle) -> DrawingArea {
+    let area = DrawingArea::new();
+    area.set_content_width(56);
+    area.set_content_height(44);
+    area.set_can_target(false);
+    area.set_hexpand(false);
+    area.set_halign(Align::Center);
+    area.set_valign(Align::Center);
+    area.set_draw_func(move |_, cr, width, height| {
+        let w = f64::from(width);
+        let h = f64::from(height);
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.10);
+        motion_thumbnail_rounded_rectangle(cr, 0.5, 0.5, w - 1.0, h - 1.0, 8.0);
+        cr.fill().ok();
+        let spec = style.spec();
+        let card_w = 34.0;
+        let card_h = 22.0;
+        let card_x = (w - card_w) / 2.0;
+        let card_y = (h - card_h) / 2.0;
+        let card_r = 5.0;
+        for backing in [spec.backing1, spec.backing2].into_iter().flatten() {
+            let _ = cr.save();
+            if backing.center_pivot {
+                cr.translate(
+                    card_x + card_w / 2.0 + backing.offset_x * 0.32,
+                    card_y + card_h / 2.0 + backing.offset_y * 0.32,
+                );
+                cr.rotate(backing.rotation_deg.to_radians());
+                cr.translate(-card_w / 2.0, -card_h / 2.0);
+            } else {
+                cr.translate(
+                    card_x + backing.offset_x * 0.32 + card_w,
+                    card_y + backing.offset_y * 0.32 + card_h,
+                );
+                cr.rotate(backing.rotation_deg.to_radians());
+                cr.translate(-card_w, -card_h);
+            }
+            cr.set_source_rgba(
+                backing.color.r,
+                backing.color.g,
+                backing.color.b,
+                backing.color.a,
+            );
+            motion_thumbnail_rounded_rectangle(cr, 0.0, 0.0, card_w, card_h, card_r);
+            cr.fill().ok();
+            cr.restore().ok();
+        }
+        cr.set_source_rgba(0.82, 0.82, 0.84, 1.0);
+        motion_thumbnail_rounded_rectangle(cr, card_x, card_y, card_w, card_h, card_r);
+        cr.fill().ok();
+        let mut expand = 0.0;
+        let draw_stroke = |thickness: f64, r: f64, g: f64, b: f64, a: f64, extra: f64| {
+            let t = (thickness * 0.32).max(1.0);
+            let e = extra + t / 2.0;
+            cr.set_source_rgba(r, g, b, a);
+            cr.set_line_width(t);
+            motion_thumbnail_rounded_rectangle(
+                cr,
+                card_x - e,
+                card_y - e,
+                card_w + e * 2.0,
+                card_h + e * 2.0,
+                card_r + e,
+            );
+            cr.stroke().ok();
+            e + t / 2.0
+        };
+        if spec.border_thickness > 0.0 {
+            let c = spec.border_color;
+            expand = draw_stroke(spec.border_thickness, c.r, c.g, c.b, c.a, expand);
+        }
+        for outer in [spec.outer1, spec.outer2].into_iter().flatten() {
+            expand += outer.gap * 0.32;
+            let c = outer.color;
+            expand = draw_stroke(outer.thickness, c.r, c.g, c.b, c.a, expand);
+        }
+    });
+    area
+}
+
 /// animation clip. The five fill controls map one-to-one to the
 /// `BackgroundFillType` cases and only mutate the compositor state.
 pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
@@ -148,7 +232,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         initial_background_color,
         initial_gradient_start,
         initial_gradient_end,
-        initial_border,
+        initial_frame_style,
         initial_shadow_opacity,
         initial_shadow_blur,
         initial_shadow_position,
@@ -161,7 +245,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             motion_rgba(appearance.background_color),
             motion_rgba(appearance.gradient_color_1),
             motion_rgba(appearance.gradient_color_2),
-            motion_rgba(appearance.border_fill_color),
+            appearance.frame_style,
             appearance.shadow_opacity,
             appearance.shadow_blur,
             appearance.shadow_position,
@@ -589,43 +673,75 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     shadow_section.append(&shadow_y.widget());
     root.append(&shadow_section);
 
-    let border_section = motion_appearance_section("Border");
-    let border_title = Label::new(Some(&t("Color")));
-    border_title.add_css_class("editor-background-section-title");
-    border_title.set_xalign(0.0);
-    let border_color = motion_color_control(initial_border, "Border color", false, {
-        let runtime = session.runtime.clone();
-        let preview = preview.clone();
-        move |rgba| {
-            let mut runtime = runtime.borrow_mut();
-            runtime.begin_motion_edit();
-            runtime.motion.appearance.border_fill_color = [
-                rgba.red().into(),
-                rgba.green().into(),
-                rgba.blue().into(),
-                rgba.alpha().into(),
-            ];
-            preview.queue_draw();
+    let border_section = motion_appearance_section("Style");
+    let style_grid = Grid::new();
+    style_grid.set_column_homogeneous(true);
+    style_grid.set_column_spacing(6);
+    style_grid.set_row_spacing(8);
+    style_grid.set_hexpand(false);
+    style_grid.set_halign(Align::Fill);
+    let style_buttons: Rc<RefCell<Vec<(FrameStyle, Button)>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    {
+        let style_buttons = style_buttons.clone();
+        for (index, style) in FrameStyle::ALL.iter().enumerate() {
+            let style = *style;
+            let cell = GtkBox::new(Orientation::Vertical, 4);
+            cell.set_hexpand(false);
+            cell.set_halign(Align::Center);
+            let button = Button::new();
+            button.set_has_frame(false);
+            button.set_size_request(56, 52);
+            button.add_css_class("editor-background-gradient-button");
+            button.add_css_class("editor-background-preview-size-regular");
+            button.set_tooltip_text(Some(&t(style.label())));
+            button.set_child(Some(&frame_style_preset_area(style)));
+            if style == initial_frame_style {
+                button.add_css_class("active-background-option");
+            }
+            style_buttons.borrow_mut().push((style, button.clone()));
+            button.connect_clicked({
+                let runtime = session.runtime.clone();
+                let preview = preview.clone();
+                let style_buttons = style_buttons.clone();
+                move |_| {
+                    {
+                        let mut runtime = runtime.borrow_mut();
+                        runtime.begin_motion_edit();
+                        let spec = style.spec();
+                        runtime.motion.appearance.frame_style = style;
+                        runtime.motion.appearance.border_thickness = spec.border_thickness;
+                        runtime.motion.appearance.border_fill_color = [
+                            spec.border_color.r,
+                            spec.border_color.g,
+                            spec.border_color.b,
+                            spec.border_color.a,
+                        ];
+                        preview.queue_draw();
+                    }
+                    for (candidate, btn) in style_buttons.borrow().iter() {
+                        if *candidate == style {
+                            btn.add_css_class("active-background-option");
+                        } else {
+                            btn.remove_css_class("active-background-option");
+                        }
+                    }
+                }
+            });
+            cell.append(&button);
+            let label = Label::new(Some(&t(style.label())));
+            label.add_css_class("editor-frame-tile-label");
+            label.set_xalign(0.5);
+            label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            label.set_max_width_chars(9);
+            cell.append(&label);
+            style_grid.attach(&cell, (index % 3) as i32, (index / 3) as i32, 1, 1);
         }
-    });
-    border_section.append(&border_title);
-    border_section.append(&border_color);
-
-    let thickness = motion_appearance_slider("Border thickness", 0.0, 24.0, 0.0, "px");
-    thickness.connect_value_changed({
-        let runtime = session.runtime.clone();
-        let preview = preview.clone();
-        move |slider| {
-            let mut runtime = runtime.borrow_mut();
-            runtime.begin_motion_edit();
-            runtime.motion.appearance.border_thickness = slider.value();
-            preview.queue_draw();
-        }
-    });
-    border_section.append(&thickness.widget());
+    }
+    border_section.append(&style_grid);
 
     // The radius rounds the captured image card itself; the background
-    // scene stays a full rectangle.
+    // scene stays a full rectangle. It applies on top of the Style preset.
     let radius = motion_appearance_slider("Border Radius", 0.0, 120.0, 0.0, "px");
     radius.connect_value_changed({
         let runtime = session.runtime.clone();

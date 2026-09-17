@@ -198,7 +198,7 @@ fn number_tool_hit_test_ignores_other_actions_under_the_cursor() {
 }
 
 #[test]
-fn bar_start_control_renumbers_the_selected_marker_and_the_run_after_it() {
+fn bar_start_control_renumbers_only_the_selected_marker() {
     let mut state = EditorState::new(RgbaImage::new(200, 200));
     state.add_number_marker(Point { x: 20.0, y: 20.0 });
     state.add_number_marker(Point { x: 60.0, y: 60.0 });
@@ -209,8 +209,8 @@ fn bar_start_control_renumbers_the_selected_marker_and_the_run_after_it() {
     assert_eq!(state.active_number_start_display(), "2".to_string());
 
     assert!(state.set_active_number_start(10));
-    assert_eq!(number_run(&state), vec![1, 10, 11]);
-    assert_eq!(state.next_number, 12, "the next marker follows the run");
+    assert_eq!(number_run(&state), vec![1, 10, 3]);
+    assert_eq!(state.next_number, 11, "the next marker stays above the max");
 }
 
 #[test]

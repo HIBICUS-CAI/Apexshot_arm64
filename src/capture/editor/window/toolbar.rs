@@ -21,7 +21,6 @@ pub(super) struct ToolbarBaseParts {
     pub traffic_minimize: Button,
     pub traffic_zoom: Button,
     pub select_btn: Button,
-    pub crop_btn: Button,
     pub background_btn: Button,
     pub draw_btn: Button,
     pub arrow_btn: Button,
@@ -39,7 +38,6 @@ pub(super) struct ToolbarBaseParts {
 
 #[allow(dead_code)]
 pub(super) struct ToolbarBaseIconNames<'a> {
-    pub crop: &'a str,
     pub draw: &'a str,
     pub arrow: &'a str,
     pub line: &'a str,
@@ -148,7 +146,6 @@ pub(super) fn build_toolbar_base(icon_names: ToolbarBaseIconNames<'_>) -> Toolba
     }
 
     let select_btn = icon_tool_button(icon_names::custom::SELECT_MODE_SYMBOLIC, &t("Select"));
-    let crop_btn = icon_tool_button(icon_names.crop, &t("Crop"));
     let background_btn = icon_tool_button(icon_names::custom::IMAGE_ALT_SYMBOLIC, &t("Background"));
     let draw_btn = icon_tool_button(icon_names.draw, &t("Pen"));
 
@@ -176,7 +173,6 @@ pub(super) fn build_toolbar_base(icon_names: ToolbarBaseIconNames<'_>) -> Toolba
         traffic_minimize,
         traffic_zoom,
         select_btn,
-        crop_btn,
         background_btn,
         draw_btn,
         arrow_btn,
@@ -558,7 +554,6 @@ fn build_number_options_dropdown() -> (
 }
 
 pub(super) fn build_toolbar_mode_controls(
-    crop_btn: &Button,
     background_btn: &Button,
     select_btn: &Button,
     draw_btn: &Button,
@@ -859,7 +854,6 @@ pub(super) fn build_toolbar_mode_controls(
     let selection_group = GtkBox::new(Orientation::Horizontal, 1);
     selection_group.add_css_class("editor-tools-subgroup");
     selection_group.append(select_btn);
-    selection_group.append(crop_btn);
     selection_group.append(background_btn);
 
     // Group 2: Drawing tools (freehand marks)
@@ -1171,13 +1165,14 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_keeps_crop_tool_button_but_not_crop_mode_stack_controls() {
+    fn toolbar_removed_crop_tool_since_frame_covers_ratios() {
         let source = include_str!("toolbar.rs");
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            production_source.contains("selection_group.append(crop_btn);")
+            !production_source.contains("crop_btn")
+                && !production_source.contains("selection_group.append(crop_btn);")
                 && !production_source.contains("toolbar_mode_stack.add_named(&crop_mode_group, Some(\"crop\"));"),
-            "Toolbar should keep the Crop tool button in the selection group while crop detail lives in the inspector",
+            "Toolbar should no longer expose the Crop tool; Background Frame covers ratios",
         );
     }
 

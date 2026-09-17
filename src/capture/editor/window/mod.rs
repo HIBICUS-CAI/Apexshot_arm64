@@ -19,7 +19,7 @@ use super::pen_weight::{HighlighterMode, PenWeight};
 use super::selection::action_bounds_with_padding;
 use super::state::EditorState;
 use super::types::{
-    tool_button_index, AnnotationAction, ArrowStyle, BackgroundStyle, CropAspectRatio, DrawColor,
+    tool_button_index, AnnotationAction, ArrowStyle, BackgroundStyle, DrawColor,
     EditorError, Tool, ViewTransform,
 };
 
@@ -227,35 +227,6 @@ fn sync_arrow_option_selection(list: &GtkBox, selected_index: usize) {
             button.add_css_class("editor-arrow-inspector-option-active");
         } else {
             button.remove_css_class("editor-arrow-inspector-option-active");
-        }
-
-        if let Some(content) = button.child() {
-            if let Ok(row) = content.downcast::<GtkBox>() {
-                if let Some(check_icon) = row.last_child() {
-                    if let Ok(widget) = check_icon.downcast::<gtk4::Widget>() {
-                        widget.set_visible(index == selected_index);
-                    }
-                }
-            }
-        }
-
-        index += 1;
-    }
-}
-
-fn sync_crop_option_selection(list: &GtkBox, selected_index: usize) {
-    let mut child_opt = list.first_child();
-    let mut index = 0usize;
-    while let Some(child) = child_opt {
-        child_opt = child.next_sibling();
-        let Ok(button) = child.downcast::<Button>() else {
-            continue;
-        };
-
-        if index == selected_index {
-            button.add_css_class("editor-crop-inspector-option-active");
-        } else {
-            button.remove_css_class("editor-crop-inspector-option-active");
         }
 
         if let Some(content) = button.child() {
@@ -815,7 +786,6 @@ fn setup_editor_window_full(
         traffic_minimize,
         traffic_zoom,
         select_btn,
-        crop_btn,
         background_btn,
         draw_btn,
         arrow_btn,
@@ -830,7 +800,6 @@ fn setup_editor_window_full(
         sep_1,
         sep_2,
     } = toolbar::build_toolbar_base(toolbar::ToolbarBaseIconNames {
-        crop: icon_names::custom::CROP_SYMBOLIC,
         draw: icon_names::custom::PENCIL_SYMBOLIC,
         arrow: icon_names::custom::ARROW2_TOP_RIGHT_SYMBOLIC,
         line: icon_names::custom::FUNCTION_LINEAR_SYMBOLIC,
@@ -918,7 +887,6 @@ fn setup_editor_window_full(
         stroke_size_popover: _,
         stroke_size_list: _toolbar_stroke_size_list,
     } = toolbar::build_toolbar_mode_controls(
-        &crop_btn,
         &background_btn,
         &select_btn,
         &draw_btn,
@@ -953,101 +921,6 @@ fn setup_editor_window_full(
         &traffic_close,
     );
 
-    let crop_ratio_list = GtkBox::new(Orientation::Vertical, 0);
-    for crop_type in CropAspectRatio::ALL {
-        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
-        btn_box.set_margin_start(8);
-        btn_box.set_margin_end(8);
-        btn_box.set_margin_top(4);
-        btn_box.set_margin_bottom(4);
-
-        let label_widget = Label::new(Some(&t(crop_type.label())));
-        label_widget.set_hexpand(true);
-        label_widget.set_xalign(0.0);
-        let check_icon = Label::new(Some("✓"));
-        check_icon.set_visible(crop_type == CropAspectRatio::Freeform);
-        check_icon.add_css_class("editor-crop-inspector-check");
-
-        btn_box.append(&label_widget);
-        btn_box.append(&check_icon);
-
-        let btn = Button::builder()
-            .has_frame(false)
-            .css_classes([
-                "editor-popover-list-item",
-                "flat",
-                "editor-crop-inspector-option",
-            ])
-            .child(&btn_box)
-            .build();
-        if crop_type == CropAspectRatio::Freeform {
-            btn.add_css_class("editor-crop-inspector-option-active");
-        }
-
-        crop_ratio_list.append(&btn);
-    }
-
-    let crop_dimensions_group = GtkBox::new(Orientation::Vertical, 0);
-    crop_dimensions_group.set_halign(gtk4::Align::Fill);
-    crop_dimensions_group.set_hexpand(true);
-
-    let crop_dimensions_row = GtkBox::new(Orientation::Horizontal, 8);
-    crop_dimensions_row.add_css_class("editor-crop-dimensions-row");
-    crop_dimensions_row.set_halign(gtk4::Align::Center);
-
-    // Width box
-    let w_box = GtkBox::new(Orientation::Vertical, 0);
-    w_box.set_halign(gtk4::Align::Fill);
-    w_box.set_hexpand(true);
-    w_box.add_css_class("editor-dimension-box");
-    let crop_width_value = Label::new(Some("—"));
-    crop_width_value.add_css_class("editor-crop-dimensions-value");
-    let w_sub_label = Label::new(Some(&t("WIDTH")));
-    w_sub_label.add_css_class("editor-dimension-label");
-    w_box.append(&crop_width_value);
-    w_box.append(&w_sub_label);
-
-    let crop_size_separator = Label::new(Some("×"));
-    crop_size_separator.add_css_class("editor-crop-dimensions-separator");
-    crop_size_separator.set_valign(gtk4::Align::Center);
-
-    // Height box
-    let h_box = GtkBox::new(Orientation::Vertical, 0);
-    h_box.set_halign(gtk4::Align::Fill);
-    h_box.set_hexpand(true);
-    h_box.add_css_class("editor-dimension-box");
-    let crop_height_value = Label::new(Some("—"));
-    crop_height_value.add_css_class("editor-crop-dimensions-value");
-    let h_sub_label = Label::new(Some(&t("HEIGHT")));
-    h_sub_label.add_css_class("editor-dimension-label");
-    h_box.append(&crop_height_value);
-    h_box.append(&h_sub_label);
-
-    crop_dimensions_row.append(&w_box);
-    crop_dimensions_row.append(&crop_size_separator);
-    crop_dimensions_row.append(&h_box);
-    crop_dimensions_group.append(&crop_dimensions_row);
-
-    let crop_actions_group = GtkBox::new(Orientation::Vertical, 8);
-    crop_actions_group.set_halign(gtk4::Align::Fill);
-    crop_actions_group.set_hexpand(true);
-
-    let crop_apply_btn = Button::with_label(&t("Apply selection"));
-    crop_apply_btn.set_has_frame(false);
-    crop_apply_btn.set_halign(gtk4::Align::Fill);
-    crop_apply_btn.set_hexpand(true);
-    crop_apply_btn.add_css_class("editor-add-to-colors-button");
-    crop_apply_btn.add_css_class("editor-colors-panel-action-button");
-    crop_apply_btn.set_sensitive(false);
-
-    let crop_reset_btn = Button::with_label(&t("Reset"));
-    crop_reset_btn.set_has_frame(false);
-    crop_reset_btn.set_halign(gtk4::Align::Fill);
-    crop_reset_btn.set_hexpand(true);
-    crop_reset_btn.add_css_class("editor-colors-panel-action-button");
-
-    crop_actions_group.append(&crop_apply_btn);
-    crop_actions_group.append(&crop_reset_btn);
 
     let arrow_style_list = GtkBox::new(Orientation::Vertical, 0);
     for style in ArrowStyle::ALL {
@@ -1601,9 +1474,6 @@ fn setup_editor_window_full(
         select_detail_label: &select_detail_label,
         select_geometry_label: &select_geometry_label,
         select_hint_label: &select_hint_label,
-        crop_dimensions_group: &crop_dimensions_group,
-        crop_ratio_list: &crop_ratio_list,
-        crop_actions_group: &crop_actions_group,
         pen_inspector_list: &pen_inspector_list,
         arrow_style_list: &arrow_style_list,
         arrow_thickness_list: &arrow_thickness_list,
@@ -1739,10 +1609,11 @@ fn setup_editor_window_full(
         drawing_area: drawing_area.clone(),
     };
 
-    // Floating number bar (mirrors the text/obfuscate bars): one contextual bar that
-    // follows the selected marker — or docks above the canvas while the Number tool is
-    // armed — instead of one bar per marker. Clicking an existing marker with the
-    // Number tool re-selects it, which is how it comes back.
+    // Floating number bar (mirrors the pen/highlighter bars): one contextual bar
+    // that stays docked above the canvas while the Number tool is armed or the
+    // Select tool holds a number marker, so it never covers the drawing.
+    // Clicking an existing marker with the Number tool re-selects it, which is
+    // how it comes back.
     let number_bar = number_bar::build_number_bar(&state, &drawing_area);
     canvas_overlay.add_overlay(&number_bar.root);
     number_bar::install_number_bar_tick(
@@ -1930,10 +1801,6 @@ fn setup_editor_window_full(
 
     let sync_inspector_thickness_controls: Rc<dyn Fn()> = Rc::new({
         let state = state.clone();
-        let crop_ratio_list = crop_ratio_list.clone();
-        let crop_apply_btn = crop_apply_btn.clone();
-        let crop_width_value = crop_width_value.clone();
-        let crop_height_value = crop_height_value.clone();
         let pen_inspector_list = pen_inspector_list.clone();
         let arrow_style_list = arrow_style_list.clone();
         let arrow_thickness_list = arrow_thickness_list.clone();
@@ -1942,20 +1809,6 @@ fn setup_editor_window_full(
         let inverse_direction_toggle = inverse_direction_toggle.clone();
         move || {
             let st = state.lock().unwrap();
-            let selected_ratio = CropAspectRatio::ALL
-                .iter()
-                .position(|ratio| *ratio == st.crop_aspect_ratio)
-                .unwrap_or(0);
-            sync_crop_option_selection(&crop_ratio_list, selected_ratio);
-            if let Some(rect) = st.draft_crop_rect().or(st.crop_selection) {
-                crop_width_value.set_label(&rect.width.max(0).to_string());
-                crop_height_value.set_label(&rect.height.max(0).to_string());
-            } else {
-                crop_width_value.set_label("—");
-                crop_height_value.set_label("—");
-            }
-            crop_apply_btn
-                .set_sensitive(st.draft_crop_rect().is_some() || st.crop_selection.is_some());
             let selected_style_value = st.selected_arrow_style().unwrap_or(st.arrow_style);
             let selected_style = ArrowStyle::ALL
                 .iter()
@@ -2018,7 +1871,7 @@ fn setup_editor_window_full(
             }
             if matches!(
                 tool,
-                Tool::Crop | Tool::Pen | Tool::Arrow | Tool::Line | Tool::Highlighter
+                Tool::Pen | Tool::Arrow | Tool::Line | Tool::Highlighter
             ) {
                 sync_inspector_thickness_controls();
             }
@@ -2059,7 +1912,6 @@ fn setup_editor_window_full(
             let surface = match state.lock().unwrap().selected_tool {
                 Tool::Background => Some("background"),
                 Tool::Select => Some("select"),
-                Tool::Crop => Some("crop"),
                 Tool::Pen => Some("pen"),
                 Tool::Arrow => Some("arrow"),
                 Tool::Line => Some("line"),
@@ -2083,7 +1935,6 @@ fn setup_editor_window_full(
             if matches!(
                 selected_tool,
                 Tool::Background
-                    | Tool::Crop
                     | Tool::Pen
                     | Tool::Arrow
                     | Tool::Line
@@ -2102,59 +1953,6 @@ fn setup_editor_window_full(
     });
 
     let canvas_padding = canvas::CANVAS_PADDING;
-
-    let update_crop_size_fields: Rc<dyn Fn()> = Rc::new({
-        let state = state.clone();
-        let crop_width_value = crop_width_value.clone();
-        let crop_height_value = crop_height_value.clone();
-        move || {
-            let st = state.lock().unwrap();
-            if let Some(rect) = st.draft_crop_rect().or(st.crop_selection) {
-                crop_width_value.set_label(&rect.width.max(0).to_string());
-                crop_height_value.set_label(&rect.height.max(0).to_string());
-            } else {
-                crop_width_value.set_label("—");
-                crop_height_value.set_label("—");
-            }
-        }
-    });
-
-    let mut crop_type_index = 0usize;
-    let mut crop_child_opt = crop_ratio_list.first_child();
-    while let Some(child) = crop_child_opt {
-        crop_child_opt = child.next_sibling();
-        let Ok(option_button) = child.downcast::<Button>() else {
-            continue;
-        };
-
-        let Some(&crop_type) = CropAspectRatio::ALL.get(crop_type_index) else {
-            break;
-        };
-        let selected_index = crop_type_index;
-        crop_type_index += 1;
-
-        let crop_ratio_list_option = crop_ratio_list.clone();
-        let state_crop_type_option = state.clone();
-        let drawing_area_crop_type_option = drawing_area.downgrade();
-        let update_crop_size_fields_option = update_crop_size_fields.clone();
-        let crop_apply_btn_option = crop_apply_btn.clone();
-        option_button.connect_clicked(move |_| {
-            {
-                let mut st = state_crop_type_option.lock().unwrap();
-                st.set_crop_aspect_ratio(crop_type);
-                if st.selected_tool == Tool::Crop {
-                    st.ensure_crop_selection_initialized();
-                }
-                crop_apply_btn_option
-                    .set_sensitive(st.draft_crop_rect().is_some() || st.crop_selection.is_some());
-            }
-            sync_crop_option_selection(&crop_ratio_list_option, selected_index);
-            update_crop_size_fields_option();
-            if let Some(area) = drawing_area_crop_type_option.upgrade() {
-                area.queue_draw();
-            }
-        });
-    }
 
     let (selected_text_size, selected_font_family) = {
         let st = state.lock().unwrap();
@@ -2659,19 +2457,18 @@ fn setup_editor_window_full(
 
     // Order must match `tool_button_index` in types.rs (used by click handlers + shortcuts).
     let tool_buttons = vec![
-        crop_btn.clone(),        // 0 Crop
-        background_btn.clone(),  // 1 Background
-        select_btn.clone(),      // 2 Select
-        draw_btn.clone(),        // 3 Pen
-        box_btn.clone(),         // 4 Box
-        circle_btn.clone(),      // 5 Circle
-        arrow_btn.clone(),       // 6 Arrow
-        line_btn.clone(),        // 7 Line
-        text_btn.clone(),        // 8 Text
-        obfuscate_btn.clone(),   // 9 Obfuscate
-        number_btn.clone(),      // 10 Number
-        highlighter_btn.clone(), // 11 Highlighter
-        focus_btn.clone(),       // 12 Focus
+        background_btn.clone(),  // 0 Background
+        select_btn.clone(),      // 1 Select
+        draw_btn.clone(),        // 2 Pen
+        box_btn.clone(),         // 3 Box
+        circle_btn.clone(),      // 4 Circle
+        arrow_btn.clone(),       // 5 Arrow
+        line_btn.clone(),        // 6 Line
+        text_btn.clone(),        // 7 Text
+        obfuscate_btn.clone(),   // 8 Obfuscate
+        number_btn.clone(),      // 9 Number
+        highlighter_btn.clone(), // 10 Highlighter
+        focus_btn.clone(),       // 11 Focus
     ];
 
     // Highlight whatever tool preferences restored (Background is only the default).
@@ -2687,7 +2484,6 @@ fn setup_editor_window_full(
         drawing_area: drawing_area.clone(),
         tool_buttons: tool_buttons.clone(),
         select_btn: select_btn.clone(),
-        crop_btn: crop_btn.clone(),
         background_btn: background_btn.clone(),
         draw_btn: draw_btn.clone(),
         arrow_btn: arrow_btn.clone(),
@@ -2725,15 +2521,12 @@ fn setup_editor_window_full(
         font_family_label: font_family_label.clone(),
         text_size_list: text_size_list.clone(),
         font_family_list: font_family_list.clone(),
-        apply_crop_btn: crop_apply_btn.clone(),
-        crop_reset_btn: crop_reset_btn.clone(),
         undo_btn: undo_btn.clone(),
         redo_btn: redo_btn.clone(),
         delete_selected_btn: delete_selected_btn.clone(),
         save_btn: save_btn.clone(),
         eyedropper: eyedropper.clone(),
         update_toolbar_for_tool: update_toolbar_for_tool.clone(),
-        update_crop_size_fields: update_crop_size_fields.clone(),
         update_canvas_content_size: update_canvas_content_size.clone(),
         sync_picker_for_active_tool: sync_shared_colors_for_active_tool.clone(),
         sync_picker_from_color: sync_picker_from_color.clone(),
@@ -2860,7 +2653,6 @@ mod tests {
         let inspectors_mod = include_str!("inspectors/mod.rs");
         let inspectors_shell = include_str!("inspectors/shell.rs");
         let inspectors_select = include_str!("inspectors/select.rs");
-        let inspectors_crop = include_str!("inspectors/crop.rs");
         let inspectors_stroke = include_str!("inspectors/stroke.rs");
         let inspectors_text = include_str!("inspectors/text.rs");
         let inspectors_number = include_str!("inspectors/number.rs");
@@ -2901,7 +2693,7 @@ mod tests {
             .next()
             .unwrap_or(canvas_render_src);
         format!(
-            "{mod_prod}\n{inspectors_prod}\n{inspectors_shell}\n{inspectors_select}\n{inspectors_crop}\n{inspectors_stroke}\n{inspectors_text}\n{inspectors_number}\n{inspectors_obfuscate}\n{background_assets_prod}\n{canvas_layout_prod}\n{effects_prod}\n{chrome_prod}\n{empty_state_prod}\n{canvas_render_prod}"
+            "{mod_prod}\n{inspectors_prod}\n{inspectors_shell}\n{inspectors_select}\n{inspectors_stroke}\n{inspectors_text}\n{inspectors_number}\n{inspectors_obfuscate}\n{background_assets_prod}\n{canvas_layout_prod}\n{effects_prod}\n{chrome_prod}\n{empty_state_prod}\n{canvas_render_prod}"
         )
     }
 
@@ -3021,7 +2813,6 @@ mod tests {
                 && production_source.contains("inspector_stack.set_hhomogeneous(true);")
                 && production_source.contains("input.background_inspector.set_visible(true);")
                 && production_source.contains("select_inspector.set_visible(true);")
-                && production_source.contains("crop_inspector.set_visible(true);")
                 && production_source.contains("pen_inspector.set_visible(true);")
                 && production_source.contains("arrow_inspector.set_visible(true);")
                 && production_source.contains("line_inspector.set_visible(true);")
@@ -3032,7 +2823,6 @@ mod tests {
                 && production_source.contains("input.placeholder_inspector.set_visible(true);")
                 && production_source.contains("inspector_stack.add_named(input.background_inspector, Some(\"background\"));")
                 && production_source.contains("inspector_stack.add_named(&select_inspector, Some(\"select\"));")
-                && production_source.contains("inspector_stack.add_named(&crop_inspector, Some(\"crop\"));")
                 && production_source.contains("inspector_stack.add_named(&pen_inspector, Some(\"pen\"));")
                 && production_source.contains("inspector_stack.add_named(&arrow_inspector, Some(\"arrow\"));")
                 && production_source.contains("inspector_stack.add_named(&line_inspector, Some(\"line\"));")
@@ -3086,41 +2876,6 @@ mod tests {
                 && production_source.contains("selected_action_kind(&action)")
                 && !production_source.contains("Tool::Select => Some(\"placeholder\")"),
             "Select tool should render a real selection inspector instead of the generic placeholder",
-        );
-    }
-
-    #[test]
-    fn crop_inspector_includes_aspect_ratio_dimensions_and_actions_sections() {
-        let production_source = production_editor_window_source();
-        assert!(
-            production_source
-                .contains("let (crop_inspector, crop_inspector_content) = build_tool_inspector();")
-                && production_source.contains("\"Aspect Ratio\"")
-                && production_source.contains("\"Dimensions\"")
-                && production_source.contains("\"Actions\""),
-            "Crop inspector should render Aspect Ratio, Dimensions, and Actions sections",
-        );
-    }
-
-    #[test]
-    fn crop_inspector_reuses_existing_fixed_sidebar_width() {
-        let production_source = production_editor_window_source();
-        assert!(
-            production_source.contains("root.set_width_request(BACKGROUND_SIDEBAR_WIDTH);")
-                && !production_source.contains("CROP_SIDEBAR_WIDTH"),
-            "Crop inspector should reuse the shared fixed sidebar width instead of introducing a new width path",
-        );
-    }
-
-    #[test]
-    fn crop_dimensions_use_active_crop_rect_in_the_inspector() {
-        let source = include_str!("mod.rs");
-        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
-        assert!(
-            production_source.contains("st.draft_crop_rect().or(st.crop_selection)")
-                && production_source.contains("crop_width_value.set_label")
-                && production_source.contains("crop_height_value.set_label"),
-            "Crop dimensions should mirror the active draft or committed crop rect in the side inspector",
         );
     }
 

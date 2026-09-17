@@ -17,7 +17,6 @@ pub(super) const MOVE_HANDLE_DRAG_RADIUS: f64 = 10.0;
 pub(super) const RESIZE_HANDLE_DRAG_SIZE: f64 = 18.0;
 
 mod click;
-mod crop;
 mod drag;
 mod history;
 mod interaction;
@@ -29,7 +28,6 @@ mod tools;
 mod zoom;
 
 use click::wire_canvas_click;
-use crop::wire_crop_action_buttons;
 use drag::wire_canvas_drag;
 use history::wire_history_buttons;
 use interaction::SpacePanState;
@@ -57,7 +55,6 @@ pub(super) struct EventContext {
     pub drawing_area: DrawingArea,
     pub tool_buttons: Vec<Button>,
     pub select_btn: Button,
-    pub crop_btn: Button,
     pub background_btn: Button,
     pub draw_btn: Button,
     pub arrow_btn: Button,
@@ -95,8 +92,6 @@ pub(super) struct EventContext {
     pub font_family_label: Label,
     pub text_size_list: gtk4::Box,
     pub font_family_list: gtk4::Box,
-    pub apply_crop_btn: Button,
-    pub crop_reset_btn: Button,
 
     pub undo_btn: Button,
     pub redo_btn: Button,
@@ -104,7 +99,6 @@ pub(super) struct EventContext {
     pub save_btn: Button,
     pub eyedropper: EyedropperBundle,
     pub update_toolbar_for_tool: Rc<dyn Fn(Tool)>,
-    pub update_crop_size_fields: Rc<dyn Fn()>,
     pub update_canvas_content_size: Rc<dyn Fn()>,
     pub sync_picker_for_active_tool: Rc<dyn Fn()>,
     pub sync_picker_from_color: Rc<dyn Fn(DrawColor)>,
@@ -146,7 +140,6 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         drawing_area,
         tool_buttons,
         select_btn,
-        crop_btn,
         background_btn,
         draw_btn,
         arrow_btn,
@@ -184,15 +177,12 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         font_family_label,
         text_size_list,
         font_family_list,
-        apply_crop_btn,
-        crop_reset_btn,
         undo_btn,
         redo_btn,
         delete_selected_btn,
         save_btn,
         eyedropper,
         update_toolbar_for_tool,
-        update_crop_size_fields,
         update_canvas_content_size,
         sync_picker_for_active_tool,
         sync_picker_from_color,
@@ -280,13 +270,12 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         export_motion,
     );
 
-    // Tool-mode activation (Select/Crop/Background/Pen/.../Focus). Distinct toggle
+    // Tool-mode activation (Select/Background/Pen/.../Focus). Distinct toggle
     // policies stay in tools.rs and must not be collapsed into one handler.
     wire_tool_mode_switches(
         ToolModeButtons {
             tool_buttons: &tool_buttons,
             select: &select_btn,
-            crop: &crop_btn,
             background: &background_btn,
             pen: &draw_btn,
             arrow: &arrow_btn,
@@ -298,27 +287,15 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
             highlighter: &highlighter_btn,
             obfuscate: &obfuscate_btn,
             focus: &focus_btn,
-            apply_crop: &apply_crop_btn,
         },
         &window,
         &state,
         &drawing_area,
         &update_toolbar_for_tool,
-        &update_crop_size_fields,
         &sync_picker_for_active_tool,
         &sync_select_inspector,
         &sync_size_control,
         &rebuild_effects_async,
-    );
-
-    // Crop apply/reset inspector actions (not canvas crop drag).
-    wire_crop_action_buttons(
-        &apply_crop_btn,
-        &crop_reset_btn,
-        &state,
-        &drawing_area,
-        &update_canvas_content_size,
-        &update_crop_size_fields,
     );
 
     // Inspector/toolbar tool options (weight, style, numbering, palette, size).
@@ -373,12 +350,10 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         &transform,
         &drawing_area,
         &canvas_scroller,
-        &apply_crop_btn,
         &space_pan_active,
         &space_pan_dragging,
         &space_pan_origin,
         &eyedropper_mode,
-        &update_crop_size_fields,
         &rebuild_effects_async,
         &sync_size_control,
         &sync_select_inspector,
@@ -427,7 +402,6 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         &state,
         &drawing_area,
         &tool_buttons,
-        &apply_crop_btn,
         &space_pan_active,
         &space_pan_dragging,
         &eyedropper_mode,
@@ -438,7 +412,6 @@ pub(super) fn wire_editor_events(ctx: EventContext) {
         &apply_zoom_change,
         &zoom_popup,
         &update_toolbar_for_tool,
-        &update_crop_size_fields,
         &sync_picker_for_active_tool,
         &sync_select_inspector,
     );
@@ -465,7 +438,6 @@ mod tests {
         let history_src = include_str!("history.rs");
         let output_src = include_str!("output.rs");
         let tools_src = include_str!("tools.rs");
-        let crop_src = include_str!("crop.rs");
         let options_src = include_str!("options.rs");
         let interaction_src = include_str!("interaction.rs");
         let drag_src = include_str!("drag.rs");
@@ -478,7 +450,6 @@ mod tests {
             .next()
             .unwrap_or(output_src);
         let tools_prod = tools_src.split("#[cfg(test)]").next().unwrap_or(tools_src);
-        let crop_prod = crop_src.split("#[cfg(test)]").next().unwrap_or(crop_src);
         let options_prod = options_src
             .split("#[cfg(test)]")
             .next()
@@ -498,7 +469,7 @@ mod tests {
             .next()
             .unwrap_or(keyboard_src);
         format!(
-            "{mod_prod}\n{zoom_src}\n{history_src}\n{output_prod}\n{tools_prod}\n{crop_prod}\n{options_prod}\n{interaction_prod}\n{drag_prod}\n{click_prod}\n{motion_prod}\n{keyboard_prod}"
+            "{mod_prod}\n{zoom_src}\n{history_src}\n{output_prod}\n{tools_prod}\n{options_prod}\n{interaction_prod}\n{drag_prod}\n{click_prod}\n{motion_prod}\n{keyboard_prod}"
         )
     }
 

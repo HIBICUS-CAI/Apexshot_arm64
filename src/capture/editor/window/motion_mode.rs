@@ -32,7 +32,7 @@ pub(super) const STATIC_PAGE: &str = "static";
 mod tests {
     use super::*;
     use crate::capture::editor::state::EditorState;
-    use crate::capture::editor::types::{AnnotationAction, Point, Rect};
+    use crate::capture::editor::types::{AnnotationAction, Point};
     use crate::recording::editor::model::{MotionBackgroundFillType, MotionState};
     use image::RgbaImage;
 
@@ -42,7 +42,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_is_required_when_annotations_or_crop_exist() {
+    fn snapshot_is_required_when_annotations_exist() {
         let mut state = blank_state();
         assert!(!transition::annotations_need_snapshot(&state));
         state.actions.push(AnnotationAction::Line {
@@ -54,13 +54,7 @@ mod tests {
         });
         assert!(transition::annotations_need_snapshot(&state));
         state.actions.clear();
-        state.crop_selection = Some(Rect {
-            x: 0,
-            y: 0,
-            width: 4,
-            height: 4,
-        });
-        assert!(transition::annotations_need_snapshot(&state));
+        assert!(!transition::annotations_need_snapshot(&state));
     }
 
     #[test]

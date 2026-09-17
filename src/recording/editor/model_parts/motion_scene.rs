@@ -12,6 +12,8 @@ pub enum MotionBackgroundFillType {
 /// The scene fields carried by the Motion appearance model.  This is
 /// deliberately separate from the animated card transform: the background is
 /// a compositor layer, shared by preview and export.
+use crate::capture::editor::types::FrameStyle;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MotionAppearance {
     pub background_padding: f64,
@@ -29,6 +31,7 @@ pub struct MotionAppearance {
     pub border_radius: f64,
     pub border_thickness: f64,
     pub border_fill_color: [f64; 4],
+    pub frame_style: FrameStyle,
     pub shadow_blur: f64,
     pub shadow_opacity: f64,
     pub shadow_position: (f64, f64),
@@ -52,6 +55,7 @@ impl Default for MotionAppearance {
             background_blur: 0.0,
             background_noise: 0.0,
             border_radius: 0.0,
+            frame_style: FrameStyle::Default,
             border_thickness: 0.0,
             // Opaque by default so raising the thickness immediately shows a
             // border instead of silently stroking in invisible white.

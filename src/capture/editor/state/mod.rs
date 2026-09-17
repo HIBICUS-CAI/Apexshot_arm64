@@ -4,7 +4,6 @@
 //! so private field access remains inside the `state` module tree.
 
 mod arrow;
-mod crop;
 mod drag_draw;
 mod effects;
 mod export;
@@ -24,7 +23,7 @@ use super::text_detect::{BackgroundTextDetection, TextDetector};
 use super::types::SizeControlMode;
 use super::types::{
     AnnotationAction, ArrowStyle, BackgroundAlignment, BackgroundStyle, CropAspectRatio, DrawColor,
-    EditorError, MoveHandle, ObfuscateMethod, Point, Rect, TextEditBounds, Tool,
+    EditorError, FrameStyle, MoveHandle, ObfuscateMethod, Point, Rect, TextEditBounds, Tool,
 };
 use gtk4;
 use image::RgbaImage;
@@ -35,10 +34,6 @@ pub struct EditorState {
     pub base_image: Arc<RgbaImage>,
     pub working_image: Arc<RgbaImage>,
     pub working_image_revision: u64,
-    pub crop_selection: Option<Rect>,
-    pub crop_aspect_ratio: CropAspectRatio,
-    pub crop_background_color: DrawColor,
-    pub crop_background_color_explicit: bool,
     pub actions: Vec<AnnotationAction>,
     pub redo_actions: Vec<AnnotationAction>,
     pub selected_tool: Tool,
@@ -91,6 +86,7 @@ pub struct EditorState {
     pub background_noise: f64,
     pub border_thickness: f64,
     pub border_color: DrawColor,
+    pub frame_style: FrameStyle,
     pub shadow_opacity: f64,
     pub shadow_blur: f64,
     pub shadow_offset_x: f64,
@@ -213,10 +209,6 @@ impl EditorState {
             working_image: Arc::clone(&base_image),
             base_image,
             working_image_revision: 1,
-            crop_selection: None,
-            crop_aspect_ratio: CropAspectRatio::Freeform,
-            crop_background_color: DrawColor::new(1.0, 1.0, 1.0, 1.0),
-            crop_background_color_explicit: false,
             actions: Vec::new(),
             redo_actions: Vec::new(),
             selected_tool: Tool::Background,
@@ -272,6 +264,7 @@ impl EditorState {
             background_noise: 0.0,
             border_thickness: 0.0,
             border_color: DrawColor::new(1.0, 1.0, 1.0, 1.0),
+            frame_style: FrameStyle::Default,
             shadow_opacity: 0.0,
             shadow_blur: 16.0,
             shadow_offset_x: 0.0,
@@ -302,9 +295,6 @@ impl EditorState {
     }
 
     pub fn set_tool_without_rebuild(&mut self, tool: Tool) -> bool {
-        if self.selected_tool == Tool::Crop && tool != Tool::Crop {
-            self.crop_selection = None;
-        }
         if tool != Tool::Select {
             self.selected_action_index = None;
             self.select_drag_anchor = None;
@@ -346,21 +336,53 @@ impl EditorState {
         };
     }
 
+    /// Editable canvas bounds in screenshot pixels. Without a background this
+    /// is exactly the screenshot; with a wallpaper/padding the surround maps to
+    /// negative / overflow coordinates so static tools can address the background
+    /// instead of slipping underneath it.
+    pub fn annotation_canvas_bounds(&self) -> (f64, f64, f64, f64) {
+        let w = self.base_image.width() as f64;
+        let h = self.base_image.height() as f64;
+        if self.background_style == BackgroundStyle::None {
+            return (0.0, 0.0, w, h);
+        }
+        let layout =
+            crate::capture::editor::composition::BackgroundComposition::new(w, h)
+                .with_style(self.background_style.clone())
+                .with_padding(self.background_padding)
+                .with_shadow(self.background_shadow)
+                .with_insert(self.background_insert)
+                .with_alignment(self.background_alignment)
+                .with_corner_radius(self.background_corner_radius)
+                .with_aspect_ratio(self.background_aspect_ratio)
+                .with_frame_style(self.frame_style)
+                .with_frame_border_thickness(self.border_thickness)
+                .compute();
+        let ds = layout.draw_scale.max(0.0001);
+        (
+            -layout.image_rect.x / ds,
+            -layout.image_rect.y / ds,
+            (layout.canvas_width - layout.image_rect.x) / ds,
+            (layout.canvas_height - layout.image_rect.y) / ds,
+        )
+    }
+
     pub fn add_number_marker(&mut self, position: Point) {
         let number = self.next_number;
         let radius = self.number_size.radius();
-        let image_width = self.working_image.width() as f64;
-        let image_height = self.working_image.height() as f64;
+        let (min_x, min_y, max_x, max_y) = self.annotation_canvas_bounds();
+        let span_x = max_x - min_x;
+        let span_y = max_y - min_y;
 
-        let clamped_x = if image_width <= radius * 2.0 {
-            image_width / 2.0
+        let clamped_x = if span_x <= radius * 2.0 {
+            (min_x + max_x) / 2.0
         } else {
-            position.x.clamp(radius, image_width - radius)
+            position.x.clamp(min_x + radius, max_x - radius)
         };
-        let clamped_y = if image_height <= radius * 2.0 {
-            image_height / 2.0
+        let clamped_y = if span_y <= radius * 2.0 {
+            (min_y + max_y) / 2.0
         } else {
-            position.y.clamp(radius, image_height - radius)
+            position.y.clamp(min_y + radius, max_y - radius)
         };
 
         self.push_action(AnnotationAction::Number {

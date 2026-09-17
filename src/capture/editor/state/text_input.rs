@@ -26,10 +26,9 @@ impl EditorState {
         bounds: &TextEditBounds,
         skip_index: Option<usize>,
     ) -> (f64, f64) {
-        let image_width = self.base_image.width() as f64;
-        let image_height = self.base_image.height() as f64;
-        let mut right_limit = image_width - bounds.rect.x as f64;
-        let mut bottom_limit = image_height - bounds.rect.y as f64;
+        let (_, _, canvas_max_x, canvas_max_y) = self.annotation_canvas_bounds();
+        let mut right_limit = canvas_max_x - bounds.rect.x as f64;
+        let mut bottom_limit = canvas_max_y - bounds.rect.y as f64;
 
         for obstacle in self.existing_text_bounds(skip_index) {
             let vertical_overlap = bounds.rect.y < obstacle.y + obstacle.height
@@ -49,16 +48,18 @@ impl EditorState {
     }
 
     pub fn begin_text_input(&mut self, position: Point, width: f64, height: f64) {
-        let image_width = self.base_image.width() as f64;
-        let image_height = self.base_image.height() as f64;
-        let baseline_y = position.y.clamp(self.text_size + 8.0, image_height - 8.0);
-        let max_width = (image_width - position.x).max(50.0);
+        let (min_x, min_y, max_x, max_y) = self.annotation_canvas_bounds();
+        let baseline_y = position
+            .y
+            .clamp(min_y + self.text_size + 8.0, (max_y - 8.0).max(min_y + self.text_size + 8.0));
+        let max_width = (max_x - position.x).max(50.0);
         let constrained_width = width.clamp(50.0, max_width);
-        let max_height = (image_height - (baseline_y - self.text_size - 8.0)).max(44.0);
+        let max_height = (max_y - (baseline_y - self.text_size - 8.0)).max(44.0);
         let constrained_height = height.clamp(44.0, max_height);
         let top_left = Point {
-            x: position.x.clamp(0.0, image_width - 50.0),
-            y: (baseline_y - self.text_size - 8.0).clamp(0.0, image_height - constrained_height),
+            x: position.x.clamp(min_x, (max_x - 50.0).max(min_x)),
+            y: (baseline_y - self.text_size - 8.0)
+                .clamp(min_y, (max_y - constrained_height).max(min_y)),
         };
         let bounds = TextEditBounds::new(top_left, constrained_width, constrained_height);
         self.active_text_bounds = Some(bounds);
@@ -418,10 +419,12 @@ impl EditorState {
 
         self.text_size = fitted_size;
 
-        // Clamp so the box never overflows below the image.
-        let image_height = self.base_image.height() as i32;
-        if bounds.rect.y + bounds.rect.height > image_height {
-            bounds.rect.height = (image_height - bounds.rect.y).max(44);
+        // Clamp so the box never overflows below the canvas (screenshot or
+        // background padding when a wallpaper is active).
+        let (_, _, _, canvas_max_y) = self.annotation_canvas_bounds();
+        let canvas_bottom = canvas_max_y.round() as i32;
+        if bounds.rect.y + bounds.rect.height > canvas_bottom {
+            bounds.rect.height = (canvas_bottom - bounds.rect.y).max(44);
         }
 
         bounds.sync_handles();
@@ -485,10 +488,12 @@ impl EditorState {
         // Only update height — x, y, width are untouched.
         bounds.rect.height = new_height;
 
-        // Clamp so the box never overflows below the image.
-        let image_height = self.base_image.height() as i32;
-        if bounds.rect.y + bounds.rect.height > image_height {
-            bounds.rect.height = (image_height - bounds.rect.y).max(44);
+        // Clamp so the box never overflows below the canvas (screenshot or
+        // background padding when a wallpaper is active).
+        let (_, _, _, canvas_max_y) = self.annotation_canvas_bounds();
+        let canvas_bottom = canvas_max_y.round() as i32;
+        if bounds.rect.y + bounds.rect.height > canvas_bottom {
+            bounds.rect.height = (canvas_bottom - bounds.rect.y).max(44);
         }
 
         bounds.sync_handles();
@@ -532,10 +537,12 @@ impl EditorState {
 
         bounds.rect.height = new_height;
 
-        // Clamp so the box never overflows below the image.
-        let image_height = self.base_image.height() as i32;
-        if bounds.rect.y + bounds.rect.height > image_height {
-            bounds.rect.height = (image_height - bounds.rect.y).max(44);
+        // Clamp so the box never overflows below the canvas (screenshot or
+        // background padding when a wallpaper is active).
+        let (_, _, _, canvas_max_y) = self.annotation_canvas_bounds();
+        let canvas_bottom = canvas_max_y.round() as i32;
+        if bounds.rect.y + bounds.rect.height > canvas_bottom {
+            bounds.rect.height = (canvas_bottom - bounds.rect.y).max(44);
         }
 
         bounds.sync_handles();

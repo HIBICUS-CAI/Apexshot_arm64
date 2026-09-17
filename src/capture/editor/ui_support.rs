@@ -447,6 +447,7 @@ pub fn set_active_color_button(buttons: &[Button], active_index: usize) {
     }
 }
 
+#[allow(dead_code)]
 pub fn set_crop_apply_button_state(button: &Button, crop_mode: bool, has_selection: bool) {
     if let Some(slot) = button
         .parent()

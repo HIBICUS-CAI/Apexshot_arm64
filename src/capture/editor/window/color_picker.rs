@@ -288,9 +288,7 @@ pub fn build_color_picker(
             let has_active_text = {
                 let mut st = state_picker_apply.lock().unwrap();
                 let has_active_text = st.active_text_input.is_some();
-                if st.selected_tool == Tool::Crop {
-                    st.set_crop_background_color(color);
-                } else if st.selected_tool == Tool::Background {
+                if st.selected_tool == Tool::Background {
                     st.background_style = BackgroundStyle::PlainColor(color);
                 } else if has_active_text {
                     st.selected_color = color;
@@ -358,9 +356,7 @@ pub fn build_color_picker(
         move || {
             let (active_color, show_palette_state) = {
                 let st = state.lock().unwrap();
-                if st.selected_tool == Tool::Crop {
-                    (st.crop_background_color, st.crop_background_color_explicit)
-                } else if st.selected_tool == Tool::Background {
+                if st.selected_tool == Tool::Background {
                     if let BackgroundStyle::PlainColor(color) = st.background_style {
                         (color, true)
                     } else {

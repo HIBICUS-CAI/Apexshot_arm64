@@ -19,7 +19,7 @@ use crate::capture::editor::{
     composition::BackgroundComposition,
     render::{
         draw_active_text_input, draw_annotation_action, draw_arrow_control_handles,
-        draw_arrow_selection_outline, draw_canvas_checkerboard_background, draw_crop_overlay,
+        draw_arrow_selection_outline, draw_canvas_checkerboard_background,
         draw_draft_action, draw_rgba_to_context, draw_selection_handles, draw_selection_outline,
         draw_text_edit_border, draw_text_edit_handles, rgba_image_to_surface, text_action_bounds,
     },
@@ -126,10 +126,6 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             working_image_revision,
             actions,
             draft_action,
-            crop_rect,
-            crop_mode_active,
-            crop_background_color_explicit,
-            crop_background_color,
             background_style,
             background_padding,
             background_aspect_ratio,
@@ -137,6 +133,9 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             background_alignment,
             background_shadow,
             background_corner_radius,
+            border_thickness,
+            border_color,
+            frame_style,
             selected_tool,
             selected_action,
             select_resize_handle,
@@ -158,14 +157,6 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                 st.working_image_revision,
                 st.actions.clone(),
                 st.draft_action(),
-                if st.selected_tool == Tool::Crop {
-                    st.draft_crop_rect().or(st.crop_selection)
-                } else {
-                    None
-                },
-                st.selected_tool == Tool::Crop,
-                st.crop_background_color_explicit,
-                st.crop_background_color,
                 st.background_style.clone(),
                 st.background_padding,
                 st.background_aspect_ratio,
@@ -173,6 +164,9 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                 st.background_alignment,
                 st.background_shadow,
                 st.background_corner_radius,
+                st.border_thickness,
+                st.border_color,
+                st.frame_style,
                 st.selected_tool,
                 st.selected_action().cloned(),
                 st.select_resize_handle,
@@ -208,6 +202,8 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                 .with_alignment(background_alignment)
                 .with_corner_radius(background_corner_radius)
                 .with_aspect_ratio(background_aspect_ratio)
+                .with_frame_style(frame_style)
+                .with_frame_border_thickness(border_thickness)
                 .compute();
             virtual_w = layout.canvas_width;
             virtual_h = layout.canvas_height;
@@ -221,19 +217,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
         let toolbar_clearance = f64::from(EDITOR_TOP_CHROME_HEIGHT) + docked_inset_draw.px();
         let top_pad = canvas_padding_draw + toolbar_clearance;
         let side_pad = canvas_padding_draw;
-        let base_view_width = (width as f64 - side_pad * 2.0).max(1.0);
-        let base_scale = (base_view_width / virtual_w).min(1.0);
-        let (overflow_left, overflow_top, overflow_right, overflow_bottom) = if has_background {
-            (0.0, 0.0, 0.0, 0.0)
-        } else {
-            super::canvas::crop_canvas_overflow(
-                crop_rect,
-                image_width,
-                image_height,
-                base_scale,
-                crop_mode_active,
-            )
-        };
+        let (overflow_left, overflow_top, overflow_right, overflow_bottom) = (0.0, 0.0, 0.0, 0.0);
 
         let view_width = (width as f64 - side_pad * 2.0 - overflow_left - overflow_right).max(1.0);
         let view_height =
@@ -253,28 +237,29 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             view_height,
             0.0,
         );
+        let canvas_offset_x = side_pad + placement.offset_x + overflow_left;
+        let canvas_offset_y = top_pad + placement.offset_y + overflow_top;
         let mut t = ViewTransform {
             scale,
-            offset_x: side_pad + placement.offset_x + overflow_left,
-            offset_y: top_pad + placement.offset_y + overflow_top,
-            image_width: virtual_w,
-            image_height: virtual_h,
+            offset_x: canvas_offset_x,
+            offset_y: canvas_offset_y,
+            image_width,
+            image_height,
+            has_background,
+            canvas_offset_x,
+            canvas_offset_y,
+            canvas_scale: scale,
+            canvas_width: virtual_w,
+            canvas_height: virtual_h,
+            image_rect_x: 0.0,
+            image_rect_y: 0.0,
+            canvas_draw_scale: draw_scale_factor,
         };
 
         let canvas_t = t;
 
         context.set_operator(gtk4::cairo::Operator::Source);
-        draw_canvas_checkerboard_background(
-            context,
-            width,
-            height,
-            if crop_mode_active && crop_background_color_explicit {
-                Some(crop_background_color)
-            } else {
-                None
-            },
-            !prefers_dark,
-        );
+        draw_canvas_checkerboard_background(context, width, height, None, !prefers_dark);
 
         if has_background {
             context.set_operator(gtk4::cairo::Operator::Over);
@@ -412,6 +397,64 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                 t.offset_x = canvas_t.offset_x + layout.image_rect.x * canvas_t.scale;
                 t.offset_y = canvas_t.offset_y + layout.image_rect.y * canvas_t.scale;
                 t.scale = canvas_t.scale * layout.draw_scale;
+                t.image_rect_x = layout.image_rect.x;
+                t.image_rect_y = layout.image_rect.y;
+                t.canvas_draw_scale = layout.draw_scale;
+                t.canvas_offset_x = canvas_t.offset_x;
+                t.canvas_offset_y = canvas_t.offset_y;
+                t.canvas_scale = canvas_t.scale;
+                t.canvas_width = layout.canvas_width;
+                t.canvas_height = layout.canvas_height;
+                t.has_background = true;
+
+                // Stack presets: flat backing sheets behind the card, offset
+                // up-left like stacked prints. Farthest sheet first.
+                {
+                    let spec = frame_style.spec();
+                    let backings = [spec.backing1, spec.backing2];
+                    if backings.iter().any(|b| b.is_some()) {
+                        let bw = image_width * t.scale;
+                        let bh = image_height * t.scale;
+                        let br =
+                            background_corner_radius * background_scale_factor * t.scale;
+                        // Backing offsets are fixed canvas px (same at any image
+                        // size); canvas px -> view px via the canvas scale.
+                        let unit = canvas_t.scale;
+                        for backing in backings.into_iter().flatten() {
+                            if bw <= 1.0 || bh <= 1.0 {
+                                continue;
+                            }
+                            // Center-pivot sheets fan diagonally (Stack);
+                            // the rest pivot at the hidden bottom-right corner
+                            // and fan top-left (Stack2).
+                            let _ = context.save();
+                            if backing.center_pivot {
+                                context.translate(
+                                    t.offset_x + bw / 2.0 + backing.offset_x * unit,
+                                    t.offset_y + bh / 2.0 + backing.offset_y * unit,
+                                );
+                                context.rotate(backing.rotation_deg.to_radians());
+                                context.translate(-bw / 2.0, -bh / 2.0);
+                            } else {
+                                context.translate(
+                                    t.offset_x + backing.offset_x * unit + bw,
+                                    t.offset_y + backing.offset_y * unit + bh,
+                                );
+                                context.rotate(backing.rotation_deg.to_radians());
+                                context.translate(-bw, -bh);
+                            }
+                            draw_rounded_rect_path(context, bw, bh, br.max(0.0), 0.0);
+                            context.set_source_rgba(
+                                backing.color.r,
+                                backing.color.g,
+                                backing.color.b,
+                                backing.color.a,
+                            );
+                            let _ = context.fill();
+                            let _ = context.restore();
+                        }
+                    }
+                }
 
                 if let Some(shadow) = layout.shadow {
                     let mut shadow_surface_cache = shadow_surface.borrow_mut();
@@ -503,24 +546,6 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
         context.translate(t.offset_x, t.offset_y);
         context.scale(t.scale, t.scale);
 
-        if crop_mode_active && crop_background_color_explicit {
-            if let Some(crop_rect) = crop_rect {
-                context.set_source_rgba(
-                    crop_background_color.r,
-                    crop_background_color.g,
-                    crop_background_color.b,
-                    crop_background_color.a,
-                );
-                context.rectangle(
-                    crop_rect.x as f64,
-                    crop_rect.y as f64,
-                    crop_rect.width as f64,
-                    crop_rect.height as f64,
-                );
-                let _ = context.fill();
-            }
-        }
-
         if working_revision.get() != working_image_revision || working_surface.borrow().is_none() {
             *working_surface.borrow_mut() = rgba_image_to_surface(&working_image);
             working_revision.set(working_image_revision);
@@ -537,6 +562,81 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
         } else {
             draw_rgba_to_context(context, &working_image);
         }
+        let _ = context.restore();
+
+        // Annotations paint above the background/wallpaper (not clipped to the
+        // screenshot rounded rect) so text/shapes placed on the padding stay
+        // visible instead of slipping underneath the wallpaper.
+        if has_background {
+            let _ = context.restore();
+        }
+        // Frame style preset: outside border drawn *around* the screenshot on
+        // top of any background/wallpaper, below the annotations. The stroke is
+        // centered on an expanded path so the inner edge aligns with the image
+        // edge and the outer edge carries the radius outward.
+        {
+            let bw = image_width * t.scale;
+            let bh = image_height * t.scale;
+            let br = if has_background {
+                background_corner_radius * background_scale_factor * t.scale
+            } else {
+                0.0
+            };
+            let unit = background_scale_factor * t.scale;
+            let mut expand = 0.0;
+            let stroke_outside = |thickness: f64, radius: f64, r: f64, g: f64, b: f64, a: f64, extra: f64| {
+                let lw = (thickness * unit).max(0.0);
+                if lw <= 0.01 {
+                    return extra;
+                }
+                let e = extra + lw / 2.0;
+                if bw + e * 2.0 <= 1.0 || bh + e * 2.0 <= 1.0 {
+                    return extra;
+                }
+                let _ = context.save();
+                context.translate(t.offset_x - e, t.offset_y - e);
+                draw_rounded_rect_path(context, bw + e * 2.0, bh + e * 2.0, radius + e, 0.0);
+                context.set_source_rgba(r, g, b, a);
+                context.set_line_width(lw);
+                let _ = context.stroke();
+                let _ = context.restore();
+                extra + lw
+            };
+            if border_thickness > 0.0 {
+                expand = stroke_outside(
+                    border_thickness,
+                    br,
+                    border_color.r,
+                    border_color.g,
+                    border_color.b,
+                    border_color.a,
+                    expand,
+                );
+            }
+            let spec = frame_style.spec();
+            for outer in [spec.outer1, spec.outer2].into_iter().flatten() {
+                // Preset main border already applied via border_* fields; only
+                // paint accent strokes that extend beyond it.
+                let main_matches = (outer.thickness - spec.border_thickness).abs() < f64::EPSILON
+                    && outer.gap == 0.0;
+                if main_matches {
+                    continue;
+                }
+                expand += outer.gap * unit;
+                expand = stroke_outside(
+                    outer.thickness,
+                    br,
+                    outer.color.r,
+                    outer.color.g,
+                    outer.color.b,
+                    outer.color.a,
+                    expand,
+                );
+            }
+        }
+        let _ = context.save();
+        context.translate(t.offset_x, t.offset_y);
+        context.scale(t.scale, t.scale);
 
         let editing_action_index = active_text_input
             .as_ref()
@@ -558,37 +658,6 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             draw_draft_action(context, &draft);
         }
 
-        if crop_mode_active {
-            if let Some(crop_rect) = crop_rect {
-                let canvas_left = -t.offset_x / t.scale;
-                let canvas_top = -t.offset_y / t.scale;
-                let canvas_width = width as f64 / t.scale;
-                let canvas_height = height as f64 / t.scale;
-                let _ = context.save();
-                context.rectangle(canvas_left, canvas_top, canvas_width, canvas_height);
-                context.rectangle(
-                    crop_rect.x as f64,
-                    crop_rect.y as f64,
-                    crop_rect.width as f64,
-                    crop_rect.height as f64,
-                );
-                context.set_fill_rule(gtk4::cairo::FillRule::EvenOdd);
-                context.set_source_rgba(0.0, 0.0, 0.0, 140.0 / 255.0);
-                let _ = context.fill();
-                let _ = context.restore();
-            }
-        }
-
-        if let Some(crop_rect) = crop_rect {
-            draw_crop_overlay(
-                context,
-                working_image.width() as f64,
-                working_image.height() as f64,
-                crop_rect,
-                selected_tool == Tool::Crop,
-            );
-        }
-
         // In Text tool mode: draw hover outline for the text action under the cursor.
         if selected_tool == Tool::Text && active_text_bounds.is_none() {
             if let Some(hover_idx) = hovered_text_action_index {
@@ -605,14 +674,27 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     });
                     let mut text_bounds =
                         text_action_bounds(context, *position, text, font, Some(available_width));
-                    text_bounds.rect.x = text_bounds.rect.x.clamp(
-                        0,
-                        (working_image.width() as i32 - text_bounds.rect.width).max(0),
-                    );
-                    text_bounds.rect.y = text_bounds.rect.y.clamp(
-                        0,
-                        (working_image.height() as i32 - text_bounds.rect.height).max(0),
-                    );
+                    if has_background {
+                        let (min_bx, min_by, max_bx, max_by) =
+                            t.canvas_bounds_in_image_coords();
+                        let min_ix = min_bx.round() as i32;
+                        let min_iy = min_by.round() as i32;
+                        let max_ix =
+                            (max_bx.round() as i32 - text_bounds.rect.width).max(min_ix);
+                        let max_iy =
+                            (max_by.round() as i32 - text_bounds.rect.height).max(min_iy);
+                        text_bounds.rect.x = text_bounds.rect.x.clamp(min_ix, max_ix);
+                        text_bounds.rect.y = text_bounds.rect.y.clamp(min_iy, max_iy);
+                    } else {
+                        text_bounds.rect.x = text_bounds.rect.x.clamp(
+                            0,
+                            (working_image.width() as i32 - text_bounds.rect.width).max(0),
+                        );
+                        text_bounds.rect.y = text_bounds.rect.y.clamp(
+                            0,
+                            (working_image.height() as i32 - text_bounds.rect.height).max(0),
+                        );
+                    }
                     text_bounds.sync_handles();
                     draw_text_edit_border(context, &text_bounds, t.scale);
                 }
@@ -639,14 +721,27 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     });
                     let mut text_bounds =
                         text_action_bounds(context, *position, text, font, Some(available_width));
-                    text_bounds.rect.x = text_bounds.rect.x.clamp(
-                        0,
-                        (working_image.width() as i32 - text_bounds.rect.width).max(0),
-                    );
-                    text_bounds.rect.y = text_bounds.rect.y.clamp(
-                        0,
-                        (working_image.height() as i32 - text_bounds.rect.height).max(0),
-                    );
+                    if has_background {
+                        let (min_bx, min_by, max_bx, max_by) =
+                            t.canvas_bounds_in_image_coords();
+                        let min_ix = min_bx.round() as i32;
+                        let min_iy = min_by.round() as i32;
+                        let max_ix =
+                            (max_bx.round() as i32 - text_bounds.rect.width).max(min_ix);
+                        let max_iy =
+                            (max_by.round() as i32 - text_bounds.rect.height).max(min_iy);
+                        text_bounds.rect.x = text_bounds.rect.x.clamp(min_ix, max_ix);
+                        text_bounds.rect.y = text_bounds.rect.y.clamp(min_iy, max_iy);
+                    } else {
+                        text_bounds.rect.x = text_bounds.rect.x.clamp(
+                            0,
+                            (working_image.width() as i32 - text_bounds.rect.width).max(0),
+                        );
+                        text_bounds.rect.y = text_bounds.rect.y.clamp(
+                            0,
+                            (working_image.height() as i32 - text_bounds.rect.height).max(0),
+                        );
+                    }
                     text_bounds.sync_handles();
                     draw_text_edit_border(context, &text_bounds, t.scale);
                     draw_text_edit_handles(context, &text_bounds, None, t.scale);
@@ -744,14 +839,24 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
         // Draw active text edit overlay (border + handles)
         if let Some(bounds) = active_text_bounds.as_ref() {
             let mut bounds = bounds.clone();
-            bounds.rect.x = bounds
-                .rect
-                .x
-                .clamp(0, (working_image.width() as i32 - bounds.rect.width).max(0));
-            bounds.rect.y = bounds.rect.y.clamp(
-                0,
-                (working_image.height() as i32 - bounds.rect.height).max(0),
-            );
+            if has_background {
+                let (min_bx, min_by, max_bx, max_by) = t.canvas_bounds_in_image_coords();
+                let min_ix = min_bx.round() as i32;
+                let min_iy = min_by.round() as i32;
+                let max_ix = (max_bx.round() as i32 - bounds.rect.width).max(min_ix);
+                let max_iy = (max_by.round() as i32 - bounds.rect.height).max(min_iy);
+                bounds.rect.x = bounds.rect.x.clamp(min_ix, max_ix);
+                bounds.rect.y = bounds.rect.y.clamp(min_iy, max_iy);
+            } else {
+                bounds.rect.x = bounds
+                    .rect
+                    .x
+                    .clamp(0, (working_image.width() as i32 - bounds.rect.width).max(0));
+                bounds.rect.y = bounds.rect.y.clamp(
+                    0,
+                    (working_image.height() as i32 - bounds.rect.height).max(0),
+                );
+            }
             bounds.sync_handles();
             if let Some(input) = active_text_input.as_ref() {
                 let font = crate::capture::editor::types::FontSettings {
@@ -824,7 +929,6 @@ mod tests {
                 && production.contains("IMPORTANT: do not hold the state mutex while performing cairo drawing")
                 && production.contains("draw_canvas_checkerboard_background")
                 && production.contains("draw_annotation_action")
-                && production.contains("draw_crop_overlay")
                 && production.contains("draw_arrow_control_handles")
                 && production.contains("AnnotationAction::Obfuscate { .. } | AnnotationAction::Focus { .. }")
                 && production.contains("0.0")

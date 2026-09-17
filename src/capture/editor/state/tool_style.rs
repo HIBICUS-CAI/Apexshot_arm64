@@ -193,10 +193,10 @@ impl EditorState {
 
     /// Set the number the bar's stepper shows.
     ///
-    /// With a number marker selected this renumbers that marker and the following
-    /// same-style markers, so the run stays gap-free and duplicate-free. With no
-    /// marker selected it only re-seeds the next marker, which is what an armed
-    /// Number tool needs before the first click.
+    /// With a number marker selected this renumbers only that marker.
+    /// Followers keep their values so correcting one step never shifts the
+    /// rest of the run. With no marker selected it only re-seeds the next
+    /// marker, which is what an armed Number tool needs before the first click.
     pub fn set_active_number_start(&mut self, value: u32) -> bool {
         let value = value.max(1);
         let selected = self
@@ -210,7 +210,7 @@ impl EditorState {
                 }
             });
 
-        let Some((index, style)) = selected else {
+        let Some((index, _)) = selected else {
             let mut changed = false;
             if self.numbering_start != value {
                 self.numbering_start = value;
@@ -226,34 +226,21 @@ impl EditorState {
             return changed;
         };
 
-        let mut changed = false;
-        let mut next = value;
-        for action in self.actions.iter_mut().skip(index) {
-            if let AnnotationAction::Number {
-                number,
-                style: action_style,
-                ..
-            } = action
-            {
-                if *action_style != style {
-                    continue;
-                }
-                if *number != next {
-                    *number = next;
-                    changed = true;
-                }
-                next = next.saturating_add(1);
-            }
+        let current = match self.actions.get(index) {
+            Some(AnnotationAction::Number { number, .. }) => *number,
+            _ => return false,
+        };
+        if current == value {
+            return false;
         }
-        // The run after the selected marker was renumbered, so `next` is its max + 1.
-        if self.next_number != next {
-            self.next_number = next;
-            changed = true;
+        if let Some(AnnotationAction::Number { number, .. }) = self.actions.get_mut(index) {
+            *number = value;
         }
-        if changed {
-            self.redo_actions.clear();
-        }
-        changed
+        // Keep the next marker above the highest existing number so a later
+        // add never reuses (duplicates) the edited value.
+        self.sync_next_number();
+        self.redo_actions.clear();
+        true
     }
 
     pub fn current_focus_intensity(&self) -> f64 {

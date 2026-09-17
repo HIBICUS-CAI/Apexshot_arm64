@@ -1,10 +1,12 @@
 //! Floating number-tool bar: numbering style, marker number, marker size.
 //!
-//! One contextual bar instead of one bar per marker. It follows the selected
-//! number marker and docks under the top chrome while the Number tool is armed
-//! with nothing selected; clicking an existing marker with the Number tool
-//! re-selects it, which is how the bar comes back for an older marker. Mirrors
-//! the text and obfuscate floating bars owned by `window/mod.rs`.
+//! One contextual bar instead of one bar per marker. It stays docked in the
+//! chrome band above the canvas while the Number tool is armed (or while the
+//! Select tool holds a number marker), like the pen/arrow/shape/highlighter
+//! bars — never parked over the marker itself, so it cannot cover the drawing.
+//! Clicking an existing marker with the Number tool re-selects it, which is how
+//! the bar comes back for an older marker. Mirrors the docked bars owned by
+//! `window/mod.rs`.
 
 use std::sync::{Arc, Mutex};
 
@@ -15,18 +17,15 @@ use gtk4::{
 use crate::capture::editor::{
     numbering_style::{NumberSize, NumberingStyle},
     state::EditorState,
-    types::{AnnotationAction, Tool, ViewTransform},
+    types::{AnnotationAction, Tool},
     ui_support::DockedBarInset,
 };
 use crate::i18n::t;
 
 use super::floating_bar::{
-    build_option_row, build_pill, dock_position, dock_reserve, move_bar, popdown_for, queue_draw,
+    build_option_row, build_pill, dock_position, dock_reserve, popdown_for, queue_draw,
     set_bar_shown, set_dock_reserve, sync_option_selection, wire_option_rows, DockRefs,
 };
-
-/// Clearance between the marker's circle and the bar.
-const BAR_GAP: f64 = 10.0;
 
 const STYLE_ROW_CLASS: &str = "editor-number-style-option";
 const STYLE_ACTIVE_CLASS: &str = "editor-number-style-option-active";
@@ -128,14 +127,18 @@ pub(super) fn build_number_bar(
     }
 }
 
-/// Own the bar's visibility and placement: over the selected marker's circle, or
-/// docked in the chrome band above the canvas while the Number tool has nothing
-/// selected.
+/// Own the bar's visibility and keep it docked in the chrome band above the
+/// canvas, whether the Number tool is armed or a number marker is selected.
+///
+/// Like the pen/arrow/shape/highlighter bars it never anchors to the marker:
+/// anchoring parks the bar over the drawing it just made (covering the top of
+/// the image), while docking claims the reserved band so the image slides down
+/// and the bar sits clear of it (see [`super::floating_bar::dock_position`]).
 pub(super) fn install_number_bar_tick(
     bar: &NumberBar,
     drawing_area: &DrawingArea,
     state: &Arc<Mutex<EditorState>>,
-    transform: &Arc<Mutex<ViewTransform>>,
+    _transform: &Arc<Mutex<crate::capture::editor::types::ViewTransform>>,
     dock_refs: &DockRefs,
     inset: &DockedBarInset,
 ) {
@@ -146,29 +149,22 @@ pub(super) fn install_number_bar_tick(
     let size_list = bar.size_list.clone();
     let start_entry = bar.start_entry.clone();
     let state = state.clone();
-    let transform = transform.clone();
     let inset = inset.clone();
     let dock_refs = DockRefs {
         scroller: dock_refs.scroller.clone(),
         drawing_area: dock_refs.drawing_area.clone(),
     };
-    // Sticky max height (never underestimate, so the bar never covers the circle);
-    // last measured width, since a max would off-center a narrower bar.
     drawing_area.add_tick_callback(move |widget, _| {
-        let (show, marker, style, size, start_display) = {
+        let (show, has_marker, style, size, start_display) = {
             let st = state.lock().unwrap();
             let number_tool = st.selected_tool == Tool::Number;
-            let marker = match st.selected_action() {
-                Some(AnnotationAction::Number { position, size, .. })
-                    if number_tool || st.selected_tool == Tool::Select =>
-                {
-                    Some((*position, *size))
-                }
-                _ => None,
-            };
+            let has_marker = matches!(
+                st.selected_action(),
+                Some(AnnotationAction::Number { .. })
+            ) && (number_tool || st.selected_tool == Tool::Select);
             (
-                number_tool || marker.is_some(),
-                marker,
+                number_tool || has_marker,
+                has_marker,
                 st.active_numbering_style(),
                 st.active_number_size(),
                 st.active_number_start_display(),
@@ -189,40 +185,24 @@ pub(super) fn install_number_bar_tick(
         if start_entry.text().as_str() != start_display.as_str() {
             start_entry.set_text(&start_display);
         }
-        start_entry.set_tooltip_text(Some(&number_start_tooltip(marker.is_some())));
+        start_entry.set_tooltip_text(Some(&number_start_tooltip(has_marker)));
 
-        let view = *transform.lock().unwrap();
-        let area_w = widget.width() as f64;
-        let area_h = widget.height() as f64;
+        // Claim the band above the canvas; the layout moves the image down under
+        // it, so a press on the bar is never a press the image needed. The claim
+        // happens before the bar is measured so the image and the bar move in the
+        // same step, and the bar is only placed once GTK knows its size — placing
+        // it at 0 would park it half a bar off centre for a frame.
         // Live size, like every other docked bar: a remembered guess would reserve
         // more (or less) canvas than the bar actually needs.
         let (bar_w, bar_h) = (root.width() as f64, root.height() as f64);
-
-        let Some((position, marker_size)) = marker else {
-            // Armed but nothing selected: dock in the chrome band so style, start, and
-            // size can be set before the first marker is placed. Claiming the reserve
-            // moves the image down, so the bar never covers the top of it.
-            let (left, top) = dock_position(&dock_refs, bar_w);
-            move_bar(&root, left, top);
-            set_dock_reserve(&inset, "number", dock_reserve(bar_h), widget);
-            return glib::ControlFlow::Continue;
-        };
-
-        // Anchored to a marker: hand the reserved band back to the canvas.
-        set_dock_reserve(&inset, "number", 0.0, widget);
-
-        let x = position.x * view.scale + view.offset_x;
-        let y = position.y * view.scale + view.offset_y;
-        let radius = marker_size.radius() * view.scale;
-        let mut top = y - radius - bar_h - BAR_GAP;
-        if top < 0.0 {
-            top = y + radius + BAR_GAP;
+        set_dock_reserve(&inset, "number", dock_reserve(bar_h), widget);
+        let (left, top) = dock_position(&dock_refs, bar_w);
+        if (root.margin_start() as f64 - left).abs() >= 1.0
+            || (root.margin_top() as f64 - top).abs() >= 1.0
+        {
+            root.set_margin_start(left as i32);
+            root.set_margin_top(top as i32);
         }
-        if top + bar_h > area_h {
-            top = (area_h - bar_h).max(0.0);
-        }
-        let left = (x - bar_w / 2.0).max(0.0).min((area_w - bar_w).max(0.0));
-        move_bar(&root, left, top);
         glib::ControlFlow::Continue
     });
 }
@@ -272,15 +252,24 @@ mod tests {
     }
 
     #[test]
-    fn number_bar_is_single_and_follows_the_selected_marker() {
+    fn number_bar_is_single_and_stays_docked_above_the_canvas() {
         let source = production_source();
         assert!(
             source.contains("pub(super) fn build_number_bar(")
                 && source.contains("pub(super) fn install_number_bar_tick(")
                 && source.contains("st.selected_tool == Tool::Number")
-                && source.contains("Some(AnnotationAction::Number { position, size, .. })")
-                && source.contains("Tool::Select"),
-            "One bar should follow the selected marker (or dock while the Number tool is armed) instead of one bar per marker"
+                && source.contains("Some(AnnotationAction::Number { .. })")
+                && source.contains("Tool::Select")
+                && source.contains("dock_position(&dock_refs, bar_w)")
+                && source.contains("dock_reserve(bar_h)"),
+            "One bar should stay docked above the canvas (armed or with a marker selected) instead of anchoring over the drawing"
+        );
+        assert!(
+            !source.contains("BAR_GAP")
+                && !source.contains("view.offset_x")
+                && !source.contains("marker_size.radius()")
+                && !source.contains("position.x * view.scale"),
+            "A docked bar must not anchor to the marker circle, or it covers the drawing"
         );
     }
 

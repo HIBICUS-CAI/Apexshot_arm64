@@ -656,9 +656,7 @@ pub(super) fn wire_tool_options(
                 let mut st = state_color.lock().unwrap();
                 let has_active_text = st.active_text_input.is_some();
                 let mut switched_background = false;
-                if st.selected_tool == Tool::Crop {
-                    st.set_crop_background_color(DRAW_COLORS[index]);
-                } else if st.selected_tool == Tool::Background {
+                if st.selected_tool == Tool::Background {
                     st.background_style = BackgroundStyle::PlainColor(DRAW_COLORS[index]);
                     switched_background = true;
                 } else {
@@ -711,24 +709,22 @@ mod tests {
     #[test]
     fn tool_options_cover_weight_style_numbering_palette_and_size() {
         let source = include_str!("options.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            source.contains("st.set_pen_weight(weight)")
-                && source.contains("st.set_highlighter_mode(HighlighterMode::TextAware)")
-                && source.contains("st.set_highlighter_mode(HighlighterMode::Freehand)")
-                && source.contains("st.set_obfuscate_method(method)")
-                && source.contains("rebuild_effects_async_obfuscate_method()")
-                && source.contains("st.set_arrow_style(style)")
-                && source.contains("st.set_selected_arrow_style(style)")
-                && source.contains("st.set_stroke_size(size)")
-                && source.contains("st.inverse_arrow_direction = next")
-                && source.contains("st.reverse_selected_arrow_action()")
-                && source.contains("st.numbering_style = style")
-                && source.contains("st.numbering_start = st.numbering_start.saturating_add(1)")
-                && source.contains("st.number_size = size")
-                && source.contains("st.set_color_index(index)")
-                && source.contains("st.set_crop_background_color(DRAW_COLORS[index])")
-                && source.contains("BackgroundStyle::PlainColor(DRAW_COLORS[index])")
-                && source.contains("set_active_size_without_rebuild(value)"),
+            production.contains("st.set_pen_weight_and_apply(weight)")
+                && production.contains("st.set_highlighter_mode(HighlighterMode::TextAware)")
+                && production.contains("st.set_obfuscate_method(method)")
+                && production.contains("rebuild_effects_async_obfuscate_method()")
+                && production.contains("st.set_arrow_style(style)")
+                && production.contains("st.set_stroke_size(size)")
+                && production.contains("st.inverse_arrow_direction = next")
+                && production.contains("st.reverse_selected_arrow_action()")
+                && production.contains("set_numbering_style(style)")
+                && production.contains("set_number_size(size)")
+                && production.contains("st.set_color_index(index)")
+                && !production.contains("set_crop_background_color")
+                && production.contains("BackgroundStyle::PlainColor(DRAW_COLORS[index])")
+                && production.contains("set_active_size_without_rebuild(value)"),
             "tool options must retain weight, style, direction, numbering, palette, size, and obfuscate policies"
         );
     }

@@ -116,6 +116,7 @@ pub(super) fn sample_editor_color_at_point(
     sample_rendered_color_at_point(&rendered, image_point)
 }
 
+#[allow(dead_code)]
 pub(super) fn crop_canvas_overflow(
     crop_rect: Option<Rect>,
     image_width: f64,

@@ -31,6 +31,77 @@ fn draw_transformed_card(
         paint_card_shadow(context, stage, corners, appearance, transform.perspective);
     }
 
+    // Stack presets: flat backing sheets behind the card, offset up-left
+    // like stacked prints. Farthest sheet first.
+    {
+        let spec = appearance.frame_style.spec();
+        let backings: Vec<_> = [spec.backing1, spec.backing2]
+            .into_iter()
+            .flatten()
+            .collect();
+        if !backings.is_empty() {
+            let flat = transform.rotation_x.abs()
+                + transform.rotation_y.abs()
+                + transform.rotation_z.abs()
+                + transform.perspective
+                < 0.05;
+            let hw = img_w * fit * transform.scale / 2.0;
+            let hh = img_h * fit * transform.scale / 2.0;
+            let radius = (appearance.border_radius * fit).max(0.0);
+            for backing in backings {
+                let c = backing.color;
+                let a = (c.a * alpha).clamp(0.0, 1.0);
+                context.set_source_rgba(c.r, c.g, c.b, a);
+                if flat {
+                    let _ = context.save();
+                    if backing.center_pivot {
+                        context.translate(cx + backing.offset_x, cy + backing.offset_y);
+                        context.rotate(backing.rotation_deg.to_radians());
+                        context.translate(-hw, -hh);
+                    } else {
+                        context.translate(
+                            cx - hw + backing.offset_x + hw * 2.0,
+                            cy - hh + backing.offset_y + hh * 2.0,
+                        );
+                        context.rotate(backing.rotation_deg.to_radians());
+                        context.translate(-hw * 2.0, -hh * 2.0);
+                    }
+                    rounded_rectangle(context, 0.0, 0.0, hw * 2.0, hh * 2.0, radius);
+                    context.fill().ok();
+                    let _ = context.restore();
+                } else {
+                    // Center-pivot sheets fan about the quad centroid, the
+                    // rest about the hidden bottom-right corner.
+                    let (px, py) = if backing.center_pivot {
+                        (
+                            (corners[0].0 + corners[1].0 + corners[2].0 + corners[3].0) / 4.0,
+                            (corners[0].1 + corners[1].1 + corners[2].1 + corners[3].1) / 4.0,
+                        )
+                    } else {
+                        corners[2]
+                    };
+                    let theta = backing.rotation_deg.to_radians();
+                    let (sin, cos) = theta.sin_cos();
+                    let mut first = true;
+                    for corner in &corners {
+                        let rx = corner.0 - px;
+                        let ry = corner.1 - py;
+                        let qx = px + backing.offset_x + rx * cos - ry * sin;
+                        let qy = py + backing.offset_y + rx * sin + ry * cos;
+                        if first {
+                            context.move_to(qx, qy);
+                            first = false;
+                        } else {
+                            context.line_to(qx, qy);
+                        }
+                    }
+                    context.close_path();
+                    context.fill().ok();
+                }
+            }
+        }
+    }
+
     paint_perspective_card(
         context, surface, img_w, img_h, fit, transform, cx, cy, alpha, mesh_div, filter,
     );

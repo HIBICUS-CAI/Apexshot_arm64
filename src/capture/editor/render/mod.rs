@@ -312,6 +312,7 @@ fn draw_effect_draft_rect(context: &gtk4::cairo::Context, rect: Rect) {
     context.set_line_width(2.0);
     let _ = context.stroke();
 }
+#[allow(dead_code)]
 pub fn draw_crop_overlay(
     context: &gtk4::cairo::Context,
     _image_width: f64,

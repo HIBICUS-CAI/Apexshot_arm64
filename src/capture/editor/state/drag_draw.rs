@@ -95,7 +95,6 @@ impl EditorState {
 
         match self.selected_tool {
             Tool::Select => None,
-            Tool::Crop => None,
             Tool::Background => None,
             Tool::Pen => {
                 // Skip Douglas–Peucker simplification for the in-progress draft.
@@ -266,7 +265,6 @@ impl EditorState {
 
         let mut result = match self.selected_tool {
             Tool::Select => None,
-            Tool::Crop => None,
             Tool::Background => None,
             Tool::Pen => None,
             Tool::Highlighter => None,
@@ -420,11 +418,6 @@ impl EditorState {
                 translate_action(existing, dx, dy);
             }
             translate_action(action, dx, dy);
-
-            if let Some(crop) = self.crop_selection.as_mut() {
-                crop.x += expand_left as i32;
-                crop.y += expand_top as i32;
-            }
 
             if let Some(bounds) = self.active_text_bounds.as_mut() {
                 bounds.rect.x += expand_left as i32;

@@ -2,7 +2,6 @@ use super::super::composition::{BackgroundComposition, CompositionLayout};
 use super::super::pen_weight::{HighlighterMode, PenWeight};
 use super::super::render::{apply_blur_rect, cairo_argb_to_rgba_image, rgba_image_to_surface};
 use super::super::types::{AnnotationAction, BackgroundStyle, EditorError, Rect};
-use super::crop::crop_image;
 use super::EditorState;
 use image::RgbaImage;
 use std::path::Path;
@@ -34,6 +33,27 @@ impl EditorState {
             let context = gtk4::cairo::Context::new(&surface)
                 .map_err(|e| EditorError::ImageSave(e.to_string()))?;
 
+            if self.border_thickness > 0.0 {
+                let thickness = self.border_thickness.max(0.0);
+                if thickness > 0.01 {
+                    let inset = thickness / 2.0;
+                    context.set_source_rgba(
+                        self.border_color.r,
+                        self.border_color.g,
+                        self.border_color.b,
+                        self.border_color.a,
+                    );
+                    context.set_line_width(thickness);
+                    context.rectangle(
+                        inset,
+                        inset,
+                        (width as f64 - thickness).max(1.0),
+                        (height as f64 - thickness).max(1.0),
+                    );
+                    let _ = context.stroke();
+                }
+            }
+
             for action in &self.actions {
                 if matches!(
                     action,
@@ -59,17 +79,125 @@ impl EditorState {
     }
 
     pub fn to_final_image(&self) -> Result<RgbaImage, EditorError> {
-        let mut rendered = self.to_rendered_image()?;
-
-        if let Some(crop) = self.crop_selection {
-            rendered = crop_image(&rendered, crop, self.crop_background_color);
-        }
-
         if self.background_style != BackgroundStyle::None {
-            return self.render_with_background(&rendered);
+            // Annotations paint above the background/wallpaper in canvas space,
+            // so text/shapes placed on the padding stay visible instead of being
+            // baked into the screenshot underneath the wallpaper. Use the clean
+            // working image (effects only) for the card, then overlay vectors.
+            return self.render_with_background_and_annotations(&self.working_image);
         }
 
-        Ok(rendered)
+        self.to_rendered_image()
+    }
+
+    fn vector_annotation_actions(&self) -> impl Iterator<Item = &AnnotationAction> {
+        self.actions.iter().filter(|action| {
+            !matches!(
+                action,
+                AnnotationAction::Obfuscate { .. } | AnnotationAction::Focus { .. }
+            )
+        })
+    }
+
+    fn paint_vector_annotations_on_canvas(
+        &self,
+        canvas: RgbaImage,
+        layout: &CompositionLayout,
+    ) -> Result<RgbaImage, EditorError> {
+        let (width, height) = (canvas.width(), canvas.height());
+        if width == 0 || height == 0 {
+            return Ok(canvas);
+        }
+        let Some(mut surface) = rgba_image_to_surface(&canvas) else {
+            return Ok(canvas);
+        };
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+            // Frame preset: outside border around the image plus accent strokes.
+            {
+                let unit = layout.scale_factor * layout.draw_scale;
+                let base_radius =
+                    self.background_corner_radius * layout.scale_factor * layout.draw_scale;
+                let mut expand = 0.0;
+                let stroke_outside = |context: &gtk4::cairo::Context,
+                                          thickness: f64,
+                                          r: f64,
+                                          g: f64,
+                                          b: f64,
+                                          a: f64,
+                                          extra: f64| {
+                    let lw = (thickness * unit).max(0.0);
+                    if lw <= 0.01 {
+                        return extra;
+                    }
+                    let e = extra + lw / 2.0;
+                    context.set_source_rgba(r, g, b, a);
+                    context.set_line_width(lw);
+                    draw_rounded_rect_path(
+                        context,
+                        layout.image_rect.x - e,
+                        layout.image_rect.y - e,
+                        layout.image_rect.width + e * 2.0,
+                        layout.image_rect.height + e * 2.0,
+                        base_radius + e,
+                    );
+                    let _ = context.stroke();
+                    extra + lw
+                };
+                if self.border_thickness > 0.0 {
+                    expand = stroke_outside(
+                        &context,
+                        self.border_thickness,
+                        self.border_color.r,
+                        self.border_color.g,
+                        self.border_color.b,
+                        self.border_color.a,
+                        expand,
+                    );
+                }
+                let spec = self.frame_style.spec();
+                for outer in [spec.outer1, spec.outer2].into_iter().flatten() {
+                    expand += outer.gap * unit;
+                    expand = stroke_outside(
+                        &context,
+                        outer.thickness,
+                        outer.color.r,
+                        outer.color.g,
+                        outer.color.b,
+                        outer.color.a,
+                        expand,
+                    );
+                }
+            }
+            context.translate(layout.image_rect.x, layout.image_rect.y);
+            context.scale(layout.draw_scale, layout.draw_scale);
+            for action in self.vector_annotation_actions() {
+                super::super::render::draw_annotation_action(&context, action);
+            }
+        }
+        surface.flush();
+        let stride = gtk4::cairo::Format::ARgb32
+            .stride_for_width(width)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        let surface_data = surface
+            .data()
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        Ok(cairo_argb_to_rgba_image(
+            width,
+            height,
+            stride as usize,
+            surface_data.as_ref(),
+        ))
+    }
+
+    fn render_with_background_and_annotations(
+        &self,
+        clean_screenshot: &RgbaImage,
+    ) -> Result<RgbaImage, EditorError> {
+        let canvas = self.render_with_background(clean_screenshot)?;
+        let layout = self.background_layout_for(clean_screenshot);
+        self.paint_vector_annotations_on_canvas(canvas, &layout)
     }
 
     fn background_layout_for(&self, screenshot: &RgbaImage) -> CompositionLayout {
@@ -81,6 +209,8 @@ impl EditorState {
             .with_alignment(self.background_alignment)
             .with_corner_radius(self.background_corner_radius)
             .with_aspect_ratio(self.background_aspect_ratio)
+            .with_frame_style(self.frame_style)
+            .with_frame_border_thickness(self.border_thickness)
             .compute()
     }
 
@@ -165,6 +295,86 @@ impl EditorState {
             }
             BackgroundStyle::None => return Ok(screenshot.clone()),
         };
+
+        // Stack presets: flat backing sheets behind the card, offset up-left
+        // like stacked prints. Farthest sheet first, above the background but
+        // below the shadow and screenshot.
+        {
+            let spec = self.frame_style.spec();
+            let backings = [spec.backing1, spec.backing2];
+            if backings.iter().any(|b| b.is_some()) {
+                let radius = self.background_corner_radius
+                    * layout.scale_factor
+                    * layout.draw_scale;
+                if let Some(mut surface) = rgba_image_to_surface(&canvas) {
+                    {
+                        let context = gtk4::cairo::Context::new(&surface)
+                            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+                        for backing in backings.into_iter().flatten() {
+                            let _ = context.save();
+                            if backing.center_pivot {
+                                context.translate(
+                                    layout.image_rect.x + layout.image_rect.width / 2.0
+                                        + backing.offset_x,
+                                    layout.image_rect.y + layout.image_rect.height / 2.0
+                                        + backing.offset_y,
+                                );
+                                context.rotate(backing.rotation_deg.to_radians());
+                                context.translate(
+                                    -layout.image_rect.width / 2.0,
+                                    -layout.image_rect.height / 2.0,
+                                );
+                            } else {
+                                // Pivot at the hidden bottom-right corner so
+                                // the slant fans top-left (Stack2).
+                                context.translate(
+                                    layout.image_rect.x
+                                        + backing.offset_x
+                                        + layout.image_rect.width,
+                                    layout.image_rect.y
+                                        + backing.offset_y
+                                        + layout.image_rect.height,
+                                );
+                                context.rotate(backing.rotation_deg.to_radians());
+                                context.translate(
+                                    -layout.image_rect.width,
+                                    -layout.image_rect.height,
+                                );
+                            }
+                            draw_rounded_rect_path(
+                                &context,
+                                0.0,
+                                0.0,
+                                layout.image_rect.width,
+                                layout.image_rect.height,
+                                radius.max(0.0),
+                            );
+                            context.set_source_rgba(
+                                backing.color.r,
+                                backing.color.g,
+                                backing.color.b,
+                                backing.color.a,
+                            );
+                            let _ = context.fill();
+                            let _ = context.restore();
+                        }
+                    }
+                    surface.flush();
+                    let stride = gtk4::cairo::Format::ARgb32
+                        .stride_for_width(canvas.width())
+                        .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+                    let surface_data = surface
+                        .data()
+                        .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+                    canvas = cairo_argb_to_rgba_image(
+                        canvas.width(),
+                        canvas.height(),
+                        stride as usize,
+                        surface_data.as_ref(),
+                    );
+                }
+            }
+        }
 
         let mut final_screenshot = if (layout.draw_scale - 1.0).abs() > 0.001 {
             image::imageops::resize(

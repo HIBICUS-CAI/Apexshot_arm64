@@ -3,7 +3,6 @@
 //! Child modules own per-tool panel assembly. This facade keeps the stack,
 //! tabs, and sidebar action chrome and remains the only setup-facing entry.
 
-mod crop;
 mod number;
 mod obfuscate;
 mod select;
@@ -19,7 +18,6 @@ use super::background_panel::BACKGROUND_SIDEBAR_WIDTH;
 use super::icon_names;
 use crate::i18n::t;
 
-use crop::{build_crop_inspector, CropInspectorInputs};
 use number::{build_number_inspector, NumberInspectorInputs};
 use obfuscate::{build_obfuscate_inspector, ObfuscateInspectorInputs};
 use select::{build_select_inspector, SelectInspectorInputs};
@@ -50,9 +48,6 @@ pub(super) struct InspectorContentInputs<'a> {
     pub select_detail_label: &'a Label,
     pub select_geometry_label: &'a Label,
     pub select_hint_label: &'a Label,
-    pub crop_dimensions_group: &'a GtkBox,
-    pub crop_ratio_list: &'a GtkBox,
-    pub crop_actions_group: &'a GtkBox,
     pub pen_inspector_list: &'a GtkBox,
     pub arrow_style_list: &'a GtkBox,
     pub arrow_thickness_list: &'a GtkBox,
@@ -83,12 +78,6 @@ pub(super) fn build_tool_inspectors(input: InspectorContentInputs<'_>) -> Inspec
         select_detail_label: input.select_detail_label,
         select_geometry_label: input.select_geometry_label,
         select_hint_label: input.select_hint_label,
-    });
-
-    let crop_inspector = build_crop_inspector(CropInspectorInputs {
-        crop_dimensions_group: input.crop_dimensions_group,
-        crop_ratio_list: input.crop_ratio_list,
-        crop_actions_group: input.crop_actions_group,
     });
 
     let pen_inspector = build_pen_inspector(PenInspectorInputs {
@@ -188,7 +177,6 @@ pub(super) fn build_tool_inspectors(input: InspectorContentInputs<'_>) -> Inspec
     inspector_stack.set_hexpand(false);
     inspector_stack.set_vexpand(false);
     input.background_inspector.set_visible(true);
-    crop_inspector.set_visible(true);
     pen_inspector.set_visible(true);
     arrow_inspector.set_visible(true);
     line_inspector.set_visible(true);
@@ -201,7 +189,6 @@ pub(super) fn build_tool_inspectors(input: InspectorContentInputs<'_>) -> Inspec
     select_inspector.set_visible(true);
     inspector_stack.add_named(input.background_inspector, Some("background"));
     inspector_stack.add_named(&select_inspector, Some("select"));
-    inspector_stack.add_named(&crop_inspector, Some("crop"));
     inspector_stack.add_named(&pen_inspector, Some("pen"));
     inspector_stack.add_named(&arrow_inspector, Some("arrow"));
     inspector_stack.add_named(&line_inspector, Some("line"));
@@ -260,21 +247,17 @@ mod tests {
     fn inspector_children_own_tool_panel_builders() {
         let shell = include_str!("mod.rs");
         let select = include_str!("select.rs");
-        let crop = include_str!("crop.rs");
         let stroke = include_str!("stroke.rs");
         let number = include_str!("number.rs");
         assert!(
             shell.contains("mod select;")
-                && shell.contains("mod crop;")
                 && shell.contains("mod stroke;")
                 && shell.contains("mod number;")
                 && select.contains("fn build_select_inspector")
-                && crop.contains("fn build_crop_inspector")
                 && stroke.contains("fn build_arrow_inspector")
                 && stroke.contains("fn build_pen_inspector")
                 && number.contains("fn build_number_inspector")
-                && shell.contains("build_select_inspector(SelectInspectorInputs")
-                && shell.contains("build_crop_inspector(CropInspectorInputs"),
+                && shell.contains("build_select_inspector(SelectInspectorInputs"),
             "inspector shell should dispatch to family-owned panel builders"
         );
     }

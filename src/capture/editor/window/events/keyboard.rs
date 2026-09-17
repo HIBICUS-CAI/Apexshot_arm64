@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use crate::capture::editor::{
     state::EditorState,
     types::{tool_shortcut_target, Point, Tool},
-    ui_support::{set_active_tool_button, set_crop_apply_button_state},
+    ui_support::set_active_tool_button,
 };
 
 use super::super::cursor::set_window_cursor_name;
@@ -27,7 +27,6 @@ pub(super) fn wire_window_keyboard(
     state: &Arc<Mutex<EditorState>>,
     drawing_area: &DrawingArea,
     tool_buttons: &[Button],
-    apply_crop_btn: &Button,
     space_pan_active: &Rc<Cell<bool>>,
     space_pan_dragging: &Rc<Cell<bool>>,
     eyedropper_mode: &Rc<Cell<bool>>,
@@ -38,7 +37,6 @@ pub(super) fn wire_window_keyboard(
     apply_zoom_change: &Rc<dyn Fn(f64)>,
     zoom_popup: &GtkBox,
     update_toolbar_for_tool: &Rc<dyn Fn(Tool)>,
-    update_crop_size_fields: &Rc<dyn Fn()>,
     sync_picker_for_active_tool: &Rc<dyn Fn()>,
     sync_select_inspector: &Rc<dyn Fn()>,
 ) {
@@ -116,9 +114,7 @@ pub(super) fn wire_window_keyboard(
     let state_keys = state.clone();
     let drawing_area_keys = drawing_area.downgrade();
     let tool_buttons_keys = tool_buttons.clone();
-    let apply_crop_btn_keys = apply_crop_btn.clone();
     let update_toolbar_for_tool_keys = update_toolbar_for_tool.clone();
-    let update_crop_size_fields_keys = update_crop_size_fields.clone();
     let sync_picker_for_active_tool_keys = sync_picker_for_active_tool.clone();
     let sync_select_inspector_keys = sync_select_inspector.clone();
     let eyedropper_mode_keys = eyedropper_mode.clone();
@@ -253,23 +249,13 @@ pub(super) fn wire_window_keyboard(
         if !ctrl {
             if let Some((tool, active_button)) = pressed.and_then(tool_shortcut_target) {
                 set_active_tool_button(&tool_buttons_keys, active_button);
-                let has_crop_selection = {
+                {
                     let mut st = state_keys.lock().unwrap();
                     st.set_tool(tool);
-                    if matches!(tool, Tool::Crop) {
-                        st.ensure_crop_selection_initialized();
-                    }
-                    st.crop_selection.is_some()
                 };
                 update_toolbar_for_tool_keys(tool);
                 sync_select_inspector_keys();
                 sync_picker_for_active_tool_keys();
-                set_crop_apply_button_state(
-                    &apply_crop_btn_keys,
-                    matches!(tool, Tool::Crop),
-                    has_crop_selection,
-                );
-                update_crop_size_fields_keys();
                 if let Some(area) = drawing_area_keys.upgrade() {
                     area.queue_draw();
                 }

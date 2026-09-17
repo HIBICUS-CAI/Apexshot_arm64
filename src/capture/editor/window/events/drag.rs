@@ -1,12 +1,12 @@
 //! Canvas drag begin/update/end gesture family (PR 10.16).
 //!
 //! Owns the complete `GestureDrag` lifecycle on the drawing area: Space-pan,
-//! select/arrow/text/box/circle interaction, crop drag, freehand draw finalize,
+//! select/arrow/text/box/circle interaction, freehand draw finalize,
 //! redraw throttling, and effect-rebuild flags. Click/motion/keyboard stay in
 //! sibling modules.
 
 use gtk4::{
-    gdk, glib, prelude::*, ApplicationWindow, Button, DrawingArea, GestureDrag, ScrolledWindow,
+    gdk, glib, prelude::*, ApplicationWindow, DrawingArea, GestureDrag, ScrolledWindow,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -16,7 +16,6 @@ use crate::capture::editor::{
     color::DRAG_REDRAW_INTERVAL_US,
     state::EditorState,
     types::{ArrowStyle, Point, Tool, ViewTransform},
-    ui_support::set_crop_apply_button_state,
 };
 
 use super::super::cursor::set_window_cursor_name;
@@ -44,12 +43,10 @@ pub(super) fn wire_canvas_drag(
     transform: &Arc<Mutex<ViewTransform>>,
     drawing_area: &DrawingArea,
     canvas_scroller: &ScrolledWindow,
-    apply_crop_btn: &Button,
     space_pan_active: &Rc<Cell<bool>>,
     space_pan_dragging: &Rc<Cell<bool>>,
     space_pan_origin: &Rc<Cell<(f64, f64)>>,
     eyedropper_mode: &Rc<Cell<bool>>,
-    update_crop_size_fields: &Rc<dyn Fn()>,
     rebuild_effects_async: &Rc<dyn Fn()>,
     sync_size_control: &Rc<dyn Fn()>,
     sync_select_inspector: &Rc<dyn Fn()>,
@@ -69,8 +66,6 @@ pub(super) fn wire_canvas_drag(
     let space_pan_surface_origin_begin = space_pan_surface_origin.clone();
     let canvas_scroller_space_pan_begin = canvas_scroller.clone();
     let window_space_pan_begin = window.downgrade();
-    let apply_crop_btn_drag_begin = apply_crop_btn.clone();
-    let update_crop_size_fields_drag_begin = update_crop_size_fields.clone();
     let drag_start_transform_begin = drag_start_transform.clone();
     drag.connect_drag_begin(move |gesture, x, y| {
         if space_pan_active_drag_begin.get() {
@@ -95,11 +90,7 @@ pub(super) fn wire_canvas_drag(
         drag_start_transform_begin.borrow_mut().replace(t);
         let view_point = Point { x, y };
 
-        let selected_tool = {
-            let st = state_drag_begin.lock().unwrap();
-            st.selected_tool
-        };
-        if !t.contains_view(view_point) && selected_tool != Tool::Crop {
+        if !t.contains_view(view_point) {
             return;
         }
 
@@ -396,34 +387,6 @@ pub(super) fn wire_canvas_drag(
             return;
         }
 
-        if st.selected_tool == Tool::Crop {
-            let image_point = t.view_to_image(view_point);
-            st.drag_start_view = Some(view_point);
-            if st.begin_crop_drag_with_scale(image_point, t.scale) {
-                let has_selection = st.crop_selection.is_some();
-                drop(st);
-                set_crop_apply_button_state(&apply_crop_btn_drag_begin, true, has_selection);
-                update_crop_size_fields_drag_begin();
-                if let Some(area) = drawing_area_begin.upgrade() {
-                    area.queue_draw();
-                }
-                drag_last_redraw_begin.set(glib::monotonic_time());
-                return;
-            }
-
-            st.drag_shift_active = shift_pressed;
-            st.begin_drag(image_point);
-            st.crop_selection = None;
-            drop(st);
-            set_crop_apply_button_state(&apply_crop_btn_drag_begin, true, false);
-            update_crop_size_fields_drag_begin();
-            if let Some(area) = drawing_area_begin.upgrade() {
-                area.queue_draw();
-            }
-            drag_last_redraw_begin.set(glib::monotonic_time());
-            return;
-        }
-
         // Box/Circle/Obfuscate tool: unified interaction — resize, move, or draw new.
         if matches!(
             st.selected_tool,
@@ -584,7 +547,6 @@ pub(super) fn wire_canvas_drag(
     let space_pan_origin_update = space_pan_origin.clone();
     let space_pan_surface_origin_update = space_pan_surface_origin.clone();
     let canvas_scroller_space_pan_update = canvas_scroller.clone();
-    let update_crop_size_fields_drag_update = update_crop_size_fields.clone();
     let rebuild_effects_async_drag_update = rebuild_effects_async.clone();
     let drag_start_transform_update = drag_start_transform.clone();
     drag.connect_drag_update(move |gesture, offset_x, offset_y| {
@@ -704,28 +666,6 @@ pub(super) fn wire_canvas_drag(
                 return;
             }
 
-            if st.selected_tool == Tool::Crop {
-                let now = glib::monotonic_time();
-                if now - drag_last_redraw_update.get() < DRAG_REDRAW_INTERVAL_US {
-                    return;
-                }
-
-                let image_point = t.view_to_image(current_view);
-                if st.select_drag_anchor.is_some() {
-                    st.update_crop_drag(image_point);
-                } else {
-                    st.drag_shift_active = shift_pressed;
-                    st.update_drag(image_point);
-                }
-                drag_last_redraw_update.set(now);
-                drop(st);
-                update_crop_size_fields_drag_update();
-                if let Some(area) = drawing_area_update.upgrade() {
-                    area.queue_draw();
-                }
-                return;
-            }
-
             if !t.contains_view(current_view) {
                 return;
             }
@@ -752,12 +692,11 @@ pub(super) fn wire_canvas_drag(
     let space_pan_dragging_end = space_pan_dragging.clone();
     let space_pan_surface_origin_end = space_pan_surface_origin.clone();
     let window_space_pan_end = window.downgrade();
-    let apply_crop_btn_drag_end = apply_crop_btn.clone();
-    let update_crop_size_fields_drag_end = update_crop_size_fields.clone();
     let sync_size_control_drag_end = sync_size_control.clone();
     let sync_select_inspector_drag_end = sync_select_inspector.clone();
     let rebuild_effects_async_drag_end = rebuild_effects_async.clone();
     drag.connect_drag_end(move |gesture, offset_x, offset_y| {
+        let _ = gesture.current_event_state();
         if space_pan_dragging_end.replace(false) {
             space_pan_surface_origin_end.set(None);
             if let Some(window) = window_space_pan_end.upgrade() {
@@ -789,10 +728,6 @@ pub(super) fn wire_canvas_drag(
             }
             return;
         }
-
-        let shift_pressed = gesture
-            .current_event_state()
-            .contains(gdk::ModifierType::SHIFT_MASK);
 
         if let Some(start_view) = st.drag_start_view {
             let current_view = Point {
@@ -844,22 +779,7 @@ pub(super) fn wire_canvas_drag(
                 return;
             }
 
-            let mut crop_selection_ready = None;
-            if st.selected_tool == Tool::Crop {
-                let image_point = t.view_to_image(current_view);
-                if st.select_drag_anchor.is_some() {
-                    st.update_crop_drag(image_point);
-                    crop_selection_ready = Some(st.crop_selection.is_some());
-                    st.end_crop_drag();
-                } else {
-                    st.drag_shift_active = shift_pressed;
-                    st.update_drag(image_point);
-                    st.crop_selection = st.draft_crop_rect();
-                    crop_selection_ready = Some(st.crop_selection.is_some());
-                    st.clear_drag();
-                }
-                drop(st);
-            } else if let Some(action) = st.finalize_drag_action() {
+            if let Some(action) = st.finalize_drag_action() {
                 // Check if this action requires async effect rebuild
                 let needs_async_rebuild = EditorState::action_requires_effect_rebuild(&action);
                 st.push_action(action);
@@ -873,11 +793,6 @@ pub(super) fn wire_canvas_drag(
             }
 
             sync_size_control_drag_end();
-
-            if let Some(has_selection) = crop_selection_ready {
-                set_crop_apply_button_state(&apply_crop_btn_drag_end, true, has_selection);
-            }
-            update_crop_size_fields_drag_end();
 
             if let Some(area) = drawing_area_end.upgrade() {
                 area.queue_draw();

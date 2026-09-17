@@ -452,6 +452,7 @@ pub(super) fn sync_motion_appearance_to_static(
     state.background_blur = motion.background_blur;
     state.background_noise = motion.background_noise;
     state.background_corner_radius = motion.border_radius;
+    state.frame_style = motion.frame_style;
     state.border_thickness = motion.border_thickness;
     {
         let [r, g, b, a] = motion.border_fill_color;

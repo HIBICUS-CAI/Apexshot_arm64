@@ -1,4 +1,4 @@
-//! Canvas content sizing, zoom labels, crop overflow, and relayout suppression (PR 10.13).
+//! Canvas content sizing, zoom labels, and relayout suppression (PR 10.13).
 //!
 //! Owns `update_canvas_content_size` and the scroller tick that coalesces
 //! layout updates via a capped-overflow signature. Callers keep drawing-area
@@ -12,9 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use super::super::composition::BackgroundComposition;
 use super::super::state::EditorState;
-use super::super::types::{BackgroundAlignment, BackgroundStyle, Tool};
+use super::super::types::{BackgroundAlignment, BackgroundStyle};
 use super::super::ui_support::{DockedBarInset, EDITOR_TOP_CHROME_HEIGHT};
-use super::canvas;
 
 /// Rounded pixel inset the docked bars reserved, as the layout math wants integers.
 fn docked_bar_inset_px(inset: &DockedBarInset) -> i32 {
@@ -51,8 +50,8 @@ pub(super) fn install_canvas_layout(
                 background_insert,
                 background_aspect_ratio,
                 has_background,
-                crop_rect,
-                crop_mode_active,
+                frame_style,
+                frame_border_thickness,
             ) = {
                 let st = state.lock().unwrap();
                 (
@@ -63,8 +62,8 @@ pub(super) fn install_canvas_layout(
                     st.background_insert,
                     st.background_aspect_ratio,
                     st.background_style != BackgroundStyle::None,
-                    st.draft_crop_rect().or(st.crop_selection),
-                    st.selected_tool == Tool::Crop,
+                    st.frame_style,
+                    st.border_thickness,
                 )
             };
 
@@ -79,6 +78,8 @@ pub(super) fn install_canvas_layout(
                     .with_alignment(BackgroundAlignment::Center)
                     .with_corner_radius(18.0)
                     .with_aspect_ratio(background_aspect_ratio)
+                    .with_frame_style(frame_style)
+                    .with_frame_border_thickness(frame_border_thickness)
                     .compute();
                 virtual_w = layout.canvas_width;
                 virtual_h = layout.canvas_height;
@@ -109,17 +110,8 @@ pub(super) fn install_canvas_layout(
             let fitted_w = (virtual_w * scale).round().max(1.0) as i32;
             let fitted_h = (virtual_h * scale).round().max(1.0) as i32;
 
-            let (overflow_left, overflow_top, overflow_right, overflow_bottom) = if has_background {
-                (0.0, 0.0, 0.0, 0.0)
-            } else {
-                canvas::crop_canvas_overflow(
-                    crop_rect,
-                    image_w as f64,
-                    image_h as f64,
-                    scale,
-                    crop_mode_active,
-                )
-            };
+            let (overflow_left, overflow_top, overflow_right, overflow_bottom): (f64, f64, f64, f64) =
+                (0.0, 0.0, 0.0, 0.0);
 
             let canvas_w = fitted_w
                 + canvas_padding * 2
@@ -146,10 +138,6 @@ pub(super) fn install_canvas_layout(
         let state_canvas_tick = state.clone();
         let zoom_level_tick = zoom_level.clone();
         // Signature tracks the quantities that actually change the *visible* canvas size.
-        // Crucially, raw crop-rect coordinates are NOT included here.  Instead we compute
-        // the capped overflow bucket that crop_canvas_overflow() would return and store
-        // only that.  Because the function caps every side to 180 px, the bucket stays
-        // constant throughout an outside-image drag gesture — no relayout churn occurs.
         let last_canvas_signature = Rc::new(Cell::new([
             0_i32, // scroller width
             0_i32, // scroller height
@@ -159,7 +147,6 @@ pub(super) fn install_canvas_layout(
             0_i32, // overflow top  (px, capped)
             0_i32, // overflow right (px, capped)
             0_i32, // overflow bottom (px, capped)
-            0_i32, // crop mode active
             0_i32, // zoom percentage
             0_i32, // background enabled
             0_i32, // docked tool bar inset (px)
@@ -176,8 +163,6 @@ pub(super) fn install_canvas_layout(
                 let st = state_canvas_tick.lock().unwrap();
                 let img_w = st.working_image.width().max(1) as i32;
                 let img_h = st.working_image.height().max(1) as i32;
-                let crop_mode_active = st.selected_tool == Tool::Crop;
-                let crop_rect = st.draft_crop_rect().or(st.crop_selection);
                 let has_background = st.background_style != BackgroundStyle::None;
                 let background_padding = (st.background_padding * 10.0).round() as i32;
                 let background_insert = (st.background_insert * 10.0).round() as i32;
@@ -199,17 +184,7 @@ pub(super) fn install_canvas_layout(
                     .min(1.0_f64);
                 let _scale = layout_scale * zoom_level_tick.get().max(0.1_f64);
 
-                let (ol, ot, or_, ob) = if has_background {
-                    (0.0, 0.0, 0.0, 0.0)
-                } else {
-                    canvas::crop_canvas_overflow(
-                        crop_rect,
-                        img_w as f64,
-                        img_h as f64,
-                        layout_scale,
-                        crop_mode_active,
-                    )
-                };
+                let (ol, ot, or_, ob): (f64, f64, f64, f64) = (0.0, 0.0, 0.0, 0.0);
 
                 [
                     width,
@@ -220,7 +195,6 @@ pub(super) fn install_canvas_layout(
                     ot.round() as i32,
                     or_.round() as i32,
                     ob.round() as i32,
-                    if crop_mode_active { 1 } else { 0 },
                     zoom_percentage,
                     if has_background { 1 } else { 0 },
                     docked_bar_inset_px(&docked_inset),
@@ -247,13 +221,11 @@ mod tests {
         let source = include_str!("canvas_layout.rs");
         assert!(
             source.contains("BackgroundComposition::new(virtual_w, virtual_h)")
-                && source.contains("canvas::crop_canvas_overflow")
                 && source.contains("drawing_area.set_content_width(canvas_w)")
                 && source.contains("zoom_label.set_label(&percent_str)")
                 && source.contains("last_canvas_signature")
-                && source.contains("no relayout churn occurs")
                 && source.contains("fn install_canvas_layout"),
-            "canvas layout must size content, update zoom labels, and suppress crop-drag relayout churn"
+            "canvas layout must size content, update zoom labels, and coalesce layout updates"
         );
     }
 
