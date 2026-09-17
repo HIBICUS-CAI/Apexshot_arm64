@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use super::super::composition::BackgroundComposition;
 use super::super::state::EditorState;
-use super::super::types::{BackgroundAlignment, BackgroundStyle};
+use super::super::types::{BackgroundAlignment, BackgroundStyle, frame_needs_canvas};
 use super::super::ui_support::{DockedBarInset, EDITOR_TOP_CHROME_HEIGHT};
 
 /// Rounded pixel inset the docked bars reserved, as the layout math wants integers.
@@ -70,7 +70,9 @@ pub(super) fn install_canvas_layout(
             let mut virtual_w = image_w as f64;
             let mut virtual_h = image_h as f64;
 
-            if has_background {
+            if has_background
+                || frame_needs_canvas(frame_style, frame_border_thickness)
+            {
                 let layout = BackgroundComposition::new(virtual_w, virtual_h)
                     .with_style(background_style)
                     .with_padding(background_padding)

@@ -179,20 +179,262 @@ fn final_image_draws_border_on_top_of_wallpaper_background() {
     );
 }
 
+fn retro_backing_is_solid_down_right(backing: &crate::capture::editor::types::FrameBacking) -> bool {
+    backing.offset_x > 0.0
+        && backing.offset_y > 0.0
+        && backing.rotation_deg.abs() < f64::EPSILON
+        && backing.color == DrawColor::new(0.0, 0.0, 0.0, 1.0)
+}
+
+#[test]
+fn retro_draws_thin_border_with_solid_window_behind_card() {
+    let image = RgbaImage::from_pixel(400, 400, image::Rgba([100, 100, 100, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::PlainColor(DrawColor::new(1.0, 0.0, 0.0, 1.0));
+    state.background_padding = 80.0;
+    state.background_shadow = 0.0;
+    state.background_corner_radius = 0.0;
+    state.background_insert = 0.0;
+    let spec = FrameStyle::Retro.spec();
+    state.frame_style = FrameStyle::Retro;
+    state.border_thickness = spec.border_thickness;
+    state.border_color = spec.border_color;
+
+    let final_image = state.to_final_image().expect("final image");
+    let (w, h) = (final_image.width(), final_image.height());
+    let x = w / 2;
+    let is_gray = |px: &image::Rgba<u8>| px[0] == 100 && px[1] == 100 && px[2] == 100;
+    let is_black = |px: &image::Rgba<u8>| px[0] == 0 && px[1] == 0 && px[2] == 0;
+    let is_dark = |px: &image::Rgba<u8>| px[0].max(px[1]).max(px[2]) < 160;
+    let is_red = |px: &image::Rgba<u8>| px[0] == 255 && px[1] == 0 && px[2] == 0;
+    let is_reddish = |px: &image::Rgba<u8>| px[0] > 150 && px[1] < 150 && px[2] < 150;
+    let first_gray = (0..h)
+        .find(|y| is_gray(final_image.get_pixel(x, *y)))
+        .expect("card top");
+    let last_gray = (0..h)
+        .rev()
+        .find(|y| is_gray(final_image.get_pixel(x, *y)))
+        .expect("card bottom");
+    // Thin border directly around the card (fractional layout anti-aliases
+    // the edge, so accept any dark pixel here).
+    assert!(
+        is_dark(final_image.get_pixel(x, first_gray - 1)),
+        "expected thin top border above card, got {:?}",
+        final_image.get_pixel(x, first_gray - 1)
+    );
+    assert!(
+        is_dark(final_image.get_pixel(x, last_gray + 1)),
+        "expected thin bottom border below card, got {:?}",
+        final_image.get_pixel(x, last_gray + 1)
+    );
+    // Offset window peeks well below the card but not above it: the hard
+    // shadow only extends down-right.
+    assert!(
+        is_black(final_image.get_pixel(x, last_gray + 10)),
+        "expected retro window peeking below card"
+    );
+    assert!(
+        is_reddish(final_image.get_pixel(x, first_gray - 6)),
+        "retro window must not peek above card, got {:?}",
+        final_image.get_pixel(x, first_gray - 6)
+    );
+    // Spot-check the backdrop itself.
+    assert!(is_red(final_image.get_pixel(2, 2)));
+}
+
+#[test]
+fn retro_window_renders_without_background_and_follows_radius() {
+    let image = RgbaImage::from_pixel(400, 400, image::Rgba([100, 100, 100, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::None;
+    state.background_corner_radius = 24.0;
+    let spec = FrameStyle::Retro.spec();
+    state.frame_style = FrameStyle::Retro;
+    state.border_thickness = spec.border_thickness;
+    state.border_color = spec.border_color;
+
+    let final_image = state.to_final_image().expect("final image");
+    // Canvas grows to hold the thin border plus the offset window.
+    assert!(
+        final_image.width() > 400 && final_image.height() > 400,
+        "expected grown canvas, got {}x{}",
+        final_image.width(),
+        final_image.height()
+    );
+    let (w, h) = (final_image.width(), final_image.height());
+    let is_black = |px: &image::Rgba<u8>| px[0] == 0 && px[1] == 0 && px[2] == 0;
+    // The window peeks along the right/bottom edges but not top-left.
+    assert!(
+        is_black(final_image.get_pixel(w - 2, h / 2)),
+        "expected retro window along right edge, got {:?}",
+        final_image.get_pixel(w - 2, h / 2)
+    );
+    assert!(
+        final_image.get_pixel(2, 2)[3] < 128,
+        "retro window must not peek top-left, got {:?}",
+        final_image.get_pixel(2, 2)
+    );
+    // Border radius rounds the card: the extreme corner lets the surround
+    // through while the inside of the arc stays image.
+    let corner = *final_image.get_pixel(5, 5);
+    assert!(
+        corner[3] < 128,
+        "expected rounded card corner to show transparency, got {:?}",
+        corner
+    );
+    let inside = *final_image.get_pixel(30, 30);
+    assert_eq!(
+        inside,
+        image::Rgba([100, 100, 100, 255]),
+        "expected image inside the rounded corner, got {:?}",
+        inside
+    );
+}
+
+#[test]
+fn retro_border_stays_sharp_when_radius_is_zero() {
+    let image = RgbaImage::from_pixel(400, 400, image::Rgba([100, 100, 100, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::None;
+    state.background_corner_radius = 0.0;
+    let spec = FrameStyle::Retro.spec();
+    state.frame_style = FrameStyle::Retro;
+    state.border_thickness = spec.border_thickness;
+    state.border_color = spec.border_color;
+
+    let final_image = state.to_final_image().expect("final image");
+    // Mitered frame: the extreme outer corner is border, not a rounded cutout.
+    let corner = *final_image.get_pixel(1, 1);
+    assert_eq!(
+        corner,
+        image::Rgba([0, 0, 0, 255]),
+        "expected sharp black frame corner at radius 0, got {:?}",
+        corner
+    );
+    // Card itself stays square too.
+    assert_eq!(
+        *final_image.get_pixel(30, 30),
+        image::Rgba([100, 100, 100, 255])
+    );
+}
+
+#[test]
+fn inset_border_paints_inside_the_card_edge() {
+    let image = RgbaImage::from_pixel(400, 400, image::Rgba([100, 100, 100, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::PlainColor(DrawColor::new(1.0, 0.0, 0.0, 1.0));
+    state.background_padding = 80.0;
+    state.background_shadow = 0.0;
+    state.background_corner_radius = 0.0;
+    state.background_insert = 0.0;
+    for style in [FrameStyle::InsetLight, FrameStyle::InsetDark] {
+        let spec = style.spec();
+        assert!((spec.border_thickness - 3.0).abs() < f64::EPSILON);
+        assert!(spec.inset_border);
+        state.frame_style = style;
+        state.border_thickness = spec.border_thickness;
+        state.border_color = spec.border_color;
+
+        let final_image = state.to_final_image().expect("final image");
+        // No outside frame: canvas stays image + padding, edge pixel is backdrop.
+        assert_eq!(final_image.width(), 560);
+        assert_eq!(
+            *final_image.get_pixel(280, 79),
+            image::Rgba([255, 0, 0, 255]),
+            "inset must not paint outside the card for {:?}",
+            style
+        );
+        // Just inside the edge the inset line shows.
+        let edge = *final_image.get_pixel(280, 81);
+        // Deep inside stays image.
+        let inner = *final_image.get_pixel(280, 90);
+        assert_eq!(inner, image::Rgba([100, 100, 100, 255]));
+        match style {
+            FrameStyle::InsetLight => assert!(
+                edge[0] > 200 && edge[1] > 200 && edge[2] > 200,
+                "expected light inset line, got {:?}",
+                edge
+            ),
+            _ => assert!(
+                edge[0] < 60 && edge[1] < 60 && edge[2] < 60,
+                "expected dark inset line, got {:?}",
+                edge
+            ),
+        }
+    }
+}
+
 #[test]
 fn frame_style_presets_resolve_to_distinct_outside_borders() {
     assert_eq!(FrameStyle::ALL.len(), 12);
     assert_eq!(FrameStyle::Default.spec().border_thickness, 0.0);
-    assert!(FrameStyle::Border.spec().border_thickness > FrameStyle::Outline.spec().border_thickness);
+    for style in [FrameStyle::Border, FrameStyle::Retro] {
+        assert!(
+            (style.spec().border_thickness - 3.0).abs() < f64::EPSILON,
+            "{:?} should share the thin 3px frame",
+            style
+        );
+    }
+    // Outline is a floating hairline: no color frame on the card, a gray
+    // ring held off the image by a background gap.
+    let outline = FrameStyle::Outline.spec();
+    assert!((outline.border_thickness - 0.0).abs() < f64::EPSILON);
+    let ring = outline.outer1.expect("outline floating ring");
+    assert!((ring.thickness - 1.0).abs() < f64::EPSILON);
+    assert!((ring.gap - 2.0).abs() < f64::EPSILON);
+    assert_eq!(ring.color, DrawColor::new(0.7, 0.7, 0.7, 1.0));
+    assert!(outline.outer2.is_none());
+    assert!(outline.backing1.is_none() && outline.backing2.is_none());
     assert!(FrameStyle::Card.spec().backing1.is_some());
     assert!(FrameStyle::Card.spec().backing2.is_none());
     assert!(FrameStyle::Stack.spec().backing1.is_some());
     assert!(FrameStyle::Stack.spec().backing2.is_none());
     assert!(FrameStyle::Stack2.spec().backing1.is_some());
     assert!(FrameStyle::Stack2.spec().backing2.is_some());
-    assert!(FrameStyle::Retro.spec().outer1.is_some());
+    let retro = FrameStyle::Retro.spec();
+    assert!(retro.outer1.is_none());
+    assert!(retro.outer2.is_none());
+    assert!((retro.border_thickness - 3.0).abs() < f64::EPSILON);
+    let retro_back = retro.backing1.expect("retro hard shadow behind card");
+    assert!(retro_backing_is_solid_down_right(&retro_back));
+    assert!(retro.backing2.is_none());
     assert_eq!(FrameStyle::Default.label(), "Default");
     assert_eq!(FrameStyle::Stack2.label(), "Stack 2");
+}
+
+#[test]
+fn outline_floats_a_hairline_off_the_card_with_a_gap() {
+    let image = RgbaImage::from_pixel(400, 400, image::Rgba([100, 100, 100, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::PlainColor(DrawColor::new(1.0, 0.0, 0.0, 1.0));
+    state.background_padding = 80.0;
+    state.background_shadow = 0.0;
+    state.background_corner_radius = 0.0;
+    state.background_insert = 0.0;
+    let spec = FrameStyle::Outline.spec();
+    state.frame_style = FrameStyle::Outline;
+    state.border_thickness = spec.border_thickness;
+    state.border_color = spec.border_color;
+
+    let final_image = state.to_final_image().expect("final image");
+    // Card lands at (80, 80): 1px ring covering y=77, background gap at y=79.
+    let ring = *final_image.get_pixel(280, 77);
+    assert!(
+        (ring[0] as i32 - 178).abs() < 4
+            && (ring[0] as i32 - ring[1] as i32).abs() < 4
+            && (ring[0] as i32 - ring[2] as i32).abs() < 4,
+        "expected gray hairline ring, got {:?}",
+        ring
+    );
+    assert_eq!(
+        *final_image.get_pixel(280, 79),
+        image::Rgba([255, 0, 0, 255]),
+        "expected background gap between ring and card"
+    );
+    assert_eq!(
+        *final_image.get_pixel(280, 81),
+        image::Rgba([100, 100, 100, 255])
+    );
 }
 
 #[test]
@@ -299,4 +541,202 @@ fn stack2_preset_draws_two_backing_sheets_like_stacked_prints() {
     );
     // Card itself stays intact and borderless.
     assert_eq!(*final_image.get_pixel(140, 100), image::Rgba([100, 100, 100, 255]));
+}
+
+#[test]
+fn liquid_glass_lights_the_band_from_the_top_and_stays_translucent() {
+    // A red backdrop proves both halves of the look at once: the glass stays
+    // clear (red reads through it) while the light pools along the top edge
+    // (band and rim brighter at the top than at the bottom).
+    let image = RgbaImage::from_pixel(400, 400, image::Rgba([100, 100, 100, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::PlainColor(DrawColor::new(1.0, 0.0, 0.0, 1.0));
+    state.background_padding = 80.0;
+    state.background_shadow = 0.0;
+    state.background_corner_radius = 0.0;
+    state.background_insert = 0.0;
+    let spec = FrameStyle::Liquid.spec();
+    assert!(spec.liquid, "Liquid must opt into the glass renderer");
+    assert!(spec.inset_border == false);
+    let rim = spec.outer1.expect("liquid specular rim");
+    state.frame_style = FrameStyle::Liquid;
+    state.border_thickness = spec.border_thickness;
+    state.border_color = spec.border_color;
+
+    let frame = state.to_final_image().expect("final image");
+    let luma = |px: &image::Rgba<u8>| {
+        0.2126 * f64::from(px[0]) + 0.7152 * f64::from(px[1]) + 0.0722 * f64::from(px[2])
+    };
+    // Card lands at (80, 80)-(480, 480): padding 80 at scale 1.0. The 3px
+    // glass edge sits just outside it: the 2px band spans y=78..80 above
+    // the card (480..482 below) and the 1px rim y=77..78 (482..483 below).
+    let top_band = *frame.get_pixel(280, 79);
+    let bottom_band = *frame.get_pixel(280, 481);
+    let brightest = |range: std::ops::Range<u32>| {
+        range
+            .map(|y| frame.get_pixel(280, y)[1])
+            .max()
+            .expect("non-empty range")
+    };
+    // Red saturates the red channel, so the highlight is measured on green:
+    // full-strength white over red leaves ~229, the faded bottom ~127.
+    let top_rim = brightest(76..79);
+    let bottom_rim = brightest(482..485);
+
+    assert!(
+        luma(&top_band) > luma(&bottom_band) + 6.0,
+        "top of the band should be lit brighter than the bottom: {top_band:?} vs {bottom_band:?}"
+    );
+    assert!(
+        i32::from(top_rim) > i32::from(bottom_rim) + 40,
+        "specular rim should fade from the top of the card to the bottom: \
+         {top_rim:?} vs {bottom_rim:?}"
+    );
+    // Clear glass: the red backdrop still dominates the band, so it must not
+    // read as an opaque white frame (the flat look this preset replaced).
+    assert!(
+        bottom_band[0] > 200 && bottom_band[1] < 90 && bottom_band[2] < 90,
+        "band should stay translucent over the backdrop, got {bottom_band:?}"
+    );
+    assert!(
+        (rim.thickness - 1.0).abs() < f64::EPSILON
+            && (spec.border_thickness - 2.0).abs() < f64::EPSILON,
+        "liquid glass should stay a 3px edge: 2px body plus 1px rim"
+    );
+}
+
+#[test]
+fn glass_frost_siblings_share_the_3px_edge_with_opposite_tints() {
+    // Mid-gray backdrop and a darker card: mid-band below the card samples
+    // the backdrop (lip strokes peak at the lips, not mid-band), so the
+    // milky/smoked body shade separates the two siblings while the shared
+    // rim recipe keeps both edges defined.
+    let luma = |px: &image::Rgba<u8>| {
+        0.2126 * f64::from(px[0]) + 0.7152 * f64::from(px[1]) + 0.0722 * f64::from(px[2])
+    };
+    let mut band_luma = [0.0; 2];
+    for (index, style) in [FrameStyle::GlassLight, FrameStyle::GlassDark]
+        .into_iter()
+        .enumerate()
+    {
+        let spec = style.spec();
+        assert!(spec.liquid, "{style:?} must use the glass renderer");
+        assert!(spec.frost, "{style:?} must use the wide frost band");
+        let rim = spec.outer1.expect("glass specular rim");
+        assert!(
+            (rim.thickness - 1.0).abs() < f64::EPSILON
+                && (spec.border_thickness - 2.0).abs() < f64::EPSILON,
+            "{style:?} should stay a 3px frost edge: 2px body plus 1px rim"
+        );
+        let image = RgbaImage::from_pixel(400, 400, image::Rgba([60, 60, 60, 255]));
+        let mut state = EditorState::new(image);
+        state.background_style =
+            BackgroundStyle::PlainColor(DrawColor::new(0.5, 0.5, 0.5, 1.0));
+        state.background_padding = 80.0;
+        state.background_shadow = 0.0;
+        state.background_corner_radius = 0.0;
+        state.background_insert = 0.0;
+        state.frame_style = style;
+        state.border_thickness = spec.border_thickness;
+        state.border_color = spec.border_color;
+        let frame = state.to_final_image().expect("final image");
+        // Card lands at (80, 80)-(480, 480); the 2px band below it spans
+        // y=480..482 over the gray backdrop.
+        band_luma[index] = luma(frame.get_pixel(280, 481));
+    }
+    assert!(
+        band_luma[0] > band_luma[1] + 25.0,
+        "Glass Light frost should read milky over smoked Glass Dark: {:?}",
+        band_luma
+    );
+}
+
+#[test]
+fn dump_liquid_glass_preview() {
+    let image = RgbaImage::from_pixel(1373, 882, image::Rgba([150, 160, 175, 255]));
+    let spec = FrameStyle::Liquid.spec();
+    let cases: [(&str, BackgroundStyle); 3] = [
+        (
+            "purple",
+            BackgroundStyle::Gradient(7),
+        ),
+        (
+            "wallpaper",
+            BackgroundStyle::Wallpaper(
+                crate::capture::editor::window::background_panel::background_gradient_asset_path(
+                    "wallpaper-001.jpg",
+                ),
+            ),
+        ),
+        (
+            "black",
+            BackgroundStyle::PlainColor(DrawColor::new(0.05, 0.05, 0.06, 1.0)),
+        ),
+    ];
+    for (name, style) in cases {
+        let mut state = EditorState::new(image.clone());
+        state.background_style = style;
+        state.background_padding = 60.0;
+        state.background_shadow = 20.0;
+        state.background_corner_radius = 20.0;
+        state.frame_style = FrameStyle::Liquid;
+        state.border_thickness = spec.border_thickness;
+        state.border_color = spec.border_color;
+        let out = state.to_final_image().expect("final image");
+        image::save_buffer(
+            format!("/tmp/glass-{name}.png"),
+            &out,
+            out.width(),
+            out.height(),
+            image::ColorType::Rgba8,
+        )
+        .expect("save");
+    }
+
+    // Tinted siblings on black: Glass Light should glow whitish, Glass Dark
+    // should deepen while keeping its edge light.
+    for (name, style) in [
+        ("light-black", FrameStyle::GlassLight),
+        ("dark-black", FrameStyle::GlassDark),
+    ] {
+        let spec = style.spec();
+        let mut state = EditorState::new(image.clone());
+        state.background_style =
+            BackgroundStyle::PlainColor(DrawColor::new(0.05, 0.05, 0.06, 1.0));
+        state.background_padding = 60.0;
+        state.background_shadow = 20.0;
+        state.background_corner_radius = 20.0;
+        state.frame_style = style;
+        state.border_thickness = spec.border_thickness;
+        state.border_color = spec.border_color;
+        let out = state.to_final_image().expect("final image");
+        image::save_buffer(
+            format!("/tmp/glass-{name}.png"),
+            &out,
+            out.width(),
+            out.height(),
+            image::ColorType::Rgba8,
+        )
+        .expect("save");
+    }
+
+    // Transparent canvas: only the glass highlights should survive.
+    let mut state = EditorState::new(image.clone());
+    state.background_style = BackgroundStyle::None;
+    state.background_corner_radius = 20.0;
+    state.frame_style = FrameStyle::Liquid;
+    state.border_thickness = spec.border_thickness;
+    state.border_color = spec.border_color;
+    let out = state.to_final_image().expect("final image");
+    let mut flat =
+        image::RgbaImage::from_pixel(out.width(), out.height(), image::Rgba([0, 0, 0, 255]));
+    image::imageops::overlay(&mut flat, &out, 0, 0);
+    image::save_buffer(
+        "/tmp/glass-transparent.png",
+        &flat,
+        flat.width(),
+        flat.height(),
+        image::ColorType::Rgba8,
+    )
+    .expect("save");
 }

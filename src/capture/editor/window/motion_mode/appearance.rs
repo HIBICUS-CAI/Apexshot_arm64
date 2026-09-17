@@ -17,6 +17,7 @@ use crate::recording::editor::model::{
     MotionSceneShadowPreset,
 };
 use crate::capture::editor::types::FrameStyle;
+use crate::recording::editor::window::tool_sidebar::FillSlider;
 
 use super::widgets::{
     motion_appearance_slider, motion_color_control, motion_gradient_color_control, motion_rgba,
@@ -152,9 +153,8 @@ fn frame_style_preset_area(style: FrameStyle) -> DrawingArea {
     area.set_draw_func(move |_, cr, width, height| {
         let w = f64::from(width);
         let h = f64::from(height);
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.10);
-        motion_thumbnail_rounded_rectangle(cr, 0.5, 0.5, w - 1.0, h - 1.0, 8.0);
-        cr.fill().ok();
+        // No tile backdrop: the chromeless button shows the panel behind the
+        // preview, so the style swatch itself is the tile.
         let spec = style.spec();
         let card_w = 34.0;
         let card_h = 22.0;
@@ -191,6 +191,25 @@ fn frame_style_preset_area(style: FrameStyle) -> DrawingArea {
         cr.set_source_rgba(0.82, 0.82, 0.84, 1.0);
         motion_thumbnail_rounded_rectangle(cr, card_x, card_y, card_w, card_h, card_r);
         cr.fill().ok();
+        // Glass presets: same band + rim recipe as the renderers, scaled
+        // down to the tile.
+        if let Some(liquid) = crate::capture::editor::render::LiquidFrame::resolve(
+            &spec,
+            spec.border_thickness,
+            0.45,
+        ) {
+            let path = |path_context: &gtk4::cairo::Context, expand: f64| {
+                crate::capture::editor::render::rounded_rect_path(
+                    path_context,
+                    card_x - expand,
+                    card_y - expand,
+                    card_w + expand * 2.0,
+                    card_h + expand * 2.0,
+                    if card_r <= 0.0 { 0.0 } else { card_r + expand },
+                );
+            };
+            liquid.paint(cr, card_y, card_y + card_h, path);
+        }
         let mut expand = 0.0;
         let draw_stroke = |thickness: f64, r: f64, g: f64, b: f64, a: f64, extra: f64| {
             let t = (thickness * 0.32).max(1.0);
@@ -208,11 +227,30 @@ fn frame_style_preset_area(style: FrameStyle) -> DrawingArea {
             cr.stroke().ok();
             e + t / 2.0
         };
-        if spec.border_thickness > 0.0 {
+        if !spec.liquid && spec.border_thickness > 0.0 && !spec.inset_border {
             let c = spec.border_color;
             expand = draw_stroke(spec.border_thickness, c.r, c.g, c.b, c.a, expand);
         }
-        for outer in [spec.outer1, spec.outer2].into_iter().flatten() {
+        if !spec.liquid && spec.inset_border && spec.border_thickness > 0.0 {
+            let t = (spec.border_thickness * 0.32).max(1.0);
+            let c = spec.border_color;
+            cr.set_source_rgba(c.r, c.g, c.b, c.a);
+            cr.set_line_width(t);
+            motion_thumbnail_rounded_rectangle(
+                cr,
+                card_x + t / 2.0,
+                card_y + t / 2.0,
+                (card_w - t).max(1.0),
+                (card_h - t).max(1.0),
+                (card_r - t / 2.0).max(0.0),
+            );
+            cr.stroke().ok();
+        }
+        for outer in [spec.outer1, spec.outer2]
+            .into_iter()
+            .flatten()
+            .filter(|_| !spec.liquid)
+        {
             expand += outer.gap * 0.32;
             let c = outer.color;
             expand = draw_stroke(outer.thickness, c.r, c.g, c.b, c.a, expand);
@@ -682,8 +720,13 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     style_grid.set_halign(Align::Fill);
     let style_buttons: Rc<RefCell<Vec<(FrameStyle, Button)>>> =
         Rc::new(RefCell::new(Vec::new()));
+    // Late-bound handle so picking Liquid can also lift a sharp-corner card
+    // onto a radius the glass highlights can play on (filled in below, after
+    // the radius slider exists).
+    let radius_slider_slot: Rc<RefCell<Option<FillSlider>>> = Rc::new(RefCell::new(None));
     {
         let style_buttons = style_buttons.clone();
+        let radius_slider_slot = radius_slider_slot.clone();
         for (index, style) in FrameStyle::ALL.iter().enumerate() {
             let style = *style;
             let cell = GtkBox::new(Orientation::Vertical, 4);
@@ -691,9 +734,8 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             cell.set_halign(Align::Center);
             let button = Button::new();
             button.set_has_frame(false);
-            button.set_size_request(56, 52);
-            button.add_css_class("editor-background-gradient-button");
-            button.add_css_class("editor-background-preview-size-regular");
+            button.set_size_request(56, 44);
+            button.add_css_class("editor-frame-style-tile");
             button.set_tooltip_text(Some(&t(style.label())));
             button.set_child(Some(&frame_style_preset_area(style)));
             if style == initial_frame_style {
@@ -704,8 +746,16 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
                 let runtime = session.runtime.clone();
                 let preview = preview.clone();
                 let style_buttons = style_buttons.clone();
+                let radius_slider_slot = radius_slider_slot.clone();
                 move |_| {
-                    {
+                    // Glass needs corners to catch the light: a sharp-corner
+                    // card collapses the edge into flat hairlines (and the
+                    // wide frost looks blunt). Lift a ~sharp card onto a
+                    // glass-friendly radius; an explicit user radius is left
+                    // alone. The slider sync must run AFTER the borrow below
+                    // is released: set_value fires the radius listener
+                    // synchronously, which borrows the same runtime.
+                    let bump_radius = {
                         let mut runtime = runtime.borrow_mut();
                         runtime.begin_motion_edit();
                         let spec = style.spec();
@@ -717,7 +767,18 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
                             spec.border_color.b,
                             spec.border_color.a,
                         ];
+                        let bump =
+                            spec.liquid && runtime.motion.appearance.border_radius < 12.0;
+                        if bump {
+                            runtime.motion.appearance.border_radius = 20.0;
+                        }
                         preview.queue_draw();
+                        bump
+                    };
+                    if bump_radius {
+                        if let Some(slider) = radius_slider_slot.borrow().as_ref() {
+                            slider.set_value(20.0);
+                        }
                     }
                     for (candidate, btn) in style_buttons.borrow().iter() {
                         if *candidate == style {
@@ -742,7 +803,8 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
 
     // The radius rounds the captured image card itself; the background
     // scene stays a full rectangle. It applies on top of the Style preset.
-    let radius = motion_appearance_slider("Border Radius", 0.0, 120.0, 0.0, "px");
+    let radius = motion_appearance_slider("Border Radius", 0.0, 40.0, 0.0, "px");
+    *radius_slider_slot.borrow_mut() = Some(radius.clone());
     radius.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();

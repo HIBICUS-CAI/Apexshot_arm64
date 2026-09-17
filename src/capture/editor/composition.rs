@@ -122,9 +122,13 @@ impl BackgroundComposition {
     /// Canvas-px overhang of the frame (outside border, accent strokes, and
     /// backing sheets) beyond each side of the drawn image.
     fn frame_overhangs(&self, draw_width: f64, draw_height: f64, unit: f64) -> (f64, f64, f64, f64) {
-        let mut uniform =
-            self.frame_border_thickness.max(0.0) * unit;
         let spec = self.frame_style.spec();
+        // Inset borders paint inside the image edge, so they overhang nothing.
+        let mut uniform = if spec.inset_border {
+            0.0
+        } else {
+            self.frame_border_thickness.max(0.0) * unit
+        };
         for outer in [spec.outer1, spec.outer2].into_iter().flatten() {
             uniform += (outer.gap + outer.thickness) * unit;
         }
@@ -261,11 +265,13 @@ impl BackgroundComposition {
         };
 
         // Contain the frame (outside border, accent strokes, backing sheets)
-        // inside the wallpaper and center the whole framed stack per alignment,
-        // so Stack-style sheets never spill past the background edge and the
-        // margins stay even around the stack instead of shoving the card
-        // down-right. With no frame this reduces to the exact previous layout.
-        if self.style != BackgroundStyle::None {
+        // inside the canvas and center the whole framed stack per alignment,
+        // so Stack-style sheets never spill past the edge and the margins stay
+        // even around the stack instead of shoving the card down-right. This
+        // also applies with no background so Retro-style windows stay visible
+        // on a transparent canvas. With no frame this reduces to the exact
+        // previous layout.
+        {
             let unit = scale_factor * draw_scale;
             let (over_left, over_top, over_right, over_bottom) =
                 self.frame_overhangs(draw_width, draw_height, unit);

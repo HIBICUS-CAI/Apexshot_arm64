@@ -1,11 +1,12 @@
 use super::color::{highlighter_stroke_width, HIGHLIGHTER_ALPHA_SCALE};
 use super::numbering_style::{NumberSize, NumberingStyle};
-use super::types::{AnnotationAction, DrawColor, Point, Rect, SelectHandle};
+use super::types::{AnnotationAction, DrawColor, FrameSpec, Point, Rect, SelectHandle};
 use image::{ImageBuffer, RgbaImage};
 use rayon::prelude::*;
 
 mod arrows;
 mod effects;
+mod liquid_glass;
 mod text;
 
 pub use arrows::{
@@ -15,6 +16,7 @@ pub use arrows::{
 pub use effects::{
     apply_blackout_rect, apply_blur_rect, apply_censor_rect, apply_focus_rect, apply_hybrid_blur,
 };
+pub use liquid_glass::{glass_layer, GlassLook, GlassRing};
 #[allow(unused_imports)]
 pub use text::{
     cursor_position_for_text_point, draw_active_text_input, draw_text, draw_text_edit_border,
@@ -928,6 +930,254 @@ pub fn cairo_argb_to_rgba_image(width: u32, height: u32, stride: usize, data: &[
     }
 
     ImageBuffer::from_raw(width, height, out).unwrap_or_else(|| RgbaImage::new(width, height))
+}
+
+/// Closed rounded-rectangle outline at absolute coordinates. Radius is clamped
+/// so an inward expansion (a frame band painted inside the card edge) can never
+/// hand cairo a negative radius, which would poison the context status.
+pub fn rounded_rect_path(
+    context: &gtk4::cairo::Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+) {
+    if width <= 0.01 || height <= 0.01 {
+        return;
+    }
+    let radius = radius.clamp(0.0, width.min(height) / 2.0);
+    if radius <= 0.0 {
+        context.rectangle(x, y, width, height);
+        return;
+    }
+    let right = x + width;
+    let bottom = y + height;
+    context.new_sub_path();
+    context.arc(
+        right - radius,
+        y + radius,
+        radius,
+        -std::f64::consts::FRAC_PI_2,
+        0.0,
+    );
+    context.arc(
+        right - radius,
+        bottom - radius,
+        radius,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+    );
+    context.arc(
+        x + radius,
+        bottom - radius,
+        radius,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::PI,
+    );
+    context.arc(
+        x + radius,
+        y + radius,
+        radius,
+        std::f64::consts::PI,
+        std::f64::consts::PI * 1.5,
+    );
+    context.close_path();
+}
+
+/// Resolved Liquid Glass geometry in device pixels.
+pub struct LiquidFrame {
+    band: f64,
+    rim: f64,
+    tint: DrawColor,
+    rim_color: DrawColor,
+    /// Wide frosted-glass mode (Glass Light/Dark): a diffuse milky/smoked
+    /// veil instead of Liquid's clear refractive body.
+    frost: bool,
+}
+
+impl LiquidFrame {
+    /// Resolve a preset into device-pixel geometry. `thickness` is the
+    /// caller's own resolved band thickness in `unit`-scaled units (the
+    /// editors store the preset's value), falling back to the preset when the
+    /// caller has none. `None` for any other preset or a collapsed band.
+    pub fn resolve(spec: &FrameSpec, thickness: f64, unit: f64) -> Option<Self> {
+        if !spec.liquid {
+            return None;
+        }
+        let band_source = if thickness > 0.01 {
+            thickness
+        } else {
+            spec.border_thickness
+        };
+        let frame = Self {
+            band: (band_source * unit).max(0.0),
+            rim: (spec.outer1.map(|outer| outer.thickness).unwrap_or(0.0) * unit).max(0.0),
+            tint: spec.border_color,
+            rim_color: spec
+                .outer1
+                .map(|outer| outer.color)
+                .unwrap_or(DrawColor::new(1.0, 1.0, 1.0, 0.9)),
+            frost: spec.frost,
+        };
+        if frame.band <= 0.01 && frame.rim <= 0.01 {
+            return None;
+        }
+        Some(frame)
+    }
+
+    /// Paint the glass: a clear tinted band with the light pooling along its
+    /// top lip, capped by a specular rim that fades around the perimeter,
+    /// instead of the flat stroke every other preset uses. `top`/`bottom` are
+    /// the card's vertical extent in the context's current user space and
+    /// `path` builds a closed card outline expanded outward by its argument
+    /// (negative expands inward), so the static renderers' rounded rects and
+    /// the motion renderer's projected quads share one recipe.
+    ///
+    /// Layer order: tinted band, light pooling, lip shadow inside the card
+    /// edge, specular rim, shadow line under the bottom of the rim.
+    pub fn paint<F>(&self, context: &gtk4::cairo::Context, top: f64, bottom: f64, path: F)
+    where
+        F: Fn(&gtk4::cairo::Context, f64),
+    {
+        let LiquidFrame {
+            band,
+            rim,
+            tint,
+            rim_color,
+            frost,
+        } = *self;
+        // Gradients need a real span; a degenerate band still paints something
+        // sane instead of an empty pattern.
+        let (top, bottom) = if bottom - top < 1.0 {
+            (top, top + 1.0)
+        } else {
+            (top, bottom)
+        };
+
+        if band > 0.01 {
+            let gradient = gtk4::cairo::LinearGradient::new(0.0, top, 0.0, bottom);
+            if frost {
+                // Frosted body: a diffuse nearly-uniform veil in the tint
+                // (whitish milk / darkish smoke) so the backdrop smears
+                // behind it, like Shots.so frames. No lensing theatrics.
+                let a = tint.a.clamp(0.0, 1.0);
+                gradient.add_color_stop_rgba(0.0, tint.r, tint.g, tint.b, a);
+                gradient.add_color_stop_rgba(0.5, tint.r, tint.g, tint.b, a * 0.92);
+                gradient.add_color_stop_rgba(1.0, tint.r, tint.g, tint.b, a * 0.96);
+            } else {
+                // Clear glass body: mostly refraction, not paint. Keep the tint
+                // whisper-thin with a cool cast so black backdrops stay black and
+                // the highlights do the talking, like the reference shader.
+                let a = (tint.a * 0.45).clamp(0.0, 1.0);
+                gradient.add_color_stop_rgba(0.0, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.5);
+                gradient.add_color_stop_rgba(0.35, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.12);
+                gradient.add_color_stop_rgba(0.78, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.18);
+                gradient.add_color_stop_rgba(1.0, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.32);
+            }
+            context.set_fill_rule(gtk4::cairo::FillRule::EvenOdd);
+            path(context, band);
+            path(context, 0.0);
+            let _ = context.set_source(&gradient);
+            let _ = context.fill();
+            context.set_fill_rule(gtk4::cairo::FillRule::Winding);
+        }
+
+        // Light pooling: one compact top wash sized to the band, so the
+        // light sits on the glass instead of flooding past it. On a 3px
+        // edge a stacked double wash just turns milky. Frost gets a soft
+        // diffuse breath of light instead of a specular pool.
+        if band > 1.0 {
+            let gradient = gtk4::cairo::LinearGradient::new(0.0, top, 0.0, bottom);
+            if frost {
+                gradient.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 0.16);
+                gradient.add_color_stop_rgba(0.30, 1.0, 1.0, 1.0, 0.06);
+                gradient.add_color_stop_rgba(0.65, 1.0, 1.0, 1.0, 0.0);
+                gradient.add_color_stop_rgba(1.0, 1.0, 1.0, 1.0, 0.0);
+            } else {
+                gradient.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 0.50);
+                gradient.add_color_stop_rgba(0.22, 1.0, 1.0, 1.0, 0.22);
+                gradient.add_color_stop_rgba(0.58, 1.0, 1.0, 1.0, 0.05);
+                gradient.add_color_stop_rgba(1.0, 1.0, 1.0, 1.0, 0.0);
+            }
+            let _ = context.set_source(&gradient);
+            context.set_line_width(band * 0.6);
+            path(context, band * 0.7);
+            let _ = context.stroke();
+            // Diagonal sheen on wider refractive bands only: a soft streak
+            // across the top so dark frames still show a reflection. Frost
+            // stays diffuse — no specular streaks.
+            if band > 3.0 && !frost {
+                let sheen = gtk4::cairo::LinearGradient::new(0.0, top, band * 3.0, top + (bottom - top) * 0.35);
+                sheen.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 0.0);
+                sheen.add_color_stop_rgba(0.35, 1.0, 1.0, 1.0, 0.20);
+                sheen.add_color_stop_rgba(0.55, 1.0, 1.0, 1.0, 0.06);
+                sheen.add_color_stop_rgba(1.0, 1.0, 1.0, 1.0, 0.0);
+                let _ = context.set_source(&sheen);
+                context.set_line_width((band * 0.55).max(1.0));
+                path(context, band * 0.5);
+                let _ = context.stroke();
+            }
+        }
+
+        // Faint lip shade just inside the card edge: a whisper of depth so
+        // the glass reads as a body. Kept minimal — anything stronger dirties
+        // the screenshot content itself.
+        if band > 0.5 {
+            let lip = (band * 0.35).clamp(0.5, band);
+            let shadow = gtk4::cairo::LinearGradient::new(0.0, top, 0.0, bottom);
+            shadow.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, 0.05);
+            shadow.add_color_stop_rgba(0.22, 0.0, 0.0, 0.0, 0.01);
+            shadow.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, 0.0);
+            let _ = context.set_source(&shadow);
+            context.set_line_width(lip);
+            path(context, -lip / 2.0);
+            let _ = context.stroke();
+        }
+
+        // Inner lip highlight: the card edge catches the same top light as
+        // the outer lip, otherwise the edge looks one-sided on black. Kept
+        // visible all around (Fresnel-like) rather than fading to nothing.
+        if band > 0.5 {
+            let inner = gtk4::cairo::LinearGradient::new(0.0, top, 0.0, bottom);
+            inner.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 0.45);
+            inner.add_color_stop_rgba(0.25, 1.0, 1.0, 1.0, 0.25);
+            inner.add_color_stop_rgba(0.6, 1.0, 1.0, 1.0, 0.15);
+            inner.add_color_stop_rgba(1.0, 1.0, 1.0, 1.0, 0.20);
+            let _ = context.set_source(&inner);
+            context.set_line_width(1.0_f64.max(band * 0.14));
+            path(context, 0.5);
+            let _ = context.stroke();
+        }
+
+        if rim > 0.01 {
+            let a = rim_color.a.clamp(0.0, 1.0);
+            let (r, g, b) = (rim_color.r, rim_color.g, rim_color.b);
+            let gradient = gtk4::cairo::LinearGradient::new(0.0, top, 0.0, bottom);
+            gradient.add_color_stop_rgba(0.0, r, g, b, a);
+            gradient.add_color_stop_rgba(0.2, r, g, b, a * 0.85);
+            gradient.add_color_stop_rgba(0.5, r, g, b, a * 0.60);
+            gradient.add_color_stop_rgba(0.82, r, g, b, a * 0.45);
+            gradient.add_color_stop_rgba(1.0, r, g, b, a * 0.50);
+            let _ = context.set_source(&gradient);
+            context.set_line_width(rim);
+            path(context, band + rim / 2.0);
+            let _ = context.stroke();
+
+            // Shadow line under the bottom of the rim: on a light backdrop a
+            // white rim alone washes out, and this is what makes the glass
+            // read as a solid body rather than a floating hairline.
+            let hair = (rim * 0.55).max(0.5);
+            let edge = gtk4::cairo::LinearGradient::new(0.0, top, 0.0, bottom);
+            edge.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, 0.0);
+            edge.add_color_stop_rgba(0.6, 0.0, 0.0, 0.0, 0.0);
+            edge.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, 0.20);
+            let _ = context.set_source(&edge);
+            context.set_line_width(hair);
+            path(context, band + rim * 0.5);
+            let _ = context.stroke();
+        }
+    }
 }
 
 #[cfg(test)]

@@ -136,12 +136,24 @@ pub struct FrameBacking {
 }
 
 /// Resolved border rendering for a [`FrameStyle`]: main outside border, up to
-/// two outer accent strokes (Retro rings), and up to two backing sheets drawn
+/// two outer accent strokes, and up to two backing sheets drawn
 /// *behind* the card (Stack looks). Farthest backing sheet first.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameSpec {
     pub border_thickness: f64,
     pub border_color: DrawColor,
+    /// True for Inset styles: the main border paints *inside* the image edge
+    /// instead of outside it, so it needs no extra canvas.
+    pub inset_border: bool,
+    /// True for the glass family (Liquid, Glass Light, Glass Dark): the edge
+    /// paints as glass instead of a flat stroke, so renderers hand the preset
+    /// to `render::LiquidFrame` (Cairo previews) or `render::glass_layer`
+    /// (static exports). The whitish/darkish read comes from `border_color`.
+    pub liquid: bool,
+    /// True for the frosted-glass siblings (Glass Light, Glass Dark): a
+    /// heavily-blurred milky/smoked band like Shots.so frames, as opposed
+    /// to Liquid's clear refractive edge. Only meaningful with `liquid`.
+    pub frost: bool,
     pub outer1: Option<FrameOuterStroke>,
     pub outer2: Option<FrameOuterStroke>,
     pub backing1: Option<FrameBacking>,
@@ -185,38 +197,79 @@ impl FrameStyle {
         match self {
             Self::Default => FrameSpec {
                 border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
                 outer1: None,
                 outer2: None,
                 backing1: None,
                 backing2: None,
             },
+            // Glass Light: frosted glass like Shots.so frames in a 3px edge —
+            // a heavily-blurred band carrying a whitish veil, edged by a
+            // crisp specular rim. The backdrop smears through the frost
+            // instead of bending like Liquid's refractive edge.
             Self::GlassLight => FrameSpec {
-                border_thickness: 10.0,
+                border_thickness: 2.0,
+                inset_border: false,
+                liquid: true,
+                frost: true,
                 border_color: DrawColor::new(1.0, 1.0, 1.0, 0.55),
-                outer1: None,
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(1.0, 1.0, 1.0, 0.95),
+                    gap: 0.0,
+                }),
                 outer2: None,
                 backing1: None,
                 backing2: None,
             },
+            // Glass Dark: the same 3px frost, smoked — the band deepens the
+            // backdrop while the white speculars and rim keep the glass read.
             Self::GlassDark => FrameSpec {
-                border_thickness: 10.0,
-                border_color: DrawColor::new(0.05, 0.05, 0.07, 0.55),
-                outer1: None,
+                border_thickness: 2.0,
+                inset_border: false,
+                liquid: true,
+                frost: true,
+                border_color: DrawColor::new(0.05, 0.05, 0.07, 0.60),
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(1.0, 1.0, 1.0, 0.9),
+                    gap: 0.0,
+                }),
                 outer2: None,
                 backing1: None,
                 backing2: None,
             },
+            // Liquid Glass (Apple/NSGlassEffectView language): a 3px glass
+            // edge — a 2px clear refracted body capped by a 1px specular
+            // rim. The body stays translucent so the backdrop reads through
+            // it; the light lives in the top-weighted specular and the crisp
+            // rim, visible all around the perimeter. Renderers expand this
+            // into gradients (Cairo previews) or the refraction shader
+            // (`render::glass_layer` in static exports) rather than a flat
+            // stroke.
             Self::Liquid => FrameSpec {
-                border_thickness: 12.0,
-                border_color: DrawColor::new(1.0, 0.5, 0.15, 0.9),
-                outer1: None,
+                border_thickness: 2.0,
+                inset_border: false,
+                liquid: true,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.20),
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(1.0, 1.0, 1.0, 0.9),
+                    gap: 0.0,
+                }),
                 outer2: None,
                 backing1: None,
                 backing2: None,
             },
             Self::InsetLight => FrameSpec {
-                border_thickness: 6.0,
+                border_thickness: 3.0,
+                inset_border: true,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(1.0, 1.0, 1.0, 0.85),
                 outer1: None,
                 outer2: None,
@@ -224,7 +277,10 @@ impl FrameStyle {
                 backing2: None,
             },
             Self::InsetDark => FrameSpec {
-                border_thickness: 6.0,
+                border_thickness: 3.0,
+                inset_border: true,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(0.0, 0.0, 0.0, 0.85),
                 outer1: None,
                 outer2: None,
@@ -232,15 +288,25 @@ impl FrameStyle {
                 backing2: None,
             },
             Self::Outline => FrameSpec {
-                border_thickness: 2.0,
-                border_color: DrawColor::new(1.0, 1.0, 1.0, 1.0),
-                outer1: None,
+                border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(0.7, 0.7, 0.7, 1.0),
+                    gap: 2.0,
+                }),
                 outer2: None,
                 backing1: None,
                 backing2: None,
             },
             Self::Border => FrameSpec {
-                border_thickness: 14.0,
+                border_thickness: 3.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(0.0, 0.0, 0.0, 1.0),
                 outer1: None,
                 outer2: None,
@@ -248,19 +314,27 @@ impl FrameStyle {
                 backing2: None,
             },
             Self::Retro => FrameSpec {
-                border_thickness: 10.0,
+                border_thickness: 3.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(0.0, 0.0, 0.0, 1.0),
-                outer1: Some(FrameOuterStroke {
-                    thickness: 3.0,
-                    color: DrawColor::new(1.0, 1.0, 1.0, 1.0),
-                    gap: 3.0,
-                }),
+                outer1: None,
                 outer2: None,
-                backing1: None,
+                backing1: Some(FrameBacking {
+                    offset_x: 28.0,
+                    offset_y: 28.0,
+                    rotation_deg: 0.0,
+                    center_pivot: false,
+                    color: DrawColor::new(0.0, 0.0, 0.0, 1.0),
+                }),
                 backing2: None,
             },
             Self::Card => FrameSpec {
                 border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
                 outer1: None,
                 outer2: None,
@@ -275,6 +349,9 @@ impl FrameStyle {
             },
             Self::Stack => FrameSpec {
                 border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
                 outer1: None,
                 outer2: None,
@@ -289,6 +366,9 @@ impl FrameStyle {
             },
             Self::Stack2 => FrameSpec {
                 border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
                 border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
                 outer1: None,
                 outer2: None,
@@ -309,6 +389,21 @@ impl FrameStyle {
             },
         }
     }
+}
+
+/// Whether a frame style grows the canvas beyond the bare screenshot even
+/// with no background: an outside border, accent strokes, or backing sheets.
+/// `Default` with zero manual thickness needs nothing, so legacy no-background
+/// exports stay pixel-identical.
+pub fn frame_needs_canvas(style: FrameStyle, border_thickness: f64) -> bool {
+    let spec = style.spec();
+    if border_thickness > 0.01 && !spec.inset_border {
+        return true;
+    }
+    spec.backing1.is_some()
+        || spec.backing2.is_some()
+        || spec.outer1.is_some()
+        || spec.outer2.is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -89,6 +89,29 @@
                 border-radius: 12px;
             }
 
+            /* Frame style tiles are chromeless: the preview itself is the
+             * tile, with no surrounding box. Only the active ring remains. */
+            button.editor-frame-style-tile {
+                padding: 0;
+                background: transparent;
+                background-color: transparent;
+                border: 1px solid transparent;
+                border-radius: 12px;
+                box-shadow: none;
+            }
+
+            button.editor-frame-style-tile:hover {
+                border-color: alpha(white, 0.16);
+                box-shadow: none;
+            }
+
+            button.editor-frame-style-tile.active-background-option {
+                border: 1px solid transparent;
+                background: transparent;
+                background-color: transparent;
+                box-shadow: inset 0 0 0 2px #b05c38;
+            }
+
             button.editor-background-gradient-button:hover {
                 border-color: alpha(white, 0.16);
                 box-shadow: none;
