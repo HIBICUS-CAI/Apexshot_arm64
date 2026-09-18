@@ -136,23 +136,30 @@ fn highlighter_bar_weight_applies_to_the_selected_stroke() {
 }
 
 #[test]
-fn highlighter_bar_weight_without_a_selection_sets_the_next_stroke() {
+fn pen_and_highlighter_draw_at_the_toolbar_stroke_size() {
     let mut state = EditorState::new(RgbaImage::new(128, 128));
-    state.selected_tool = Tool::Highlighter;
+    state.set_stroke_size(18.0);
+
+    state.selected_tool = Tool::Pen;
     state.clear_selection();
+    state.begin_drag(Point { x: 4.0, y: 4.0 });
+    state.update_drag(Point { x: 40.0, y: 4.0 });
+    match state.draft_action() {
+        Some(AnnotationAction::Pen { stroke_size, .. }) => assert_eq!(
+            stroke_size, 18.0,
+            "the toolbar slider sets the pen thickness"
+        ),
+        other => panic!("expected a pen draft, got {other:?}"),
+    }
 
-    assert_eq!(state.active_highlighter_weight(), None); // text-aware = auto
-    assert!(state.set_highlighter_weight(PenWeight::Large));
-    assert_eq!(state.pen_weight, PenWeight::Large);
-    assert_eq!(state.active_highlighter_weight(), Some(PenWeight::Large));
-
+    state.selected_tool = Tool::Highlighter;
+    state.set_highlighter_mode(HighlighterMode::Freehand);
     state.begin_drag(Point { x: 4.0, y: 4.0 });
     state.update_drag(Point { x: 40.0, y: 4.0 });
     match state.draft_action() {
         Some(AnnotationAction::Highlighter { stroke_size, .. }) => assert_eq!(
-            stroke_size,
-            PenWeight::Large.highlighter_stroke_width(),
-            "the next freehand stroke uses the picked thickness"
+            stroke_size, 18.0,
+            "the toolbar slider sets the freehand highlighter thickness"
         ),
         other => panic!("expected a highlighter draft, got {other:?}"),
     }

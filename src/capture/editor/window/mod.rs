@@ -327,8 +327,6 @@ mod motion_render;
 mod motion_timeline;
 mod number_bar;
 mod obfuscate_bar;
-mod pen_bar;
-mod shape_bar;
 mod toolbar;
 
 use background_assets::BackgroundAssetCaches;
@@ -1657,9 +1655,9 @@ fn setup_editor_window_full(
         &docked_inset,
     );
 
-    // Floating highlighter bar: mode (text-aware / freehand) and thickness. Docked
-    // while the tool is armed, and while the Select tool has a stroke selected, so
-    // it never parks over a long freehand bounding box.
+    // Floating highlighter bar: mode (text-aware / freehand). Docked while the tool
+    // is armed, and while the Select tool has a stroke selected, so it never parks
+    // over a long freehand bounding box. Thickness rides the toolbar size slider.
     let highlighter_bar = highlighter_bar::build_highlighter_bar(&state, &drawing_area, &window);
     canvas_overlay.add_overlay(&highlighter_bar.root);
     highlighter_bar::install_highlighter_bar_tick(
@@ -1670,23 +1668,11 @@ fn setup_editor_window_full(
         &docked_inset,
     );
 
-    // Floating pen bar: stroke thickness, replacing the inspector list. Same docked
-    // placement as the highlighter so it never covers the image being drawn on.
-    let pen_bar = pen_bar::build_pen_bar(&state, &drawing_area);
-    canvas_overlay.add_overlay(&pen_bar.root);
-    pen_bar::install_pen_bar_tick(&pen_bar, &drawing_area, &state, &dock_refs, &docked_inset);
-
-    // Floating arrow bar: style and thickness. Docked while the tool is armed,
-    // and while the Select tool has an arrow selected.
+    // Floating arrow bar: style. Docked while the tool is armed, and while the
+    // Select tool has an arrow selected. Thickness rides the toolbar size slider.
     let arrow_bar = arrow_bar::build_arrow_bar(&state, &drawing_area);
     canvas_overlay.add_overlay(&arrow_bar.root);
     arrow_bar::install_arrow_bar_tick(&arrow_bar, &drawing_area, &state, &dock_refs, &docked_inset);
-
-    // Floating shape bar: thickness for line, box, and circle. Same docked
-    // placement as the pen bar so it never covers the image being drawn on.
-    let shape_bar = shape_bar::build_shape_bar(&state, &drawing_area);
-    canvas_overlay.add_overlay(&shape_bar.root);
-    shape_bar::install_shape_bar_tick(&shape_bar, &drawing_area, &state, &dock_refs, &docked_inset);
 
     // Floating obfuscate bars: method picker above the active rect, intensity
     // slider below it. Anchored to the rect they edit, like the text bar.
@@ -2348,10 +2334,9 @@ fn setup_editor_window_full(
         let obfuscate_method_list = obfuscate_method_list.clone();
         move || {
             // Extract all needed data BEFORE any GTK operations to avoid deadlock
-            let (selected_tool, mode, value, text_size, font_family, obfuscate_method) = {
+            let (mode, value, text_size, font_family, obfuscate_method) = {
                 let st = state.lock().unwrap();
                 (
-                    st.selected_tool,
                     st.active_size_control_mode(),
                     st.active_size_value().unwrap_or_default(),
                     st.text_size,
@@ -2382,14 +2367,6 @@ fn setup_editor_window_full(
             }
 
             // Now perform GTK operations WITHOUT holding the lock
-            if selected_tool == Tool::Highlighter {
-                size_group.set_visible(true);
-                size_group.add_css_class("size-group-inactive");
-                size_slider.set_tooltip_text(Some(&t("Use the Thickness panel for highlighter")));
-                size_slider.set_sensitive(false);
-                return;
-            }
-
             size_group.set_visible(true);
 
             let Some(mode) = mode else {
@@ -3161,9 +3138,7 @@ mod tests {
             production.contains("let number_bar = number_bar::build_number_bar(&state, &drawing_area);")
                 && production.contains("canvas_overlay.add_overlay(&number_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&highlighter_bar.root);")
-                && production.contains("canvas_overlay.add_overlay(&pen_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&arrow_bar.root);")
-                && production.contains("canvas_overlay.add_overlay(&shape_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.method_bar);")
                 && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);")
                 && production.contains("canvas_overlay.add_overlay(&focus_bar.slider_bar);")

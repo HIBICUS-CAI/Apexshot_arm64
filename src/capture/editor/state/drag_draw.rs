@@ -5,16 +5,16 @@ use super::{expand_rgba_image, simplify_drag_path, EditorState};
 use std::sync::Arc;
 
 impl EditorState {
+    /// Thickness the highlighter paints with: the size locked at drag start, else
+    /// the toolbar slider. Text-aware strokes lock the detected text height instead.
     pub(super) fn current_highlighter_stroke_size(&self) -> f64 {
         self.locked_highlighter_stroke_size
-            .unwrap_or_else(|| match self.highlighter_mode {
-                HighlighterMode::TextAware => self.stroke_size,
-                HighlighterMode::Freehand => self.pen_weight.highlighter_stroke_width(),
-            })
+            .unwrap_or(self.stroke_size)
     }
 
+    /// Thickness the pen paints with: the toolbar's stroke-size slider.
     pub(super) fn current_pen_stroke_size(&self) -> f64 {
-        self.pen_weight.pen_stroke_width()
+        self.stroke_size
     }
 
     pub fn begin_drag(&mut self, point: Point) {
@@ -229,8 +229,7 @@ impl EditorState {
                             points = vec![first, constrained_last];
                         }
 
-                        let stroke_size = highlighter_stroke_size
-                            .unwrap_or_else(|| self.pen_weight.highlighter_stroke_width());
+                        let stroke_size = highlighter_stroke_size.unwrap_or(self.stroke_size);
 
                         if points.len() >= 2
                             && ((points[0].x - points[1].x).abs() > 0.1

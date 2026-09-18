@@ -311,9 +311,7 @@ mod tests {
         for bar in [
             include_str!("number_bar.rs"),
             include_str!("highlighter_bar.rs"),
-            include_str!("pen_bar.rs"),
             include_str!("arrow_bar.rs"),
-            include_str!("shape_bar.rs"),
         ] {
             let production = bar.split("#[cfg(test)]").next().unwrap_or(bar);
             assert!(
@@ -332,9 +330,7 @@ mod tests {
         for (name, bar) in [
             ("number_bar.rs", include_str!("number_bar.rs")),
             ("highlighter_bar.rs", include_str!("highlighter_bar.rs")),
-            ("pen_bar.rs", include_str!("pen_bar.rs")),
             ("arrow_bar.rs", include_str!("arrow_bar.rs")),
-            ("shape_bar.rs", include_str!("shape_bar.rs")),
         ] {
             let production = bar.split("#[cfg(test)]").next().unwrap_or(bar);
             let reveal = production
@@ -357,9 +353,7 @@ mod tests {
         for (name, bar) in [
             ("number_bar.rs", include_str!("number_bar.rs")),
             ("highlighter_bar.rs", include_str!("highlighter_bar.rs")),
-            ("pen_bar.rs", include_str!("pen_bar.rs")),
             ("arrow_bar.rs", include_str!("arrow_bar.rs")),
-            ("shape_bar.rs", include_str!("shape_bar.rs")),
         ] {
             let production = bar.split("#[cfg(test)]").next().unwrap_or(bar);
             assert!(

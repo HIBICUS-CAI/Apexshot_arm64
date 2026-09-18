@@ -303,15 +303,15 @@ impl EditorState {
         }
     }
 
-    /// Thickness the pen bar shows: the selected stroke's weight, else the brush.
+    /// Thickness preset shown for the pen: the selected stroke's weight, else the brush.
     pub fn active_pen_weight(&self) -> PenWeight {
         self.selected_pen_stroke_size()
             .map(PenWeight::nearest_for_pen_stroke)
             .unwrap_or(self.pen_weight)
     }
 
-    /// Pick a pen thickness: sets the brush and resizes the selected stroke so the
-    /// pick shows up immediately.
+    /// Pick a pen thickness preset: sets the brush and resizes the selected stroke so
+    /// the pick shows up immediately. The pen's own thickness is the toolbar slider.
     pub fn set_pen_weight_and_apply(&mut self, weight: PenWeight) -> bool {
         let mut changed = false;
         if self.pen_weight != weight {
@@ -326,9 +326,9 @@ impl EditorState {
         changed
     }
 
-    /// Thickness the highlighter bar shows: the selected stroke's weight, else the
-    /// weight the next freehand stroke will use. `None` means text-aware sizing,
-    /// where the stroke follows the detected text height instead of a preset.
+    /// Thickness preset shown for the highlighter: the selected stroke's weight,
+    /// else the brush. `None` means text-aware sizing, where the stroke follows the
+    /// detected text height instead of a preset.
     pub fn active_highlighter_weight(&self) -> Option<PenWeight> {
         // A selected stroke has a real thickness whatever the brush mode is, so a
         // text-aware stroke still reports the preset closest to it.
@@ -374,11 +374,12 @@ impl EditorState {
         true
     }
 
-    /// Pick a highlighter thickness from the bar.
+    /// Pick a highlighter thickness preset.
     ///
     /// Choosing a preset leaves text-aware sizing (the sidebar's thickness rows do
     /// the same) and resizes the selected stroke so the pick is visible at once;
-    /// the preset also becomes the brush for the next stroke.
+    /// the preset also becomes the brush for the next stroke. Freehand thickness
+    /// itself comes from the toolbar's stroke-size slider.
     pub fn set_highlighter_weight(&mut self, weight: PenWeight) -> bool {
         let mut changed = false;
         if self.pen_weight != weight {
@@ -523,13 +524,11 @@ impl EditorState {
     pub fn set_active_size_without_rebuild(&mut self, size: f64) -> bool {
         match self.active_size_control_mode() {
             Some(SizeControlMode::Stroke) => {
+                // Shapes, the arrow, the pen, and the highlighter all read
+                // `stroke_size`, so the slider resizes the next stroke and whatever
+                // stroke is selected.
                 let changed = self.set_stroke_size(size);
-                let is_highlighter = self
-                    .selected_action()
-                    .is_some_and(|action| matches!(action, AnnotationAction::Highlighter { .. }));
-                if !is_highlighter {
-                    let _ = self.set_selected_action_stroke_size(self.stroke_size);
-                }
+                let _ = self.set_selected_action_stroke_size(self.stroke_size);
                 changed
             }
             Some(SizeControlMode::Obfuscate) => {

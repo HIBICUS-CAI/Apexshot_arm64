@@ -430,6 +430,32 @@ mod tests {
     }
 
     #[test]
+    fn stroke_tools_route_the_toolbar_slider_to_stroke_size() {
+        let mut state = EditorState::new(RgbaImage::new(32, 32));
+        for (index, tool) in [
+            super::Tool::Line,
+            super::Tool::Box,
+            super::Tool::Circle,
+            super::Tool::Arrow,
+            super::Tool::Pen,
+            super::Tool::Highlighter,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            state.selected_tool = tool;
+            assert_eq!(
+                state.active_size_control_mode(),
+                Some(super::SizeControlMode::Stroke),
+                "{tool:?} should ask the toolbar for a stroke size"
+            );
+            let size = 5.0 + index as f64;
+            assert!(state.set_active_size_without_rebuild(size));
+            assert_eq!(state.stroke_size, size);
+        }
+    }
+
+    #[test]
     fn focus_tool_uses_dedicated_slider_state_and_persists_intensity_per_action() {
         let mut state = EditorState::new(RgbaImage::from_pixel(
             16,

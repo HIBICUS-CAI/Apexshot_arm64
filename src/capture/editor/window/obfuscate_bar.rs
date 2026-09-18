@@ -1,6 +1,6 @@
 //! Floating obfuscate bars: method picker and intensity slider.
 //!
-//! Unlike the docked paint/shape bars these two stay anchored to the active
+//! Unlike the docked number bar these two stay anchored to the active
 //! obfuscate rect — the method pill on top of it, the intensity pill below —
 //! because they edit that specific rect (draft or selected), mirroring the
 //! text bar. The method pill reuses the shared pill shell

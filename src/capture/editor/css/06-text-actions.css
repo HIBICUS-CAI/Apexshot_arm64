@@ -101,13 +101,10 @@
             }
 
             /* Floating tool bars: number (style + stepper + size), highlighter
-               (mode + thickness), pen (thickness), arrow (style + thickness),
-               and shape (thickness) share one compact rounded-rect shell. */
+               (mode), and arrow (style) share one compact rounded-rect shell. */
             .editor-number-floating-bar,
             .editor-highlighter-floating-bar,
-            .editor-pen-floating-bar,
-            .editor-arrow-floating-bar,
-            .editor-shape-floating-bar {
+            .editor-arrow-floating-bar {
                 padding: 4px 8px;
                 border-radius: 12px;
             }
