@@ -2392,3 +2392,15 @@ msgstr "Federnd"
 
 msgid "Spring"
 msgstr "Feder"
+
+msgid "Theme"
+msgstr "Design"
+
+msgid "Light"
+msgstr "Hell"
+
+msgid "Dark"
+msgstr "Dunkel"
+
+msgid "System"
+msgstr "System"

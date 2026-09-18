@@ -6,6 +6,7 @@ use gtk4::prelude::*;
 use gtk4::{Button, CheckButton, Entry, Scale};
 
 use super::select::SettingsSelect;
+use super::theme_picker::ThemePicker;
 use super::windowing::{install_autostart_entry_smart, uninstall_autostart_entry};
 
 fn shortcut_label_value(label: Option<gtk4::glib::GString>) -> String {
@@ -98,6 +99,7 @@ pub struct SaveInputs {
     pub cloud_auto_upload: CheckButton,
     pub xbackbone_url: Entry,
     pub xbackbone_api_token: Entry,
+    pub ui_theme: ThemePicker,
     pub ui_language: SettingsSelect,
 }
 
@@ -164,12 +166,17 @@ fn screenshot_or_general_shortcuts_configured(config: &crate::config::AppConfig)
 
 pub struct SaveOutcome {
     pub language_changed: bool,
+    pub theme_changed: bool,
 }
 
 pub fn save_settings(inputs: &SaveInputs) -> anyhow::Result<SaveOutcome> {
     let previous_config = load_config().sanitized();
     let mut config = previous_config.clone();
     config.start_at_login = inputs.start_at_login.is_active();
+    config.ui_theme = inputs
+        .ui_theme
+        .active_id()
+        .unwrap_or_else(|| crate::config::DEFAULT_UI_THEME.to_string());
     config.ui_language = crate::i18n::sanitize_ui_language(
         &inputs
             .ui_language
@@ -294,6 +301,7 @@ pub fn save_settings(inputs: &SaveInputs) -> anyhow::Result<SaveOutcome> {
             != config.quick_access_close_after_uploading;
 
     let language_changed = previous_config.ui_language != config.ui_language;
+    let theme_changed = previous_config.ui_theme != config.ui_theme;
     if language_changed {
         crate::i18n::init(&config.ui_language);
     }
@@ -339,7 +347,10 @@ pub fn save_settings(inputs: &SaveInputs) -> anyhow::Result<SaveOutcome> {
 
     let allow_auto_respawn = should_auto_respawn_daemon_for_save();
     std::thread::spawn(move || {
-        if language_changed && allow_auto_respawn && stop_daemon_via_dbus() {
+        // Language and theme changes rebuild the settings UI in place, so
+        // restart the tray daemon alongside them instead of leaving it on the
+        // previous session.
+        if (language_changed || theme_changed) && allow_auto_respawn && stop_daemon_via_dbus() {
             std::thread::sleep(std::time::Duration::from_millis(250));
             if daemon_needed {
                 let _ = start_daemon_subprocess();
@@ -370,7 +381,10 @@ pub fn save_settings(inputs: &SaveInputs) -> anyhow::Result<SaveOutcome> {
         }
     });
 
-    Ok(SaveOutcome { language_changed })
+    Ok(SaveOutcome {
+        language_changed,
+        theme_changed,
+    })
 }
 
 fn combo_value(combo: &SettingsSelect, fallback: &str) -> String {

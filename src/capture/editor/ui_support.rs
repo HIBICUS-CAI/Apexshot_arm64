@@ -117,6 +117,12 @@ pub fn read_gsettings_bool(schema: &str, key: &str) -> Option<bool> {
 }
 
 pub fn prefers_dark_glass_theme() -> bool {
+    // Settings → General → Theme wins over the desktop preference. Only
+    // `system` falls through to the GTK / gsettings probes below.
+    if let Some(forced_dark) = crate::config::load_config().forced_dark_theme() {
+        return forced_dark;
+    }
+
     if let Some(settings) = gtk4::Settings::default() {
         if settings.property::<bool>("gtk-application-prefer-dark-theme") {
             return true;

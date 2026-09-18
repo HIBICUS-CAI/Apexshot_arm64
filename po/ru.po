@@ -2381,3 +2381,15 @@ msgstr "Упругий"
 
 msgid "Spring"
 msgstr "Пружина"
+
+msgid "Theme"
+msgstr "Тема"
+
+msgid "Light"
+msgstr "Светлая"
+
+msgid "Dark"
+msgstr "Тёмная"
+
+msgid "System"
+msgstr "Системная"

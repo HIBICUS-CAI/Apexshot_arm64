@@ -21,6 +21,7 @@ mod recording;
 mod screenshots;
 pub(crate) mod select;
 mod shortcuts;
+mod theme_picker;
 pub(crate) mod ui_support;
 pub(crate) mod windowing;
 
@@ -589,6 +590,7 @@ fn build_settings_window(app: &Application) {
         cloud_auto_upload: cloud.auto_upload_check.clone(),
         xbackbone_url: cloud.xb_url_entry.clone(),
         xbackbone_api_token: cloud.xb_token_entry.clone(),
+        ui_theme: general.theme_input.clone(),
         ui_language: general.ui_language_input.clone(),
     });
 
@@ -672,6 +674,10 @@ fn build_settings_window(app: &Application) {
                         save_dirty.set(false);
                         if outcome.language_changed {
                             i18n::apply_gtk_direction(&crate::config::load_config().ui_language);
+                        }
+                        // Language and theme are baked into the window at build
+                        // time, so rebuild in place to apply them right away.
+                        if outcome.language_changed || outcome.theme_changed {
                             if let Some(app) = window.application() {
                                 window.close();
                                 build_settings_window(&app);
@@ -748,6 +754,10 @@ fn install_save_dirty_tracking(inputs: &Rc<SaveInputs>, mark_dirty: Rc<dyn Fn()>
         let mark_dirty = Rc::clone(&mark_dirty);
         button.connect_notify_local(Some("label"), move |_, _| mark_dirty());
     };
+    let wire_theme = |picker: &theme_picker::ThemePicker| {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        picker.connect_changed(move || mark_dirty());
+    };
 
     wire_check(&inputs.start_at_login);
     wire_check(&inputs.play_sounds);
@@ -811,4 +821,5 @@ fn install_save_dirty_tracking(inputs: &Rc<SaveInputs>, mark_dirty: Rc<dyn Fn()>
     wire_check(&inputs.cloud_auto_upload);
     wire_entry(&inputs.xbackbone_url);
     wire_entry(&inputs.xbackbone_api_token);
+    wire_theme(&inputs.ui_theme);
 }

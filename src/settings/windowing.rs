@@ -38,34 +38,11 @@ fn read_gsettings_bool(schema: &str, key: &str) -> Option<bool> {
     }
 }
 
+/// App-wide dark-theme resolution. The canonical implementation lives in the
+/// editor UI support module so every window agrees; it honours the Settings →
+/// General → Theme choice before falling back to the desktop preference.
 pub fn prefers_dark_glass_theme() -> bool {
-    if let Some(settings) = gtk4::Settings::default() {
-        if settings.property::<bool>("gtk-application-prefer-dark-theme") {
-            return true;
-        }
-
-        let theme_name = settings
-            .property::<Option<String>>("gtk-theme-name")
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if theme_name.contains("dark") {
-            return true;
-        }
-        if theme_name.contains("light") {
-            return false;
-        }
-    }
-
-    if let Some(color_scheme) = read_gsettings("org.gnome.desktop.interface", "color-scheme") {
-        if color_scheme.contains("prefer-dark") {
-            return true;
-        }
-        if color_scheme.contains("prefer-light") || color_scheme == "default" {
-            return false;
-        }
-    }
-
-    true
+    crate::capture::editor::ui_support::prefers_dark_glass_theme()
 }
 
 pub fn prefers_reduced_transparency() -> bool {

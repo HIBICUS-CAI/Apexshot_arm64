@@ -2361,3 +2361,15 @@ msgstr "مرتد"
 
 msgid "Spring"
 msgstr "زنبرك"
+
+msgid "Theme"
+msgstr "السمة"
+
+msgid "Light"
+msgstr "فاتح"
+
+msgid "Dark"
+msgstr "داكن"
+
+msgid "System"
+msgstr "النظام"

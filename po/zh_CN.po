@@ -2342,3 +2342,15 @@ msgstr "弹跳"
 
 msgid "Spring"
 msgstr "弹簧"
+
+msgid "Theme"
+msgstr "主题"
+
+msgid "Light"
+msgstr "浅色"
+
+msgid "Dark"
+msgstr "深色"
+
+msgid "System"
+msgstr "跟随系统"

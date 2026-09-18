@@ -2381,3 +2381,15 @@ msgstr "Saltitante"
 
 msgid "Spring"
 msgstr "Mola"
+
+msgid "Theme"
+msgstr "Tema"
+
+msgid "Light"
+msgstr "Claro"
+
+msgid "Dark"
+msgstr "Escuro"
+
+msgid "System"
+msgstr "Sistema"

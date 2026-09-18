@@ -2390,3 +2390,15 @@ msgstr "Rebondissant"
 
 msgid "Spring"
 msgstr "Ressort"
+
+msgid "Theme"
+msgstr "Thème"
+
+msgid "Light"
+msgstr "Clair"
+
+msgid "Dark"
+msgstr "Sombre"
+
+msgid "System"
+msgstr "Système"
