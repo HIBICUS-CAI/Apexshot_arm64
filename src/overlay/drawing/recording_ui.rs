@@ -250,13 +250,14 @@ pub(crate) fn draw_recording_panel(
         width: REC_ACTION_WIDTH,
         height: actions.height,
     };
-    for (rect, tile, icon, label, selected) in [(
+    let (rect, tile, icon, label, selected) = (
         video,
         RecordPanelTile::RecordVideo,
         ToolbarIcon::Video,
         "Video",
         selected_record_type == Some(RecordingType::Video),
-    )] {
+    );
+    {
         super::draw_frosted_panel(
             context,
             rect.x,

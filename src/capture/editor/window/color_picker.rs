@@ -292,8 +292,7 @@ pub fn build_color_picker(
             let (has_active_text, background_fill) = {
                 let mut st = state_picker_apply.lock().unwrap();
                 let has_active_text = st.active_text_input.is_some();
-                let background_fill =
-                    (st.selected_tool == Tool::Background).then_some(color);
+                let background_fill = (st.selected_tool == Tool::Background).then_some(color);
                 if background_fill.is_none() {
                     if has_active_text {
                         st.selected_color = color;

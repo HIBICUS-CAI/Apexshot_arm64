@@ -158,10 +158,8 @@ pub(super) fn install_number_bar_tick(
         let (show, has_marker, style, size, start_display) = {
             let st = state.lock().unwrap();
             let number_tool = st.selected_tool == Tool::Number;
-            let has_marker = matches!(
-                st.selected_action(),
-                Some(AnnotationAction::Number { .. })
-            ) && (number_tool || st.selected_tool == Tool::Select);
+            let has_marker = matches!(st.selected_action(), Some(AnnotationAction::Number { .. }))
+                && (number_tool || st.selected_tool == Tool::Select);
             (
                 number_tool || has_marker,
                 has_marker,

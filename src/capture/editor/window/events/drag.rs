@@ -5,9 +5,7 @@
 //! redraw throttling, and effect-rebuild flags. Click/motion/keyboard stay in
 //! sibling modules.
 
-use gtk4::{
-    gdk, glib, prelude::*, ApplicationWindow, DrawingArea, GestureDrag, ScrolledWindow,
-};
+use gtk4::{gdk, glib, prelude::*, ApplicationWindow, DrawingArea, GestureDrag, ScrolledWindow};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};

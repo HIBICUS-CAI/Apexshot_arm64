@@ -59,9 +59,16 @@ fn final_image_background_keeps_screenshot_at_native_scale_by_default() {
 
     let final_image = state.to_final_image().expect("final image");
 
-    assert_eq!(final_image.dimensions(), (400, 300));
-    assert_eq!(*final_image.get_pixel(0, 0), *image.get_pixel(0, 0));
-    assert_eq!(*final_image.get_pixel(399, 299), *image.get_pixel(399, 299));
+    // A fill floors the stored 0px padding to the shared breathing room, so
+    // the canvas grows by that gap on each side while the screenshot itself
+    // stays 1:1 inside it.
+    let gap = crate::capture::editor::types::BACKGROUND_MIN_GAP.round() as u32;
+    assert_eq!(final_image.dimensions(), (400 + gap * 2, 300 + gap * 2));
+    assert_eq!(*final_image.get_pixel(gap, gap), *image.get_pixel(0, 0));
+    assert_eq!(
+        *final_image.get_pixel(gap + 399, gap + 299),
+        *image.get_pixel(399, 299)
+    );
 }
 
 #[test]
@@ -596,7 +603,7 @@ fn liquid_glass_lights_the_band_from_the_top_and_stays_translucent() {
     state.background_insert = 0.0;
     let spec = FrameStyle::Liquid.spec();
     assert!(spec.liquid, "Liquid must opt into the glass renderer");
-    assert!(spec.inset_border == false);
+    assert!(!spec.inset_border);
     let rim = spec.outer1.expect("liquid specular rim");
     state.frame_style = FrameStyle::Liquid;
     state.border_thickness = spec.border_thickness;

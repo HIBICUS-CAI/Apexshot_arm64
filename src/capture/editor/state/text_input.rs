@@ -49,9 +49,10 @@ impl EditorState {
 
     pub fn begin_text_input(&mut self, position: Point, width: f64, height: f64) {
         let (min_x, min_y, max_x, max_y) = self.annotation_canvas_bounds();
-        let baseline_y = position
-            .y
-            .clamp(min_y + self.text_size + 8.0, (max_y - 8.0).max(min_y + self.text_size + 8.0));
+        let baseline_y = position.y.clamp(
+            min_y + self.text_size + 8.0,
+            (max_y - 8.0).max(min_y + self.text_size + 8.0),
+        );
         let max_width = (max_x - position.x).max(50.0);
         let constrained_width = width.clamp(50.0, max_width);
         let max_height = (max_y - (baseline_y - self.text_size - 8.0)).max(44.0);

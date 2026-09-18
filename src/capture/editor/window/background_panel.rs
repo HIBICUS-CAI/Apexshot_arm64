@@ -213,8 +213,8 @@ pub fn load_background_image_optimized(path: &Path) -> Option<RgbaImage> {
 /// pre-resizing it costs more than the decode itself. Other formats
 /// (user-chosen PNG/WebP) fall back to a full decode plus resize.
 pub(super) fn load_background_preview_image(path: &Path, max_edge: u32) -> Option<RgbaImage> {
-    let image = load_scaled_jpeg(path, max_edge)
-        .or_else(|| load_background_image_optimized(path))?;
+    let image =
+        load_scaled_jpeg(path, max_edge).or_else(|| load_background_image_optimized(path))?;
     Some(resize_to_max_edge(image, max_edge + max_edge / 4))
 }
 
@@ -416,7 +416,11 @@ fn frame_preset_to_crop_ratio(
                 }
             }
             // Only snap when reasonably close; exotic customs keep Original.
-            if best_dist < 0.08 { best } else { CropAspectRatio::Original }
+            if best_dist < 0.08 {
+                best
+            } else {
+                CropAspectRatio::Original
+            }
         }
     }
 }
@@ -470,8 +474,8 @@ pub(super) fn sync_static_appearance_to_motion(
             motion.background_color = [color.r, color.g, color.b, color.a];
         }
         BackgroundStyle::Gradient(idx) => {
-            let file = BACKGROUND_GRADIENT_PREVIEW_FILES
-                [*idx % BACKGROUND_GRADIENT_PREVIEW_FILES.len()];
+            let file =
+                BACKGROUND_GRADIENT_PREVIEW_FILES[*idx % BACKGROUND_GRADIENT_PREVIEW_FILES.len()];
             let path = background_gradient_asset_path(file);
             motion.background_fill_type = MotionBackgroundFillType::Wallpaper;
             motion.wallpaper_image_name = Some(path.to_string_lossy().into_owned());
@@ -524,9 +528,7 @@ pub(super) fn sync_motion_appearance_to_static(
             BackgroundStyle::PlainColor(DrawColor::new(r, g, b, a))
         }
         MotionBackgroundFillType::Gradient => {
-            let idx = motion
-                .selected_gradient_preset_index
-                .unwrap_or(0)
+            let idx = motion.selected_gradient_preset_index.unwrap_or(0)
                 % BACKGROUND_GRADIENT_PREVIEW_FILES.len();
             BackgroundStyle::Gradient(idx)
         }
@@ -569,7 +571,6 @@ pub(super) fn build_shared_background_panel(
 ) -> GtkBox {
     super::motion_mode::build_motion_appearance_panel(window, session, preview)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -631,7 +632,11 @@ mod tests {
         let thumb =
             super::load_background_preview_image(&wallpaper, 256).expect("wallpaper decodes");
         assert!(thumb.width().max(thumb.height()) <= 256);
-        assert_eq!(thumb.width() * 9, thumb.height() * 16, "aspect ratio stays 16:9");
+        assert_eq!(
+            thumb.width() * 9,
+            thumb.height() * 16,
+            "aspect ratio stays 16:9"
+        );
         assert!(
             thumb.pixels().any(|pixel| pixel.0[0] > 0),
             "preview decode must return real pixels"
@@ -659,8 +664,8 @@ mod tests {
 
     #[test]
     fn frame_ratios_map_to_matching_static_crop() {
-        use crate::recording::editor::model::{MotionFrame, MotionFramePreset};
         use super::super::super::types::CropAspectRatio;
+        use crate::recording::editor::model::{MotionFrame, MotionFramePreset};
         let ratio_for = |preset: MotionFramePreset| {
             super::frame_preset_to_crop_ratio(&MotionFrame {
                 preset,
@@ -668,23 +673,59 @@ mod tests {
                 custom_height: 1440,
             })
         };
-        assert_eq!(ratio_for(MotionFramePreset::Standard), CropAspectRatio::Original);
-        assert_eq!(ratio_for(MotionFramePreset::OneOne), CropAspectRatio::Square);
-        assert_eq!(ratio_for(MotionFramePreset::SixteenNine), CropAspectRatio::SixteenNine);
-        assert_eq!(ratio_for(MotionFramePreset::FourThree), CropAspectRatio::FourThree);
-        assert_eq!(ratio_for(MotionFramePreset::ThreeTwo), CropAspectRatio::ThreeTwo);
-        assert_eq!(ratio_for(MotionFramePreset::NineSixteen), CropAspectRatio::NineSixteen);
-        assert_eq!(ratio_for(MotionFramePreset::FiveFour), CropAspectRatio::FiveFour);
-        assert_eq!(ratio_for(MotionFramePreset::FourFive), CropAspectRatio::FourFive);
-        assert_eq!(ratio_for(MotionFramePreset::ThreeFour), CropAspectRatio::ThreeFour);
-        assert_eq!(ratio_for(MotionFramePreset::TwoThree), CropAspectRatio::TwoThree);
+        assert_eq!(
+            ratio_for(MotionFramePreset::Standard),
+            CropAspectRatio::Original
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::OneOne),
+            CropAspectRatio::Square
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::SixteenNine),
+            CropAspectRatio::SixteenNine
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::FourThree),
+            CropAspectRatio::FourThree
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::ThreeTwo),
+            CropAspectRatio::ThreeTwo
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::NineSixteen),
+            CropAspectRatio::NineSixteen
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::FiveFour),
+            CropAspectRatio::FiveFour
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::FourFive),
+            CropAspectRatio::FourFive
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::ThreeFour),
+            CropAspectRatio::ThreeFour
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::TwoThree),
+            CropAspectRatio::TwoThree
+        );
         assert_eq!(
             ratio_for(MotionFramePreset::TenTwentyOne),
             CropAspectRatio::TenTwentyOne
         );
         // Legacy aliases resolve to the same static ratio as their canonical twin.
-        assert_eq!(ratio_for(MotionFramePreset::Instagram), CropAspectRatio::Square);
-        assert_eq!(ratio_for(MotionFramePreset::YouTube), CropAspectRatio::SixteenNine);
+        assert_eq!(
+            ratio_for(MotionFramePreset::Instagram),
+            CropAspectRatio::Square
+        );
+        assert_eq!(
+            ratio_for(MotionFramePreset::YouTube),
+            CropAspectRatio::SixteenNine
+        );
         // Social fixed sizes resolve to their ratio twin; W/H shows exact dims.
         assert_eq!(
             ratio_for(MotionFramePreset::YouTubeBanner),
@@ -751,8 +792,7 @@ mod tests {
 
         let image = RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255]));
         let mut state = EditorState::new(image);
-        state.background_style =
-            BackgroundStyle::PlainColor(DrawColor::new(0.2, 0.4, 0.8, 1.0));
+        state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.2, 0.4, 0.8, 1.0));
         state.background_padding = 40.0;
         state.background_corner_radius = 22.0;
 
@@ -765,14 +805,12 @@ mod tests {
 
         // A removed Static background clears Motion instead of keeping a
         // stale wallpaper from a previous Motion session.
-        let fresh = EditorState::new(RgbaImage::from_pixel(
-            8,
-            8,
-            image::Rgba([0, 0, 0, 255]),
-        ));
-        let mut keep = MotionAppearance::default();
-        keep.background_fill_type = MotionBackgroundFillType::Wallpaper;
-        keep.wallpaper_image_name = Some(String::from("/tmp/keep.jpg"));
+        let fresh = EditorState::new(RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255])));
+        let mut keep = MotionAppearance {
+            background_fill_type: MotionBackgroundFillType::Wallpaper,
+            wallpaper_image_name: Some(String::from("/tmp/keep.jpg")),
+            ..MotionAppearance::default()
+        };
         let mut keep_frame = MotionFrame::default();
         super::sync_static_appearance_to_motion(&fresh, &mut keep, &mut keep_frame);
         assert_eq!(keep.background_fill_type, MotionBackgroundFillType::None);
@@ -811,6 +849,4 @@ mod tests {
         };
         assert_eq!(square.output_size(), (1920, 1920));
     }
-
-
 }

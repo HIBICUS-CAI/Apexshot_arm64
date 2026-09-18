@@ -1171,7 +1171,8 @@ mod tests {
         assert!(
             !production_source.contains("crop_btn")
                 && !production_source.contains("selection_group.append(crop_btn);")
-                && !production_source.contains("toolbar_mode_stack.add_named(&crop_mode_group, Some(\"crop\"));"),
+                && !production_source
+                    .contains("toolbar_mode_stack.add_named(&crop_mode_group, Some(\"crop\"));"),
             "Toolbar should no longer expose the Crop tool; Background Frame covers ratios",
         );
     }

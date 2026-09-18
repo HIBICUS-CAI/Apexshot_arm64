@@ -1581,7 +1581,7 @@ msgid "Notifications"
 msgstr "Notifications"
 
 msgid "Number"
-msgstr "Nombre"
+msgstr "Numéro"
 
 msgid "Number Options"
 msgstr "Options de numérotation"
@@ -2402,3 +2402,54 @@ msgstr "Sombre"
 
 msgid "System"
 msgstr "Système"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Équilibré"
+
+msgid "Frame height in pixels"
+msgstr "Hauteur du cadre en pixels"
+
+msgid "Frame width in pixels"
+msgstr "Largeur du cadre en pixels"
+
+msgid "Freehand"
+msgstr "Tracé libre"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 avec micro et audio système si le bureau le permet"
+
+msgid "More frame sizes"
+msgstr "Plus de tailles de cadre"
+
+msgid "Number of the selected marker"
+msgstr "Numéro du marqueur sélectionné"
+
+msgid "Number the next marker starts at"
+msgstr "Numéro de départ du prochain marqueur"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Qualité d’enregistrement"
+
+msgid "Text-aware"
+msgstr "Aligné sur le texte"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"

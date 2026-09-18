@@ -19,8 +19,8 @@ use super::pen_weight::{HighlighterMode, PenWeight};
 use super::selection::action_bounds_with_padding;
 use super::state::EditorState;
 use super::types::{
-    tool_button_index, AnnotationAction, ArrowStyle, BackgroundStyle, DrawColor,
-    EditorError, Tool, ViewTransform,
+    tool_button_index, AnnotationAction, ArrowStyle, BackgroundStyle, DrawColor, EditorError, Tool,
+    ViewTransform,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -927,7 +927,6 @@ fn setup_editor_window_full(
         &traffic_close,
     );
 
-
     let arrow_style_list = GtkBox::new(Orientation::Vertical, 0);
     for style in ArrowStyle::ALL {
         let btn_box = GtkBox::new(Orientation::Horizontal, 8);
@@ -1278,8 +1277,7 @@ fn setup_editor_window_full(
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_fill_type =
                 crate::recording::editor::model::MotionBackgroundFillType::Color;
-            runtime.motion.appearance.background_color =
-                [color.r, color.g, color.b, color.a];
+            runtime.motion.appearance.background_color = [color.r, color.g, color.b, color.a];
         }
     }));
     let last_inspector = motion_host.last_inspector();

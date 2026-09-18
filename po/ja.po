@@ -960,7 +960,7 @@ msgid "Audio"
 msgstr "音声"
 
 msgid "Auto"
-msgstr "自動車"
+msgstr "自動"
 
 msgid "Auto Zoom detection complete"
 msgstr "自動ズームの検出が完了しました"
@@ -1465,7 +1465,7 @@ msgid "MP4 video"
 msgstr "MP4動画"
 
 msgid "Manual"
-msgstr "マニュアル"
+msgstr "手動"
 
 msgid "Maximum resolution"
 msgstr "最大解像度"
@@ -1613,7 +1613,7 @@ msgid "Or click to upload"
 msgstr "または、クリックしてアップロードしてください"
 
 msgid "Original"
-msgstr "原文"
+msgstr "オリジナル"
 
 msgid "Output size"
 msgstr "出力サイズ"
@@ -2357,3 +2357,54 @@ msgstr "ダーク"
 
 msgid "System"
 msgstr "システム"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "バランス"
+
+msgid "Frame height in pixels"
+msgstr "フレームの高さ（ピクセル）"
+
+msgid "Frame width in pixels"
+msgstr "フレームの幅（ピクセル）"
+
+msgid "Freehand"
+msgstr "フリーハンド"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "デスクトップが許可すればマイクとシステム音声付きの MP4"
+
+msgid "More frame sizes"
+msgstr "その他のフレームサイズ"
+
+msgid "Number of the selected marker"
+msgstr "選択したマーカーの番号"
+
+msgid "Number the next marker starts at"
+msgstr "次のマーカーが始まる番号"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "録画品質"
+
+msgid "Text-aware"
+msgstr "テキストに沿う"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "ウルトラ"

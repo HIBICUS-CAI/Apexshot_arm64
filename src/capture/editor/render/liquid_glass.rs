@@ -198,11 +198,7 @@ fn sample(backdrop: &RgbaImage, x: f64, y: f64) -> [f64; 4] {
 ///
 /// The returned layer is transparent outside the band, so callers can overlay
 /// it directly at [`GlassLayer::x`]/[`GlassLayer::y`].
-pub fn glass_layer(
-    backdrop: &RgbaImage,
-    ring: &GlassRing,
-    look: &GlassLook,
-) -> Option<GlassLayer> {
+pub fn glass_layer(backdrop: &RgbaImage, ring: &GlassRing, look: &GlassLook) -> Option<GlassLayer> {
     let (image_w, image_h) = backdrop.dimensions();
     if image_w == 0 || image_h == 0 {
         return None;
@@ -273,8 +269,7 @@ pub fn glass_layer(
         for lx in 0..layer_w {
             let pixel_x = x0 + f64::from(lx) + 0.5;
             let px = pixel_x - center_x;
-            let (distance, normal_x, normal_y) =
-                rounded_rect_sdf(px, py, half_w, half_h, radius);
+            let (distance, normal_x, normal_y) = rounded_rect_sdf(px, py, half_w, half_h, radius);
             if distance > gap + 1.5 || distance < -1.5 {
                 continue;
             }
@@ -315,16 +310,13 @@ pub fn glass_layer(
             let (red, green, blue) = match blurred.as_ref() {
                 Some(frosted) => {
                     let frost = |offset_x: f64, offset_y: f64| {
-                        sample(
-                            frosted,
-                            sample_x + offset_x - x0,
-                            sample_y + offset_y - y0,
-                        )
+                        sample(frosted, sample_x + offset_x - x0, sample_y + offset_y - y0)
                     };
                     let frosted_red = frost(normal_x * fringing, normal_y * fringing);
                     let frosted_green = frost(0.0, 0.0);
                     let frosted_blue = frost(-normal_x * fringing, -normal_y * fringing);
-                    let mix = |sharp: f64, blurred: f64| sharp * (1.0 - blur_mix) + blurred * blur_mix;
+                    let mix =
+                        |sharp: f64, blurred: f64| sharp * (1.0 - blur_mix) + blurred * blur_mix;
                     (
                         [
                             mix(red[0], frosted_red[0]),
@@ -375,7 +367,7 @@ pub fn glass_layer(
             }
             // Cool glass tint from the reference, plus its depth lift.
             color = [
-                color[0] * (1.0 - 0.08 * look.tint) ,
+                color[0] * (1.0 - 0.08 * look.tint),
                 color[1] * (1.0 - 0.05 * look.tint),
                 color[2] * (1.0 + 0.05 * look.tint),
             ];
@@ -431,8 +423,11 @@ pub fn glass_layer(
                 * (1.0 - smoothstep(0.5, 1.5, distance))
                 * (0.3 + 0.7 * top_bias);
             let rim = edge * look.edge_highlight * 0.20;
-            let inner_glow = smoothstep(5.0, 0.0, (gap - distance_from_card).min(distance_from_card + 1.0))
-                * look.edge_highlight
+            let inner_glow = smoothstep(
+                5.0,
+                0.0,
+                (gap - distance_from_card).min(distance_from_card + 1.0),
+            ) * look.edge_highlight
                 * 0.15;
             let environment = (0.5 - normal.1 * 0.5) * fresnel * 0.04;
 
@@ -441,8 +436,8 @@ pub fn glass_layer(
             // backdrop shows through, while lip terms (rim/strokes/glow)
             // stay full strength for the crisp Apple edge light.
             let body = specular + reflection + sheen + environment;
-            let lips = rim + inner_glow
-                + (outer_stroke + inner_stroke * 0.8) * look.edge_highlight * 0.5;
+            let lips =
+                rim + inner_glow + (outer_stroke + inner_stroke * 0.8) * look.edge_highlight * 0.5;
             let envelope = (0.35 + 0.65 * edge.max(tilt)).clamp(0.0, 1.0);
             let addition = body * envelope + lips;
             for channel in color.iter_mut() {

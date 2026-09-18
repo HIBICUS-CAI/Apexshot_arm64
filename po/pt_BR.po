@@ -2393,3 +2393,54 @@ msgstr "Escuro"
 
 msgid "System"
 msgstr "Sistema"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Equilibrado"
+
+msgid "Frame height in pixels"
+msgstr "Altura do quadro em pixels"
+
+msgid "Frame width in pixels"
+msgstr "Largura do quadro em pixels"
+
+msgid "Freehand"
+msgstr "Traço livre"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 com microfone e áudio do sistema se o desktop permitir"
+
+msgid "More frame sizes"
+msgstr "Mais tamanhos de quadro"
+
+msgid "Number of the selected marker"
+msgstr "Número do marcador selecionado"
+
+msgid "Number the next marker starts at"
+msgstr "Número em que o próximo marcador começa"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Qualidade da gravação"
+
+msgid "Text-aware"
+msgstr "Alinhado ao texto"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"

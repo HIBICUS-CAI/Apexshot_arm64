@@ -100,5 +100,3 @@ fn cursor_name_for_view_point_matches_text_and_crosshair_modes() {
         "default"
     );
 }
-
-

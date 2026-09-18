@@ -346,18 +346,17 @@ impl EditorState {
         if self.background_style == BackgroundStyle::None {
             return (0.0, 0.0, w, h);
         }
-        let layout =
-            crate::capture::editor::composition::BackgroundComposition::new(w, h)
-                .with_style(self.background_style.clone())
-                .with_padding(self.background_padding)
-                .with_shadow(self.background_shadow)
-                .with_insert(self.background_insert)
-                .with_alignment(self.background_alignment)
-                .with_corner_radius(self.background_corner_radius)
-                .with_aspect_ratio(self.background_aspect_ratio)
-                .with_frame_style(self.frame_style)
-                .with_frame_border_thickness(self.border_thickness)
-                .compute();
+        let layout = crate::capture::editor::composition::BackgroundComposition::new(w, h)
+            .with_style(self.background_style.clone())
+            .with_padding(self.background_padding)
+            .with_shadow(self.background_shadow)
+            .with_insert(self.background_insert)
+            .with_alignment(self.background_alignment)
+            .with_corner_radius(self.background_corner_radius)
+            .with_aspect_ratio(self.background_aspect_ratio)
+            .with_frame_style(self.frame_style)
+            .with_frame_border_thickness(self.border_thickness)
+            .compute();
         let ds = layout.draw_scale.max(0.0001);
         (
             -layout.image_rect.x / ds,

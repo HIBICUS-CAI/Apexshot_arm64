@@ -210,9 +210,11 @@ mod tests {
     #[test]
     fn saved_padding_never_restores_into_the_next_editor_open() {
         let mut state = EditorState::new(RgbaImage::new(10, 10));
-        let mut prefs = EditorPreferences::default();
+        let mut prefs = EditorPreferences {
+            background_padding: 96.0,
+            ..EditorPreferences::default()
+        };
 
-        prefs.background_padding = 96.0;
         prefs.apply_to_state(&mut state);
         assert!((state.background_padding).abs() < f64::EPSILON);
 

@@ -958,7 +958,7 @@ msgid "Audio"
 msgstr "音频"
 
 msgid "Auto"
-msgstr "汽车"
+msgstr "自动"
 
 msgid "Auto Zoom detection complete"
 msgstr "自动变焦检测完成"
@@ -1463,7 +1463,7 @@ msgid "MP4 video"
 msgstr "MP4视频"
 
 msgid "Manual"
-msgstr "手册"
+msgstr "手动"
 
 msgid "Maximum resolution"
 msgstr "最高分辨率"
@@ -1611,7 +1611,7 @@ msgid "Or click to upload"
 msgstr "或者点击上传"
 
 msgid "Original"
-msgstr "原文"
+msgstr "原始"
 
 msgid "Output size"
 msgstr "输出尺寸"
@@ -2354,3 +2354,54 @@ msgstr "深色"
 
 msgid "System"
 msgstr "跟随系统"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "均衡"
+
+msgid "Frame height in pixels"
+msgstr "画框高度（像素）"
+
+msgid "Frame width in pixels"
+msgstr "画框宽度（像素）"
+
+msgid "Freehand"
+msgstr "自由绘制"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "在桌面允许时录制带麦克风和系统音频的 MP4"
+
+msgid "More frame sizes"
+msgstr "更多画框尺寸"
+
+msgid "Number of the selected marker"
+msgstr "所选标记的编号"
+
+msgid "Number the next marker starts at"
+msgstr "下一个标记的起始编号"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "录制质量"
+
+msgid "Text-aware"
+msgstr "贴合文本"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "极致"

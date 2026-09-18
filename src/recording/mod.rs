@@ -496,8 +496,10 @@ mod tests {
         assert_eq!(crf_resolution_reduction(1920, 1200), 0);
         assert_eq!(crf_resolution_reduction(1280, 720), 2);
         assert_eq!(crf_resolution_reduction(640, 480), 6);
-        let mut app = AppConfig::default();
-        app.rec_video_quality = 2;
+        let app = AppConfig {
+            rec_video_quality: 2,
+            ..AppConfig::default()
+        };
         let config = RecordingConfig::from_app_config_at(
             &app,
             "mp4",

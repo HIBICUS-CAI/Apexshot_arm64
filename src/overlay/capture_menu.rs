@@ -96,8 +96,8 @@ fn separator_after(index: usize) -> bool {
 
 fn item_rect(index: usize) -> Rect {
     let mut x = 8.0;
-    for prior in 0..index {
-        x += ITEM_WIDTHS[prior];
+    for (prior, width) in ITEM_WIDTHS.iter().enumerate().take(index) {
+        x += width;
         if separator_after(prior) {
             x += 13.0;
         }

@@ -45,7 +45,10 @@ pub(super) fn install_background_asset_loading(
                 // 1. System wallpaper (High Priority)
                 if let Some(path) = background_panel::detect_system_wallpaper_path() {
                     println!("[DEBUG] Detected system wallpaper: {:?}", path);
-                    if let Some(rgba) = background_panel::load_background_preview_image(&path, background_panel::PREVIEW_BACKGROUND_MAX_EDGE) {
+                    if let Some(rgba) = background_panel::load_background_preview_image(
+                        &path,
+                        background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    ) {
                         let _ = sender.send((None, path, rgba));
                     }
                 } else {
@@ -54,9 +57,10 @@ pub(super) fn install_background_asset_loading(
                     let fallback_path = background_panel::background_gradient_asset_path(
                         background_panel::BACKGROUND_GRADIENT_PREVIEW_FILES[0],
                     );
-                    if let Some(rgba) =
-                        background_panel::load_background_preview_image(&fallback_path, background_panel::PREVIEW_BACKGROUND_MAX_EDGE)
-                    {
+                    if let Some(rgba) = background_panel::load_background_preview_image(
+                        &fallback_path,
+                        background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    ) {
                         let _ = sender.send((None, fallback_path, rgba));
                     }
                 }
@@ -67,7 +71,10 @@ pub(super) fn install_background_asset_loading(
                     .enumerate()
                 {
                     let path = background_panel::background_gradient_asset_path(file_name);
-                    if let Some(rgba) = background_panel::load_background_preview_image(&path, background_panel::PREVIEW_BACKGROUND_MAX_EDGE) {
+                    if let Some(rgba) = background_panel::load_background_preview_image(
+                        &path,
+                        background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    ) {
                         if sender.send((Some(idx), path, rgba)).is_err() {
                             break;
                         }

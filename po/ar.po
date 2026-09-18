@@ -1475,7 +1475,7 @@ msgid "MP4 video"
 msgstr "فيديو بتنسيق MP4"
 
 msgid "Manual"
-msgstr "دليل الاستخدام"
+msgstr "يدوي"
 
 msgid "Maximum resolution"
 msgstr "الدقة القصوى"
@@ -2373,3 +2373,54 @@ msgstr "داكن"
 
 msgid "System"
 msgstr "النظام"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "متوازن"
+
+msgid "Frame height in pixels"
+msgstr "ارتفاع الإطار بالبكسل"
+
+msgid "Frame width in pixels"
+msgstr "عرض الإطار بالبكسل"
+
+msgid "Freehand"
+msgstr "رسم حر"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 مع الميكروفون وصوت النظام إن سمح سطح المكتب"
+
+msgid "More frame sizes"
+msgstr "المزيد من أحجام الإطار"
+
+msgid "Number of the selected marker"
+msgstr "رقم العلامة المحددة"
+
+msgid "Number the next marker starts at"
+msgstr "الرقم الذي تبدأ منه العلامة التالية"
+
+msgid "Pinterest"
+msgstr "بينترست"
+
+msgid "Recording quality"
+msgstr "جودة التسجيل"
+
+msgid "Text-aware"
+msgstr "تتبع النص"
+
+msgid "Twitter"
+msgstr "تويتر"
+
+msgid "Ultra"
+msgstr "فائق"

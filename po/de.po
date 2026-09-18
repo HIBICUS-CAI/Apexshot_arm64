@@ -1499,7 +1499,7 @@ msgid "MP4 video"
 msgstr "MP4-Video"
 
 msgid "Manual"
-msgstr "Handbuch"
+msgstr "Manuell"
 
 msgid "Maximum resolution"
 msgstr "Maximale Auflösung"
@@ -2404,3 +2404,54 @@ msgstr "Dunkel"
 
 msgid "System"
 msgstr "System"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Ausgewogen"
+
+msgid "Frame height in pixels"
+msgstr "Rahmenhöhe in Pixeln"
+
+msgid "Frame width in pixels"
+msgstr "Rahmenbreite in Pixeln"
+
+msgid "Freehand"
+msgstr "Freihand"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 mit Mikrofon und Systemton, wenn der Desktop es zulässt"
+
+msgid "More frame sizes"
+msgstr "Weitere Rahmengrößen"
+
+msgid "Number of the selected marker"
+msgstr "Nummer der ausgewählten Markierung"
+
+msgid "Number the next marker starts at"
+msgstr "Nummer, bei der die nächste Markierung beginnt"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Aufnahmequalität"
+
+msgid "Text-aware"
+msgstr "Textbezogen"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"
