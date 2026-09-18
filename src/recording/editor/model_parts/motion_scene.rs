@@ -37,6 +37,20 @@ pub struct MotionAppearance {
     pub shadow_position: (f64, f64),
 }
 
+impl MotionAppearance {
+    /// Rendering padding for the card layout: the stored value floored to a
+    /// breathing room while a fill is active, mirroring Static's
+    /// `effective_background_padding` so the card never touches the fill on
+    /// any Frame in either mode. Hit-testing and text/watermark layers must
+    /// use this too, not the raw field, or layers drift apart.
+    pub fn effective_padding(&self) -> f64 {
+        crate::capture::editor::types::effective_background_padding(
+            self.background_padding,
+            self.background_fill_type != MotionBackgroundFillType::None,
+        )
+    }
+}
+
 impl Default for MotionAppearance {
     fn default() -> Self {
         Self {
@@ -174,9 +188,7 @@ impl MotionFramePreset {
         match self {
             Self::Standard => "Original",
             Self::Custom => "Custom",
-            Self::Instagram | Self::OneOne | Self::InstagramPost | Self::PinterestSquare => {
-                "1:1"
-            }
+            Self::Instagram | Self::OneOne | Self::InstagramPost | Self::PinterestSquare => "1:1",
             Self::X => "1.91:1",
             Self::YouTube
             | Self::SixteenNine

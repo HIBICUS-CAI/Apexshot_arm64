@@ -14,7 +14,7 @@ use std::process::Command;
 use super::super::state::EditorState;
 use super::super::types::{BackgroundStyle, CropAspectRatio, DrawColor};
 use crate::recording::editor::model::{
-    MotionAppearance, MotionBackgroundFillType,
+    MotionAppearance, MotionBackgroundFillType, MotionFrame, MotionFramePreset,
 };
 
 pub(super) const BACKGROUND_SIDEBAR_WIDTH: i32 = 210;
@@ -165,9 +165,9 @@ pub fn motion_wallpaper_preview_asset_path(file_name: &str) -> PathBuf {
     background_gradient_asset_path(&preview_file_name)
 }
 
-/// First bundled Motion wallpaper that exists on disk. Motion opens with this
-/// selected so the first static → motion switch shows a composed scene
-/// instead of a black default.
+/// First bundled Motion wallpaper that exists on disk. Available as an
+/// explicit picker choice; it is never auto-applied so Motion looks like
+/// Static on entry instead of gaining a background Static never had.
 pub fn default_motion_wallpaper() -> Option<String> {
     MOTION_WALLPAPER_FILES.iter().find_map(|file_name| {
         let path = background_gradient_asset_path(file_name);
@@ -421,6 +421,97 @@ fn frame_preset_to_crop_ratio(
     }
 }
 
+/// Reverse of `sync_motion_appearance_to_static`: seed the shared Motion
+/// runtime from a restored static `EditorState` so opening an image (or
+/// entering Motion) never discards the user's existing background.
+///
+/// Single-tool rule: static and Motion share one background. The Motion card
+/// snapshot is background-free (see `to_motion_card_image`), so the fill must
+/// live in exactly one place — the shared `MotionAppearance`. When static
+/// already has a background, copy it across instead of layering Motion's
+/// default wallpaper behind a card that already contains it.
+///
+/// `None` clears the Motion fill so Motion looks like Static (checkerboard in
+/// preview, black in export) instead of keeping a stale wallpaper from a
+/// previous Motion session after the user removed the Static background.
+///
+/// The static crop aspect also seeds the Motion frame so a cropped still does
+/// not reopen as Standard (original canvas) in Motion. Freeform/Original map
+/// to Standard; fixed ratios map to their Motion preset twin.
+pub(super) fn sync_static_appearance_to_motion(
+    state: &EditorState,
+    motion: &mut MotionAppearance,
+    frame: &mut MotionFrame,
+) {
+    frame.preset = match state.background_aspect_ratio {
+        CropAspectRatio::Freeform | CropAspectRatio::Original => MotionFramePreset::Standard,
+        CropAspectRatio::Square => MotionFramePreset::OneOne,
+        CropAspectRatio::FourThree => MotionFramePreset::FourThree,
+        CropAspectRatio::SixteenNine => MotionFramePreset::SixteenNine,
+        CropAspectRatio::TwentyOneNine | CropAspectRatio::TenTwentyOne => {
+            MotionFramePreset::TenTwentyOne
+        }
+        CropAspectRatio::ThreeTwo => MotionFramePreset::ThreeTwo,
+        CropAspectRatio::NineSixteen => MotionFramePreset::NineSixteen,
+        CropAspectRatio::FiveFour => MotionFramePreset::FiveFour,
+        CropAspectRatio::FourFive => MotionFramePreset::FourFive,
+        CropAspectRatio::ThreeFour => MotionFramePreset::ThreeFour,
+        CropAspectRatio::TwoThree => MotionFramePreset::TwoThree,
+        CropAspectRatio::ThreeOne => MotionFramePreset::TwitterCover,
+    };
+    match &state.background_style {
+        BackgroundStyle::None => {
+            motion.background_fill_type = MotionBackgroundFillType::None;
+            motion.wallpaper_image_name = None;
+            motion.custom_background_image = None;
+        }
+        BackgroundStyle::PlainColor(color) => {
+            motion.background_fill_type = MotionBackgroundFillType::Color;
+            motion.background_color = [color.r, color.g, color.b, color.a];
+        }
+        BackgroundStyle::Gradient(idx) => {
+            let file = BACKGROUND_GRADIENT_PREVIEW_FILES
+                [*idx % BACKGROUND_GRADIENT_PREVIEW_FILES.len()];
+            let path = background_gradient_asset_path(file);
+            motion.background_fill_type = MotionBackgroundFillType::Wallpaper;
+            motion.wallpaper_image_name = Some(path.to_string_lossy().into_owned());
+            motion.custom_background_image = None;
+        }
+        BackgroundStyle::Wallpaper(path) => {
+            let full = path.to_string_lossy().into_owned();
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            if MOTION_WALLPAPER_FILES.contains(&file_name) {
+                motion.background_fill_type = MotionBackgroundFillType::Wallpaper;
+                motion.wallpaper_image_name = Some(full);
+            } else {
+                motion.background_fill_type = MotionBackgroundFillType::Image;
+                motion.custom_background_image = Some(full);
+            }
+        }
+        // No Motion equivalent (screenshot-blurred surround); keep the
+        // current Motion fill rather than inventing a wrong background.
+        BackgroundStyle::Blurred(_) => {}
+    }
+    motion.background_padding = state.background_padding;
+    motion.background_blur = state.background_blur;
+    motion.background_noise = state.background_noise;
+    motion.border_radius = state.background_corner_radius;
+    motion.frame_style = state.frame_style;
+    motion.border_thickness = state.border_thickness;
+    motion.border_fill_color = [
+        state.border_color.r,
+        state.border_color.g,
+        state.border_color.b,
+        state.border_color.a,
+    ];
+    motion.shadow_opacity = state.shadow_opacity;
+    motion.shadow_blur = state.shadow_blur;
+    motion.shadow_position = (state.shadow_offset_x, state.shadow_offset_y);
+}
+
 pub(super) fn sync_motion_appearance_to_static(
     motion: &MotionAppearance,
     frame: &crate::recording::editor::model::MotionFrame,
@@ -647,6 +738,45 @@ mod tests {
             }),
             CropAspectRatio::FourThree
         );
+    }
+
+    #[test]
+    fn static_background_imports_into_motion_without_doubling() {
+        use crate::capture::editor::state::EditorState;
+        use crate::capture::editor::types::{BackgroundStyle, DrawColor};
+        use crate::recording::editor::model::{
+            MotionAppearance, MotionBackgroundFillType, MotionFrame,
+        };
+        use image::RgbaImage;
+
+        let image = RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255]));
+        let mut state = EditorState::new(image);
+        state.background_style =
+            BackgroundStyle::PlainColor(DrawColor::new(0.2, 0.4, 0.8, 1.0));
+        state.background_padding = 40.0;
+        state.background_corner_radius = 22.0;
+
+        let mut motion = MotionAppearance::default();
+        let mut frame = MotionFrame::default();
+        super::sync_static_appearance_to_motion(&state, &mut motion, &mut frame);
+        assert_eq!(motion.background_fill_type, MotionBackgroundFillType::Color);
+        assert!((motion.background_padding - 40.0).abs() < f64::EPSILON);
+        assert!((motion.border_radius - 22.0).abs() < f64::EPSILON);
+
+        // A removed Static background clears Motion instead of keeping a
+        // stale wallpaper from a previous Motion session.
+        let fresh = EditorState::new(RgbaImage::from_pixel(
+            8,
+            8,
+            image::Rgba([0, 0, 0, 255]),
+        ));
+        let mut keep = MotionAppearance::default();
+        keep.background_fill_type = MotionBackgroundFillType::Wallpaper;
+        keep.wallpaper_image_name = Some(String::from("/tmp/keep.jpg"));
+        let mut keep_frame = MotionFrame::default();
+        super::sync_static_appearance_to_motion(&fresh, &mut keep, &mut keep_frame);
+        assert_eq!(keep.background_fill_type, MotionBackgroundFillType::None);
+        assert_eq!(keep.wallpaper_image_name, None);
     }
 
     #[test]

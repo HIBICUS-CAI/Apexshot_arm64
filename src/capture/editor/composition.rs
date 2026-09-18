@@ -121,7 +121,12 @@ impl BackgroundComposition {
 
     /// Canvas-px overhang of the frame (outside border, accent strokes, and
     /// backing sheets) beyond each side of the drawn image.
-    fn frame_overhangs(&self, draw_width: f64, draw_height: f64, unit: f64) -> (f64, f64, f64, f64) {
+    fn frame_overhangs(
+        &self,
+        draw_width: f64,
+        draw_height: f64,
+        unit: f64,
+    ) -> (f64, f64, f64, f64) {
         let spec = self.frame_style.spec();
         // Inset borders paint inside the image edge, so they overhang nothing.
         let mut uniform = if spec.inset_border {
@@ -176,12 +181,7 @@ impl BackgroundComposition {
             right = right.max(max_x - draw_width);
             bottom = bottom.max(max_y - draw_height);
         }
-        (
-            left.max(0.0),
-            top.max(0.0),
-            right.max(0.0),
-            bottom.max(0.0),
-        )
+        (left.max(0.0), top.max(0.0), right.max(0.0), bottom.max(0.0))
     }
 
     pub fn compute(&self) -> CompositionLayout {
@@ -189,7 +189,13 @@ impl BackgroundComposition {
         let screenshot_h = self.screenshot_h.max(1.0);
         let ref_size = screenshot_w.max(screenshot_h);
         let scale_factor = ref_size / 400.0;
-        let padding_px = self.padding * scale_factor;
+        // A fill is always given breathing room: with a Frame aspect forcing
+        // a wider/taller canvas, padding 0 would glue the image to the fill
+        // on the short axis. Stored padding is untouched (see the const).
+        let padding_px = super::types::effective_background_padding(
+            self.padding,
+            self.style != BackgroundStyle::None,
+        ) * scale_factor;
 
         let mut canvas_width = screenshot_w;
         let mut canvas_height = screenshot_h;

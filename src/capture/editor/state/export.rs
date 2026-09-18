@@ -347,6 +347,50 @@ impl EditorState {
         self.to_rendered_image()
     }
 
+    /// Background-free card for Motion: the screenshot (effects baked) plus
+    /// vector annotations, with no wallpaper/padding, no corner radius, no
+    /// frame backings/borders, and no shadow. Motion composites all of that
+    /// itself from the shared `MotionAppearance`, so baking any of it here
+    /// would stack a second background behind the one already there and warp
+    /// it with the camera.
+    pub fn to_motion_card_image(&self) -> Result<RgbaImage, EditorError> {
+        let (width, height) = self.working_image.dimensions();
+        if width == 0 || height == 0 {
+            return Err(EditorError::ImageSave(
+                "image has invalid dimensions".into(),
+            ));
+        }
+        let stride = gtk4::cairo::Format::ARgb32
+            .stride_for_width(width)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        let data = super::super::render::rgba_to_cairo_argb_bytes(&self.working_image);
+        let mut surface = gtk4::cairo::ImageSurface::create_for_data(
+            data,
+            gtk4::cairo::Format::ARgb32,
+            width as i32,
+            height as i32,
+            stride,
+        )
+        .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+            for action in self.vector_annotation_actions() {
+                super::super::render::draw_annotation_action(&context, action);
+            }
+        }
+        surface.flush();
+        let surface_data = surface
+            .data()
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        Ok(super::super::render::cairo_argb_to_rgba_image(
+            width,
+            height,
+            stride as usize,
+            surface_data.as_ref(),
+        ))
+    }
+
     fn vector_annotation_actions(&self) -> impl Iterator<Item = &AnnotationAction> {
         self.actions.iter().filter(|action| {
             !matches!(

@@ -1,8 +1,8 @@
 use gtk4::cairo::Context;
 use gtk4::{
-    glib, prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Entry, Grid,
-    FileChooserAction, FileChooserNative, FileFilter, Label, Orientation, Overlay, ResponseType,
-    Revealer, Separator, Stack,
+    glib, prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Entry,
+    FileChooserAction, FileChooserNative, FileFilter, Grid, Label, Orientation, Overlay,
+    ResponseType, Revealer, Separator, Stack,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -11,12 +11,12 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use crate::capture::editor::types::FrameStyle;
 use crate::i18n::t;
 use crate::recording::editor::model::{
     MotionBackgroundFillType, MotionFrame, MotionFramePreset, MotionSceneShadowPlacement,
     MotionSceneShadowPreset,
 };
-use crate::capture::editor::types::FrameStyle;
 use crate::recording::editor::window::tool_sidebar::FillSlider;
 
 use super::widgets::{
@@ -72,6 +72,8 @@ fn motion_gradient_preset_button(
                 runtime.motion.appearance.gradient_color_2 = end;
                 runtime.motion.appearance.selected_gradient_preset_index = Some(index);
                 runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Gradient;
+                runtime.backdrop_cache = None;
+                runtime.preview_frame = None;
                 none_button.remove_css_class("active-background-option");
                 preview.queue_draw();
             }
@@ -193,11 +195,9 @@ fn frame_style_preset_area(style: FrameStyle) -> DrawingArea {
         cr.fill().ok();
         // Glass presets: same band + rim recipe as the renderers, scaled
         // down to the tile.
-        if let Some(liquid) = crate::capture::editor::render::LiquidFrame::resolve(
-            &spec,
-            spec.border_thickness,
-            0.45,
-        ) {
+        if let Some(liquid) =
+            crate::capture::editor::render::LiquidFrame::resolve(&spec, spec.border_thickness, 0.45)
+        {
             let path = |path_context: &gtk4::cairo::Context, expand: f64| {
                 crate::capture::editor::render::rounded_rect_path(
                     path_context,
@@ -276,6 +276,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         initial_shadow_position,
         initial_fill_type,
         initial_padding,
+        initial_background_blur,
+        initial_background_noise,
+        initial_border_radius,
     ) = {
         let runtime = session.runtime.borrow();
         let appearance = &runtime.motion.appearance;
@@ -289,6 +292,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             appearance.shadow_position,
             appearance.background_fill_type.clone(),
             appearance.background_padding,
+            appearance.background_blur,
+            appearance.background_noise,
+            appearance.border_radius,
         )
     };
     let root = GtkBox::new(Orientation::Vertical, 12);
@@ -320,6 +326,8 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::None;
+            runtime.backdrop_cache = None;
+            runtime.preview_frame = None;
             none_button.add_css_class("active-background-option");
             preview.queue_draw();
         }
@@ -344,6 +352,8 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
                 rgba.alpha().into(),
             ];
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
+            runtime.backdrop_cache = None;
+            runtime.preview_frame = None;
             none_button.remove_css_class("active-background-option");
             preview.queue_draw();
         }
@@ -611,12 +621,13 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_padding = slider.value();
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
     background_section.append(&padding.widget());
 
-    let blur = motion_appearance_slider("Background blur", 0.0, 1.0, 0.0, "%");
+    let blur = motion_appearance_slider("Background blur", 0.0, 1.0, initial_background_blur, "%");
     blur.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
@@ -624,12 +635,15 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_blur = slider.value();
+            runtime.backdrop_cache = None;
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
     background_section.append(&blur.widget());
 
-    let noise = motion_appearance_slider("Background noise", 0.0, 1.0, 0.0, "%");
+    let noise =
+        motion_appearance_slider("Background noise", 0.0, 1.0, initial_background_noise, "%");
     noise.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
@@ -637,6 +651,8 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_noise = slider.value();
+            runtime.backdrop_cache = None;
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
@@ -653,6 +669,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_opacity = slider.value();
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
@@ -667,6 +684,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_blur = slider.value();
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
@@ -686,6 +704,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_position.0 = slider.value();
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
@@ -705,6 +724,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_position.1 = slider.value();
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
@@ -718,8 +738,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     style_grid.set_row_spacing(8);
     style_grid.set_hexpand(false);
     style_grid.set_halign(Align::Fill);
-    let style_buttons: Rc<RefCell<Vec<(FrameStyle, Button)>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let style_buttons: Rc<RefCell<Vec<(FrameStyle, Button)>>> = Rc::new(RefCell::new(Vec::new()));
     // Late-bound handle so picking Liquid can also lift a sharp-corner card
     // onto a radius the glass highlights can play on (filled in below, after
     // the radius slider exists).
@@ -767,11 +786,11 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
                             spec.border_color.b,
                             spec.border_color.a,
                         ];
-                        let bump =
-                            spec.liquid && runtime.motion.appearance.border_radius < 12.0;
+                        let bump = spec.liquid && runtime.motion.appearance.border_radius < 12.0;
                         if bump {
                             runtime.motion.appearance.border_radius = 20.0;
                         }
+                        runtime.preview_frame = None;
                         preview.queue_draw();
                         bump
                     };
@@ -803,7 +822,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
 
     // The radius rounds the captured image card itself; the background
     // scene stays a full rectangle. It applies on top of the Style preset.
-    let radius = motion_appearance_slider("Border Radius", 0.0, 40.0, 0.0, "px");
+    let radius = motion_appearance_slider("Border Radius", 0.0, 40.0, initial_border_radius, "px");
     *radius_slider_slot.borrow_mut() = Some(radius.clone());
     radius.connect_value_changed({
         let runtime = session.runtime.clone();
@@ -812,6 +831,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.border_radius = slider.value();
+            runtime.preview_frame = None;
             preview.queue_draw();
         }
     });
@@ -988,6 +1008,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
                     runtime.motion.frame.preset = preset;
                 }
                 runtime.backdrop_cache = None;
+                // Instant feedback like background picks: don't show the old
+                // worker frame while the new aspect renders.
+                runtime.preview_frame = None;
                 let frame = runtime.motion.frame.clone();
                 let display = if frame.preset == MotionFramePreset::Standard {
                     (orig_w, orig_h)
@@ -1015,7 +1038,10 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let sync_frame_selection = sync_frame_selection.clone();
         Rc::new(move || {
             fn parse_dim(text: &str) -> Option<u32> {
-                text.trim().parse::<u32>().ok().filter(|v| *v >= 16 && *v <= 7680)
+                text.trim()
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|v| *v >= 16 && *v <= 7680)
             }
             let w_text = w_entry.text().to_string();
             let h_text = h_entry.text().to_string();
@@ -1035,6 +1061,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
                 runtime.motion.frame.custom_width = w;
                 runtime.motion.frame.custom_height = h;
                 runtime.backdrop_cache = None;
+                runtime.preview_frame = None;
                 runtime.motion.frame.clone()
             };
             preview.queue_draw();
@@ -1206,12 +1233,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             "5:4",
             "Large format 5:4 output",
         ),
-        (
-            MotionFramePreset::OneOne,
-            1.0,
-            "1:1",
-            "Square 1:1 output",
-        ),
+        (MotionFramePreset::OneOne, 1.0, "1:1", "Square 1:1 output"),
         (
             MotionFramePreset::FourFive,
             4.0 / 5.0,
@@ -1595,8 +1617,7 @@ thread_local! {
 const WALLPAPER_THUMB_MAX_EDGE: u32 = 256;
 
 fn cached_wallpaper_preview_surface(path: &str) -> Option<gtk4::cairo::ImageSurface> {
-    if let Some(hit) = WALLPAPER_PREVIEW_CACHE.with(|cache| cache.borrow().get(path).cloned())
-    {
+    if let Some(hit) = WALLPAPER_PREVIEW_CACHE.with(|cache| cache.borrow().get(path).cloned()) {
         return Some(hit);
     }
     let surface = crate::capture::editor::window::background_panel::load_background_preview_image(
@@ -1749,7 +1770,12 @@ fn motion_wallpaper_catalog_section(
                 return;
             };
             let needs_switch = !matches!(
-                session.runtime.borrow().motion.appearance.background_fill_type,
+                session
+                    .runtime
+                    .borrow()
+                    .motion
+                    .appearance
+                    .background_fill_type,
                 MotionBackgroundFillType::Wallpaper
             );
             if needs_switch {
@@ -1760,6 +1786,7 @@ fn motion_wallpaper_catalog_section(
                         Some(default_path.to_string_lossy().into_owned());
                     runtime.motion.appearance.background_fill_type =
                         MotionBackgroundFillType::Wallpaper;
+                    runtime.motion.appearance.custom_background_image = None;
                     // Cached thumb now (no decode jank), full image off-thread.
                     // ponytail: never sync-decode full wallpaper on click.
                     runtime.set_background_surface(
@@ -1868,6 +1895,9 @@ fn motion_wallpaper_thumbnail(
             runtime.motion.appearance.wallpaper_image_name =
                 Some(path.to_string_lossy().into_owned());
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Wallpaper;
+            // Replace, never stack: the other image slot must not survive or a
+            // later round-trip can resurrect it behind the new fill.
+            runtime.motion.appearance.custom_background_image = None;
             // The thumbnail is cached. Show it now, then replace it with the
             // full wallpaper from a worker thread. ponytail: cache hit, no decode.
             runtime.set_background_surface(
@@ -1938,7 +1968,12 @@ fn motion_wallpaper_stack_thumbnail(
     button
 }
 
-fn paint_wallpaper_thumb(context: &Context, surface: &gtk4::cairo::ImageSurface, width: i32, height: i32) {
+fn paint_wallpaper_thumb(
+    context: &Context,
+    surface: &gtk4::cairo::ImageSurface,
+    width: i32,
+    height: i32,
+) {
     let source_w = f64::from(surface.width().max(1));
     let source_h = f64::from(surface.height().max(1));
     let scale = (f64::from(width) / source_w).max(f64::from(height) / source_h);
@@ -2121,9 +2156,11 @@ fn motion_image_section(
                 match kind {
                     MotionBackgroundFillType::Wallpaper => {
                         runtime.motion.appearance.wallpaper_image_name = Some(path);
+                        runtime.motion.appearance.custom_background_image = None;
                     }
                     MotionBackgroundFillType::Image => {
                         runtime.motion.appearance.custom_background_image = Some(path);
+                        runtime.motion.appearance.wallpaper_image_name = None;
                     }
                     _ => return,
                 }

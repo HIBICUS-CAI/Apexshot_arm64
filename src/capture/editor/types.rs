@@ -24,6 +24,26 @@ pub enum BackgroundStyle {
     PlainColor(DrawColor),
 }
 
+/// Minimum surround kept between the screenshot and the background edges
+/// whenever a fill is active, in padding slider units (reference px against
+/// a 400px long edge, exactly like padding itself). A canvas shaped by Frame
+/// would otherwise let the image touch the background on the short axis at
+/// padding 0, so layouts floor tiny paddings to this breathing room. Stored
+/// padding values are untouched — sliders still read/write the real value;
+/// only rendering uses the floored one.
+pub const BACKGROUND_MIN_GAP: f64 = 8.0;
+
+/// Rendering padding for a canvas: the user's value, floored to
+/// [`BACKGROUND_MIN_GAP`] while a background fill is active so the image
+/// never sits edge-to-edge against the fill on any Frame.
+pub fn effective_background_padding(padding: f64, has_fill: bool) -> f64 {
+    if has_fill {
+        padding.max(BACKGROUND_MIN_GAP)
+    } else {
+        padding
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BackgroundAlignment {
     TopLeft,
@@ -749,8 +769,16 @@ impl ViewTransform {
         let mut image_point = self.view_to_image(point);
         if self.has_background {
             let (min_x, min_y, max_x, max_y) = self.canvas_bounds_in_image_coords();
-            let (lo_x, hi_x) = if min_x <= max_x { (min_x, max_x) } else { (max_x, min_x) };
-            let (lo_y, hi_y) = if min_y <= max_y { (min_y, max_y) } else { (max_y, min_y) };
+            let (lo_x, hi_x) = if min_x <= max_x {
+                (min_x, max_x)
+            } else {
+                (max_x, min_x)
+            };
+            let (lo_y, hi_y) = if min_y <= max_y {
+                (min_y, max_y)
+            } else {
+                (max_y, min_y)
+            };
             image_point.x = image_point.x.clamp(lo_x, hi_x);
             image_point.y = image_point.y.clamp(lo_y, hi_y);
             return image_point;

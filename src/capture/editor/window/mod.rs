@@ -827,11 +827,17 @@ fn setup_editor_window_full(
         }
     });
 
+    // Deferred background-fill writer: the toolbar color paths are built
+    // before the Motion session exists, so they resolve the setter (single
+    // source of truth) at click time.
+    let background_fill_slot: Rc<RefCell<Option<Rc<dyn Fn(DrawColor)>>>> =
+        Rc::new(RefCell::new(None));
     let color_picker_parts = color_picker::build_color_picker(
         state.clone(),
         canvas_queue_draw_signal,
         drawing_area_placeholder.clone(),
         annotate_config.show_color_names,
+        background_fill_slot.clone(),
     );
     let color_floating_card = color_picker_parts.floating_card;
     let color_buttons = color_picker_parts.color_buttons;
@@ -1239,9 +1245,10 @@ fn setup_editor_window_full(
         save_btn.set_sensitive(false);
     }
 
-    // The Background tool runs on the shared Motion runtime: seed its padding
-    // from the restored per-image state (0px for a fresh image) before the
-    // appearance panels are built and the static sync starts.
+    // The Background tool runs on the shared Motion runtime: seed it from the
+    // restored per-image state before the appearance panels are built and the
+    // static sync starts, so a saved background is never discarded (single
+    // shared background, no double layer, no added fill).
     let restored_background_padding = state.lock().unwrap().background_padding;
     let motion_host = motion_host::MotionHost::new(
         &window,
@@ -1249,6 +1256,32 @@ fn setup_editor_window_full(
         empty_drop_zone,
         restored_background_padding,
     );
+    {
+        let st = state.lock().unwrap();
+        // Fresh images (None) stay on None so Motion looks like Static;
+        // images with a saved background import it so both start in sync.
+        if st.background_style != BackgroundStyle::None {
+            let session = motion_host.session();
+            let mut runtime = session.runtime.borrow_mut();
+            let (appearance, frame) = {
+                let motion = &mut runtime.motion;
+                (&mut motion.appearance, &mut motion.frame)
+            };
+            background_panel::sync_static_appearance_to_motion(&st, appearance, frame);
+            runtime.refresh_motion_surfaces();
+        }
+    }
+    *background_fill_slot.borrow_mut() = Some(Rc::new({
+        let session = motion_host.session();
+        move |color: DrawColor| {
+            let mut runtime = session.runtime.borrow_mut();
+            runtime.begin_motion_edit();
+            runtime.motion.appearance.background_fill_type =
+                crate::recording::editor::model::MotionBackgroundFillType::Color;
+            runtime.motion.appearance.background_color =
+                [color.r, color.g, color.b, color.a];
+        }
+    }));
     let last_inspector = motion_host.last_inspector();
     let in_motion = motion_host.in_motion();
 
@@ -1287,6 +1320,7 @@ fn setup_editor_window_full(
         &motion_host.session(),
         &drawing_area,
     );
+    let static_appearance_slot = Rc::new(RefCell::new(background_inspector.clone()));
 
     let colors_panel_parts = colors_panel::build_colors_panel(
         state.clone(),
@@ -2257,6 +2291,8 @@ fn setup_editor_window_full(
         watermark_tab_btn: &watermark_tab_btn,
         state: &state,
         empty_drop_zone,
+        static_preview: &drawing_area,
+        static_appearance_slot: static_appearance_slot.clone(),
     });
 
     if empty_drop_zone {
@@ -2531,6 +2567,7 @@ fn setup_editor_window_full(
         sync_picker_for_active_tool: sync_shared_colors_for_active_tool.clone(),
         sync_picker_from_color: sync_picker_from_color.clone(),
         apply_picker_color_to_editor: apply_picker_color_to_editor.clone(),
+        set_background_fill: background_fill_slot.clone(),
         add_color_to_custom_slots: Rc::new({
             let custom_slot_colors = custom_slot_colors.clone();
             let refresh_custom_color_slots = refresh_custom_color_slots.clone();

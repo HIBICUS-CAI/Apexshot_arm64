@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use gtk4::{
-    prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, Overlay, Revealer,
+    prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Overlay, Revealer,
     RevealerTransitionType, Stack,
 };
 
@@ -18,6 +18,10 @@ pub(super) struct MotionHost {
     session: Rc<MotionSession>,
     last_inspector: Rc<RefCell<String>>,
     in_motion: Rc<Cell<bool>>,
+    /// Currently installed Motion Appearance panel. Rebuilt on every entry
+    /// so sliders, swatches, and highlights match Static instead of
+    /// window-open state.
+    appearance_slot: Rc<RefCell<GtkBox>>,
 }
 
 pub(super) struct MotionHostInstallInputs<'a> {
@@ -33,6 +37,8 @@ pub(super) struct MotionHostInstallInputs<'a> {
     pub watermark_tab_btn: &'a Button,
     pub state: &'a Arc<Mutex<EditorState>>,
     pub empty_drop_zone: bool,
+    pub static_preview: &'a DrawingArea,
+    pub static_appearance_slot: Rc<RefCell<GtkBox>>,
 }
 
 impl MotionHost {
@@ -48,11 +54,13 @@ impl MotionHost {
             parts.shell.motion_btn.set_sensitive(false);
         }
 
+        let appearance_slot = Rc::new(RefCell::new(parts.panels.appearance_inspector.clone()));
         Self {
             parts,
             session: Rc::new(session),
             last_inspector: Rc::new(RefCell::new(String::from("placeholder"))),
             in_motion: Rc::new(Cell::new(false)),
+            appearance_slot,
         }
     }
 
@@ -87,6 +95,8 @@ impl MotionHost {
             watermark_tab_btn,
             state,
             empty_drop_zone,
+            static_preview,
+            static_appearance_slot,
         } = input;
 
         let motion_tabs_revealer = Revealer::new();
@@ -155,6 +165,9 @@ impl MotionHost {
         let enter_motion = {
             let state = state.clone();
             let session = self.session.clone();
+            let window_enter = window.clone();
+            let inspector_stack_enter = inspector_stack.clone();
+            let appearance_slot_enter = self.appearance_slot.clone();
             let preview = self.parts.shell.preview.clone();
             let ruler = self.parts.timeline.ruler.clone();
             let motion_track = self.parts.timeline.motion_track.clone();
@@ -167,6 +180,20 @@ impl MotionHost {
             let duration_value = self.parts.shared.duration_value.clone();
             Rc::new(move || {
                 session.capture_snapshot(&state.lock().unwrap());
+                // Fresh panel from the captured runtime: every control shows
+                // the Static values instead of window-open state.
+                {
+                    let old_panel = appearance_slot_enter.borrow().clone();
+                    let fresh = motion_mode::build_motion_appearance_panel(
+                        &window_enter,
+                        session.as_ref(),
+                        &preview,
+                    );
+                    fresh.set_visible(true);
+                    inspector_stack_enter.remove(&old_panel);
+                    inspector_stack_enter.add_named(&fresh, Some("motion-appearance"));
+                    *appearance_slot_enter.borrow_mut() = fresh;
+                }
                 let duration = session.duration();
                 duration_slider.set_value(duration);
                 duration_value.set_label(&format!("{duration:.1}s"));
@@ -188,7 +215,25 @@ impl MotionHost {
             let motion_chrome = motion_chrome.clone();
             let last_inspector = self.last_inspector.clone();
             let in_motion = self.in_motion.clone();
+            let window_leave = window.clone();
+            let inspector_stack_leave = inspector_stack.clone();
+            let static_preview_leave = static_preview.clone();
+            let static_slot_leave = static_appearance_slot.clone();
             Rc::new(move || {
+                // Fresh Static panel from the Motion runtime first, so it
+                // shows current values instead of window-open state.
+                {
+                    let old_panel = static_slot_leave.borrow().clone();
+                    let fresh = super::background_panel::build_shared_background_panel(
+                        &window_leave,
+                        session.as_ref(),
+                        &static_preview_leave,
+                    );
+                    fresh.set_visible(true);
+                    inspector_stack_leave.remove(&old_panel);
+                    inspector_stack_leave.add_named(&fresh, Some("background"));
+                    *static_slot_leave.borrow_mut() = fresh;
+                }
                 session.clear_snapshot();
                 motion_mode::apply_editor_mode(
                     &motion_chrome,

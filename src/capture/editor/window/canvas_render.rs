@@ -19,13 +19,13 @@ use crate::capture::editor::{
     composition::BackgroundComposition,
     render::{
         draw_active_text_input, draw_annotation_action, draw_arrow_control_handles,
-        draw_arrow_selection_outline, draw_canvas_checkerboard_background,
-        draw_draft_action, draw_rgba_to_context, draw_selection_handles, draw_selection_outline,
+        draw_arrow_selection_outline, draw_canvas_checkerboard_background, draw_draft_action,
+        draw_rgba_to_context, draw_selection_handles, draw_selection_outline,
         draw_text_edit_border, draw_text_edit_handles, rgba_image_to_surface, text_action_bounds,
     },
     selection::{action_bounds_with_padding, action_resize_handles},
     state::{render_shadow_layer, EditorState},
-    types::{AnnotationAction, BackgroundStyle, Rect, Tool, ViewTransform, frame_needs_canvas},
+    types::{frame_needs_canvas, AnnotationAction, BackgroundStyle, Rect, Tool, ViewTransform},
     ui_support::{DockedBarInset, EDITOR_TOP_CHROME_HEIGHT},
 };
 
@@ -329,12 +329,17 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                         // The Appearance inspector decoded this wallpaper for its
                         // own preview; reuse those pixels. Decoding here would run
                         // a multi-megapixel JPEG decode on the UI thread.
+                        // Use the shared runtime's pixels immediately, even while
+                        // they are still the 256px thumb. Showing the new fill
+                        // blurry for one frame beats keeping the old wallpaper
+                        // and feeling dead until the full decode lands.
                         let motion_surface = {
                             let runtime = motion_runtime.borrow();
                             let is_selected = runtime.background_surface_path.as_deref()
-                                == Some(path.to_string_lossy().as_ref())
-                                && !runtime.background_surface_is_preview;
-                            is_selected.then(|| runtime.background_surface.clone()).flatten()
+                                == Some(path.to_string_lossy().as_ref());
+                            is_selected
+                                .then(|| runtime.background_surface.clone())
+                                .flatten()
                         };
                         if let Some(surface) = motion_surface {
                             *bg_cache = Some(surface);
@@ -412,7 +417,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                         virtual_w * canvas_t.scale,
                         virtual_h * canvas_t.scale,
                     );
-                let _ = context.fill();
+                    let _ = context.fill();
                 }
             }
 
@@ -438,8 +443,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     if backings.iter().any(|b| b.is_some()) {
                         let bw = image_width * t.scale;
                         let bh = image_height * t.scale;
-                        let br =
-                            background_corner_radius * background_scale_factor * t.scale;
+                        let br = background_corner_radius * background_scale_factor * t.scale;
                         // Backing offsets are fixed canvas px (same at any image
                         // size); canvas px -> view px via the canvas scale.
                         let unit = canvas_t.scale;
@@ -646,7 +650,13 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     }
                 }
                 let mut expand = 0.0;
-                let stroke_outside = |thickness: f64, radius: f64, r: f64, g: f64, b: f64, a: f64, extra: f64| {
+                let stroke_outside = |thickness: f64,
+                                      radius: f64,
+                                      r: f64,
+                                      g: f64,
+                                      b: f64,
+                                      a: f64,
+                                      extra: f64| {
                     let lw = (thickness * unit).max(0.0);
                     if lw <= 0.01 {
                         return extra;
@@ -741,14 +751,11 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     let mut text_bounds =
                         text_action_bounds(context, *position, text, font, Some(available_width));
                     if has_background {
-                        let (min_bx, min_by, max_bx, max_by) =
-                            t.canvas_bounds_in_image_coords();
+                        let (min_bx, min_by, max_bx, max_by) = t.canvas_bounds_in_image_coords();
                         let min_ix = min_bx.round() as i32;
                         let min_iy = min_by.round() as i32;
-                        let max_ix =
-                            (max_bx.round() as i32 - text_bounds.rect.width).max(min_ix);
-                        let max_iy =
-                            (max_by.round() as i32 - text_bounds.rect.height).max(min_iy);
+                        let max_ix = (max_bx.round() as i32 - text_bounds.rect.width).max(min_ix);
+                        let max_iy = (max_by.round() as i32 - text_bounds.rect.height).max(min_iy);
                         text_bounds.rect.x = text_bounds.rect.x.clamp(min_ix, max_ix);
                         text_bounds.rect.y = text_bounds.rect.y.clamp(min_iy, max_iy);
                     } else {
@@ -788,14 +795,11 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     let mut text_bounds =
                         text_action_bounds(context, *position, text, font, Some(available_width));
                     if has_background {
-                        let (min_bx, min_by, max_bx, max_by) =
-                            t.canvas_bounds_in_image_coords();
+                        let (min_bx, min_by, max_bx, max_by) = t.canvas_bounds_in_image_coords();
                         let min_ix = min_bx.round() as i32;
                         let min_iy = min_by.round() as i32;
-                        let max_ix =
-                            (max_bx.round() as i32 - text_bounds.rect.width).max(min_ix);
-                        let max_iy =
-                            (max_by.round() as i32 - text_bounds.rect.height).max(min_iy);
+                        let max_ix = (max_bx.round() as i32 - text_bounds.rect.width).max(min_ix);
+                        let max_iy = (max_by.round() as i32 - text_bounds.rect.height).max(min_iy);
                         text_bounds.rect.x = text_bounds.rect.x.clamp(min_ix, max_ix);
                         text_bounds.rect.y = text_bounds.rect.y.clamp(min_iy, max_iy);
                     } else {

@@ -173,6 +173,8 @@ pub(in crate::capture::editor::window) fn wire_motion_controls(
         redraw_playhead,
         redraw_motion_track,
         redraw_text_track,
+        request_transition_preview.clone(),
+        request_text_transition_preview.clone(),
     );
 
     text::install(

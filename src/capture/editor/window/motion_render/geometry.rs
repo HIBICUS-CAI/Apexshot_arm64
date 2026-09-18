@@ -70,6 +70,32 @@ struct CardLayout {
     cy: f64,
 }
 
+/// Reference scale shared with the Static canvas: slider units are defined
+/// against a 400px long edge, so a padding of 40 means 10% surround per side
+/// no matter how large the screenshot is.
+pub(super) fn motion_reference_scale(img_w: f64, img_h: f64) -> f64 {
+    (img_w.max(img_h) / 400.0).clamp(0.25, 8.0)
+}
+
+/// Fit the padded canvas (screenshot + surround) into the stage, matching the
+/// Static composition where padding grows the canvas instead of shrinking the
+/// card by raw pixels.
+pub(super) fn motion_canvas_fit(
+    img_w: f64,
+    img_h: f64,
+    padding: f64,
+    bounds_w: f64,
+    bounds_h: f64,
+) -> f64 {
+    let scale = motion_reference_scale(img_w, img_h);
+    let pad_px = padding.clamp(0.0, 200.0) * scale;
+    let canvas_w = img_w + pad_px * 2.0;
+    let canvas_h = img_h + pad_px * 2.0;
+    (bounds_w / canvas_w)
+        .min(bounds_h / canvas_h)
+        .clamp(0.05, 1.0)
+}
+
 impl CardLayout {
     fn with_padding(
         surface: &ImageSurface,
@@ -80,10 +106,7 @@ impl CardLayout {
     ) -> Self {
         let img_w = surface.width().max(1) as f64;
         let img_h = surface.height().max(1) as f64;
-        let pad = padding.clamp(0.0, (stage.bounds_w.min(stage.bounds_h) - 2.0).max(0.0));
-        let fit = ((stage.bounds_w - pad) / img_w)
-            .min((stage.bounds_h - pad) / img_h)
-            .clamp(0.05, 1.0);
+        let fit = motion_canvas_fit(img_w, img_h, padding, stage.bounds_w, stage.bounds_h);
         let (cx, cy) = motion_card_center(img_w, img_h, fit, stage, transform, zoom_anchor);
         Self {
             img_w,

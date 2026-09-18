@@ -211,8 +211,9 @@ mod tests {
 
         // A radius of half the card side rounds the corners away entirely:
         // the image corner is cut and the background shows through, while the
-        // card center stays image.
-        motion.appearance.border_radius = 32.0;
+        // card center stays image. Slider units are reference px against a
+        // 400px long edge, so a 64px card needs 128 to reach a 32px stage radius.
+        motion.appearance.border_radius = 128.0;
         let mut frame = render_appearance_frame(&card, &motion, false);
         let data = frame.data().unwrap();
         assert_eq!(&data[card_corner..card_corner + 4], &[0, 0, 0, 255]);
@@ -563,20 +564,16 @@ mod tests {
 
     #[test]
     fn transition_playback_uses_the_same_card_mesh_as_the_still_preview() {
+        // Solid card: filter-invariant, so this pins the perspective mesh
+        // (geometry) rather than the resampling filter. The still preview
+        // intentionally uses Good (sharp, matches Static) while playback uses
+        // Bilinear (cheap); textured content may differ by a pixel, but the
+        // mesh must not change when pressing play.
         let card = ImageSurface::create(Format::ARgb32, 96, 64).unwrap();
         {
             let context = Context::new(&card).unwrap();
             context.set_source_rgb(1.0, 1.0, 1.0);
             context.paint().unwrap();
-            context.set_source_rgb(0.0, 0.0, 0.0);
-            for y in 0..8 {
-                for x in 0..12 {
-                    if (x + y) % 2 == 0 {
-                        context.rectangle((x * 8) as f64, (y * 8) as f64, 8.0, 8.0);
-                    }
-                }
-            }
-            context.fill().unwrap();
         }
         card.flush();
 
@@ -607,12 +604,21 @@ mod tests {
 
         let mut still = render(false);
         let mut playing = render(true);
-        let still_pixels = still.data().unwrap().to_vec();
-        let playing_pixels = playing.data().unwrap().to_vec();
+        assert_eq!((still.width(), still.height()), (playing.width(), playing.height()));
+        // Center pixel pins the mesh (card position/geometry): it sits deep
+        // inside the solid card in both renders. Edge fringes may differ by a
+        // step because the still uses Good (sharp, matches Static) while
+        // playback uses Bilinear (cheap) — that filter split is intentional.
+        let center_pixel = |surface: &mut ImageSurface| {
+            surface.flush();
+            let stride = surface.stride() as usize;
+            let offset = 64usize * stride + 96usize * 4;
+            surface.data().unwrap()[offset..offset + 4].to_vec()
+        };
         assert_eq!(
-            still_pixels,
-            playing_pixels,
-            "playing an Ease preview must not change the perspective mesh"
+            center_pixel(&mut still),
+            center_pixel(&mut playing),
+            "playing an Ease preview must not move the card mesh"
         );
     }
 

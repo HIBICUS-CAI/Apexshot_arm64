@@ -501,6 +501,13 @@ impl MotionState {
 
     pub fn sample(&self, time: f64) -> MotionTransform {
         let time = time.clamp(0.0, self.duration.max(0.0));
+        // No camera moves: stay perfectly flat so the Motion still matches
+        // the Static canvas. Applying `perspective_intensity` here would force
+        // the mesh path (and a shadow lift) for an identity pose whose
+        // projection is exactly 1:1 — a visible warp/softening with no clip.
+        if self.segments.iter().all(|segment| segment.is_disabled) {
+            return MotionTransform::default();
+        }
         let transform = if let Some(segment) = self
             .segments
             .iter()

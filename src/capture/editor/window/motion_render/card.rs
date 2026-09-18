@@ -19,12 +19,14 @@ fn draw_transformed_card(
     if img_w < 1.0 || img_h < 1.0 {
         return;
     }
-    let pad = appearance
-        .background_padding
-        .clamp(0.0, (stage.bounds_w.min(stage.bounds_h) - 2.0).max(0.0));
-    let fit = ((stage.bounds_w - pad) / img_w)
-        .min((stage.bounds_h - pad) / img_h)
-        .clamp(0.05, 1.0);
+    let ref_scale = motion_reference_scale(img_w, img_h);
+    let fit = motion_canvas_fit(
+        img_w,
+        img_h,
+        appearance.effective_padding(),
+        stage.bounds_w,
+        stage.bounds_h,
+    );
     let (cx, cy) = motion_card_center(img_w, img_h, fit, stage, transform, zoom_anchor);
     let corners = project_card_corners(img_w, img_h, fit, transform, cx, cy);
     if alpha >= 0.99 {
@@ -40,14 +42,16 @@ fn draw_transformed_card(
             .flatten()
             .collect();
         if !backings.is_empty() {
+            // Perspective alone never bends the card: with zero rotation the
+            // projection is exactly 1:1 (z stays 0, w stays 1), so a
+            // perspective-only pose must take the flat path to match Static.
             let flat = transform.rotation_x.abs()
                 + transform.rotation_y.abs()
                 + transform.rotation_z.abs()
-                + transform.perspective
                 < 0.05;
             let hw = img_w * fit * transform.scale / 2.0;
             let hh = img_h * fit * transform.scale / 2.0;
-            let radius = (appearance.border_radius * fit).max(0.0);
+            let radius = (appearance.border_radius * ref_scale * fit).max(0.0);
             for backing in backings {
                 let c = backing.color;
                 let a = (c.a * alpha).clamp(0.0, 1.0);
@@ -55,13 +59,13 @@ fn draw_transformed_card(
                 if flat {
                     let _ = context.save();
                     if backing.center_pivot {
-                        context.translate(cx + backing.offset_x, cy + backing.offset_y);
+                        context.translate(cx + backing.offset_x * fit, cy + backing.offset_y * fit);
                         context.rotate(backing.rotation_deg.to_radians());
                         context.translate(-hw, -hh);
                     } else {
                         context.translate(
-                            cx - hw + backing.offset_x + hw * 2.0,
-                            cy - hh + backing.offset_y + hh * 2.0,
+                            cx - hw + backing.offset_x * fit + hw * 2.0,
+                            cy - hh + backing.offset_y * fit + hh * 2.0,
                         );
                         context.rotate(backing.rotation_deg.to_radians());
                         context.translate(-hw * 2.0, -hh * 2.0);
@@ -86,8 +90,8 @@ fn draw_transformed_card(
                     for corner in &corners {
                         let rx = corner.0 - px;
                         let ry = corner.1 - py;
-                        let qx = px + backing.offset_x + rx * cos - ry * sin;
-                        let qy = py + backing.offset_y + rx * sin + ry * cos;
+                        let qx = px + backing.offset_x * fit + rx * cos - ry * sin;
+                        let qy = py + backing.offset_y * fit + rx * sin + ry * cos;
                         if first {
                             context.move_to(qx, qy);
                             first = false;
@@ -108,20 +112,21 @@ fn draw_transformed_card(
     if alpha >= 0.99 {
         let spec = appearance.frame_style.spec();
         let mut expand = 0.0;
-        let flat = transform.rotation_x.abs()
-            + transform.rotation_y.abs()
-            + transform.rotation_z.abs()
-            + transform.perspective
-            < 0.05;
+        // Same flat rule as backings above: perspective without rotation is
+        // still a 1:1 projection, so borders must use the rounded-rect path
+        // to match the Static canvas instead of the projected quad.
+        let flat =
+            transform.rotation_x.abs() + transform.rotation_y.abs() + transform.rotation_z.abs()
+                < 0.05;
         let hw_flat = img_w * fit * transform.scale / 2.0;
         let hh_flat = img_h * fit * transform.scale / 2.0;
-        let card_radius = (appearance.border_radius * fit).max(0.0);
+        let card_radius = (appearance.border_radius * ref_scale * fit).max(0.0);
         // Liquid Glass paints gradients along the card outline instead of the
         // flat strokes below; the outline is a rounded rect when the card is
         // square to the camera and the projected quad when it is tilted.
         if let Some(liquid) = crate::capture::editor::render::LiquidFrame::resolve(
             &spec,
-            appearance.border_thickness,
+            appearance.border_thickness * ref_scale * fit,
             1.0,
         ) {
             let path = |path_context: &Context, expand: f64| {
@@ -160,46 +165,49 @@ fn draw_transformed_card(
             };
             liquid.paint(context, top, bottom, path);
         }
-        let stroke_outside =
-            |context: &Context, thickness: f64, extra: f64| {
-                let e = extra + thickness / 2.0;
-                context.set_line_width(thickness.max(0.0));
-                if flat {
-                    // A zero radius stays a sharp mitered frame: the expanded
-                    // path must not inherit half the line width as rounding.
-                    let path_radius = if card_radius <= 0.0 {
-                        0.0
-                    } else {
-                        card_radius + e
-                    };
-                    rounded_rectangle(
-                        context,
-                        cx - hw_flat - e,
-                        cy - hh_flat - e,
-                        hw_flat * 2.0 + e * 2.0,
-                        hh_flat * 2.0 + e * 2.0,
-                        path_radius,
-                    );
-                    context.stroke().ok();
+        let stroke_outside = |context: &Context, thickness: f64, extra: f64| {
+            let e = extra + thickness / 2.0;
+            context.set_line_width(thickness.max(0.0));
+            if flat {
+                // A zero radius stays a sharp mitered frame: the expanded
+                // path must not inherit half the line width as rounding.
+                let path_radius = if card_radius <= 0.0 {
+                    0.0
                 } else {
-                    let expanded = expand_frame_quad(corners, e);
-                    context.move_to(expanded[0].0, expanded[0].1);
-                    for corner in &expanded[1..] {
-                        context.line_to(corner.0, corner.1);
-                    }
-                    context.close_path();
-                    context.stroke().ok();
+                    card_radius + e
+                };
+                rounded_rectangle(
+                    context,
+                    cx - hw_flat - e,
+                    cy - hh_flat - e,
+                    hw_flat * 2.0 + e * 2.0,
+                    hh_flat * 2.0 + e * 2.0,
+                    path_radius,
+                );
+                context.stroke().ok();
+            } else {
+                let expanded = expand_frame_quad(corners, e);
+                context.move_to(expanded[0].0, expanded[0].1);
+                for corner in &expanded[1..] {
+                    context.line_to(corner.0, corner.1);
                 }
-                extra + thickness
-            };
+                context.close_path();
+                context.stroke().ok();
+            }
+            extra + thickness
+        };
         if !spec.liquid && appearance.border_thickness > 0.0 && !spec.inset_border {
             let [r, g, b, a] = appearance.border_fill_color;
             context.set_source_rgba(r, g, b, a);
-            expand = stroke_outside(context, appearance.border_thickness.max(0.0), expand);
+            expand = stroke_outside(
+                context,
+                (appearance.border_thickness * ref_scale * fit).max(0.0),
+                expand,
+            );
         }
         if !spec.liquid && spec.inset_border && appearance.border_thickness > 0.0 {
             // Inside placement: band sits fully within the card edge.
-            let thickness = appearance.border_thickness.max(0.0);
+            let thickness = (appearance.border_thickness * ref_scale * fit).max(0.0);
             let [r, g, b, a] = appearance.border_fill_color;
             context.set_source_rgba(r, g, b, a);
             context.set_line_width(thickness);
@@ -230,23 +238,21 @@ fn draw_transformed_card(
             .flatten()
             .filter(|_| !spec.liquid)
         {
-            let main_matches = (outer.thickness - spec.border_thickness).abs() < f64::EPSILON
-                && outer.gap == 0.0;
+            let main_matches =
+                (outer.thickness - spec.border_thickness).abs() < f64::EPSILON && outer.gap == 0.0;
             if main_matches {
                 continue;
             }
-            expand += outer.gap.max(0.0);
-            context.set_source_rgba(
-                outer.color.r,
-                outer.color.g,
-                outer.color.b,
-                outer.color.a,
+            expand += outer.gap.max(0.0) * ref_scale * fit;
+            context.set_source_rgba(outer.color.r, outer.color.g, outer.color.b, outer.color.a);
+            expand = stroke_outside(
+                context,
+                (outer.thickness * ref_scale * fit).max(0.0),
+                expand,
             );
-            expand = stroke_outside(context, outer.thickness.max(0.0), expand);
         }
     }
 }
-
 
 /// Expand a card quad outward by `expand` px along mitered edge normals so an
 /// outside border stroke sits fully outside the image (inner edge flush with
@@ -272,7 +278,10 @@ fn expand_frame_quad(corners: [(f64, f64); 4], expand: f64) -> [(f64, f64); 4] {
         let my = prev.1 + next.1;
         let mlen = (mx * mx + my * my).sqrt();
         if mlen < 1e-6 {
-            out[i] = (corners[i].0 + next.0 * expand, corners[i].1 + next.1 * expand);
+            out[i] = (
+                corners[i].0 + next.0 * expand,
+                corners[i].1 + next.1 * expand,
+            );
             continue;
         }
         let mx = mx / mlen;
@@ -326,7 +335,12 @@ fn paint_card_shadow(
     }
 
     let base_x = appearance.shadow_position.0;
-    let base_y = appearance.shadow_position.1 + perspective * 10.0;
+    // No perspective lift: the corners are already projected, and any extra
+    // offset here would shift the shadow away from the Static canvas position
+    // even when the card is flat. Shadow matches Static; tilt shows through
+    // the projected quad itself.
+    let base_y = appearance.shadow_position.1;
+    let _ = perspective;
 
     let scene_x = stage.center_x - stage.bounds_w * 0.5;
     let scene_y = stage.center_y - stage.bounds_h * 0.5;
@@ -427,15 +441,15 @@ fn paint_perspective_card(
     let hw = img_w * fit * transform.scale / 2.0;
     let hh = img_h * fit * transform.scale / 2.0;
     let depth = card_depth(hw, hh, transform.perspective);
-    let bent = transform.rotation_x.abs()
-        + transform.rotation_y.abs()
-        + transform.rotation_z.abs()
-        + transform.perspective;
+    // Perspective without rotation projects 1:1 (z == 0 so w == 1). Treat it
+    // as flat: one rectangle blit instead of the triangle mesh, so a still
+    // with no camera rotation stays pixel-sharp like the Static canvas.
+    let bent = transform.rotation_x.abs() + transform.rotation_y.abs() + transform.rotation_z.abs();
     if bent < 0.05 {
         // Flat pose: the card is an axis-aligned rectangle. One rectangle
         // blit is several times cheaper than two clipped textured triangles —
         // Cairo takes a general masked-composite path for triangle clips — so
-        // zero rotation and zero perspective avoid that cost entirely.
+        // zero rotation avoids that cost entirely.
         let left = cx - hw;
         let top = cy - hh;
         let _ = context.save();

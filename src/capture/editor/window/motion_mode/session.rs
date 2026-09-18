@@ -195,6 +195,11 @@ impl MotionRuntime {
         self.background_surface_path = path;
         self.background_surface_is_preview = is_preview;
         self.backdrop_cache = None;
+        // A new fill must paint on the next Motion draw instead of showing
+        // the previous worker frame while the new composite renders.
+        // Clearing here forces the inline first-frame path, so Motion updates
+        // immediately like Static instead of looking stuck.
+        self.preview_frame = None;
     }
 
     pub(in crate::capture::editor::window) fn undo_motion(&mut self) -> bool {
@@ -240,7 +245,7 @@ impl MotionRuntime {
 
     /// Restored appearance or watermark state may name a different image;
     /// rebuild the decoded surfaces exactly like entering Motion does.
-    fn refresh_motion_surfaces(&mut self) {
+    pub(in crate::capture::editor::window) fn refresh_motion_surfaces(&mut self) {
         self.backdrop_cache = None;
         let scene_path = match self.motion.appearance.background_fill_type {
             MotionBackgroundFillType::Wallpaper => {
@@ -258,17 +263,17 @@ impl MotionRuntime {
             )
         });
         self.set_background_surface(scene_path.map(str::to_owned), surface, false);
-        self.watermark_surface = self
-            .motion
-            .watermark
-            .image_file_name
-            .as_deref()
-            .and_then(|path| {
-                super::super::motion_render::load_motion_background_preview_surface(
-                    path,
-                    super::super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
-                )
-            });
+        self.watermark_surface =
+            self.motion
+                .watermark
+                .image_file_name
+                .as_deref()
+                .and_then(|path| {
+                    super::super::motion_render::load_motion_background_preview_surface(
+                        path,
+                        super::super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    )
+                });
     }
 }
 
@@ -288,21 +293,11 @@ impl MotionSession {
         // the Motion model's 96px card framing stays a video-editor default
         // and the global prefs padding is never applied here.
         runtime.borrow_mut().motion.appearance.background_padding = background_padding;
-        // Motion opens with a bundled wallpaper already selected so the first
-        // static → motion switch composes against a real scene instead of the
-        // black default. Setting it before the appearance panel is built keeps
-        // its picker in sync; a different fill chosen later persists for the
-        // session, like any other appearance edit.
-        if let Some(wallpaper) =
-            crate::capture::editor::window::background_panel::default_motion_wallpaper()
-        {
-            let mut runtime = runtime.borrow_mut();
-            runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Wallpaper;
-            runtime.motion.appearance.wallpaper_image_name = Some(wallpaper);
-            // Decode the default scene once here. The static canvas reads these
-            // pixels instead of decoding the wallpaper itself on first paint.
-            runtime.refresh_motion_surfaces();
-        }
+        // Single shared background: never inject a default wallpaper here.
+        // Motion must look like Static on entry — a fresh image with no
+        // background stays on None (checkerboard in preview) instead of
+        // gaining a wallpaper Static never had. Users pick a fill explicitly;
+        // `capture_snapshot` preserves a Static background when one exists.
         Self {
             runtime,
             prefers_dark,
@@ -318,7 +313,14 @@ impl MotionSession {
     }
 
     pub(in crate::capture::editor::window) fn capture_snapshot(&self, state: &EditorState) {
-        let snapshot = state.to_final_image().ok();
+        // Single shared tool: Static and Motion edit the same MotionRuntime
+        // directly (same Appearance builder), and the Static tick mirrors it
+        // into EditorState. Re-importing Static here would clobber Motion's
+        // own Frame/appearance through lossy converters (Custom/social presets
+        // collapse to the nearest static crop and never round-trip), so entry
+        // must NOT reseed. Only refresh the background-free card (screenshot +
+        // annotations, never the fill) and its surfaces.
+        let snapshot = state.to_motion_card_image().ok();
         let mut runtime = self.runtime.borrow_mut();
         runtime.card = snapshot.as_ref().and_then(rgba_image_to_surface);
         runtime.card_preview = None;
@@ -371,8 +373,10 @@ impl MotionSession {
         runtime.card = None;
         runtime.card_preview = None;
         runtime.card_scale = 1.0;
-        runtime.set_background_surface(None, None, false);
-        runtime.watermark_surface = None;
+        // Appearance-owned surfaces survive the switch: the Static canvas
+        // reuses the decoded wallpaper/watermark after leaving Motion, and
+        // re-entering refreshes them anyway. Clearing them here left Static
+        // with no pixels behind a fill chosen in Motion.
         runtime.backdrop_cache = None;
         runtime.playing = false;
         runtime.live_preview = false;

@@ -128,7 +128,11 @@ pub(super) fn draw_motion_foreground(
     // Padding, zoom, and titles all lay out against the background's
     // rectangle so the card can never sit outside the scene it belongs to.
     let stage = if checkerboard {
-        MotionStage::preview(f64::from(width), f64::from(height), motion.frame.effective_aspect())
+        MotionStage::preview(
+            f64::from(width),
+            f64::from(height),
+            motion.frame.effective_aspect(),
+        )
     } else {
         MotionStage::frame(f64::from(width), f64::from(height))
     };
@@ -149,11 +153,14 @@ pub(super) fn draw_motion_foreground(
     let current_transform = motion.sample(time);
     let current_anchor = motion.zoom_anchor_at(time);
     // The editor preview draws a downscaled card texture into a panel-sized
-    // canvas. Cairo's default Good filter convolves the source on every
-    // downscale, and that dominated scrub frame time (tens of milliseconds a
-    // frame at scale 1); Bilinear keeps interactive frames cheap. Export
-    // (checkerboard = false) keeps the high-quality filter.
-    let card_filter = if checkerboard {
+    // canvas. Cairo's Good filter convolves the source on every downscale,
+    // and that dominated scrub frame time (tens of milliseconds a frame);
+    // Bilinear keeps playback and scrubbing cheap. A paused still is not
+    // scrubbing, so it keeps the high-quality filter to match the Static
+    // canvas — annotations must not go soft just from entering Motion.
+    // Pressing play may pop sharpness slightly; that is cheaper than a
+    // permanently soft still. Export (checkerboard = false) always uses Good.
+    let card_filter = if checkerboard && live_preview {
         Filter::Bilinear
     } else {
         Filter::Good
@@ -165,7 +172,11 @@ pub(super) fn draw_motion_foreground(
     let mesh_div = CARD_MESH_DIVISIONS;
     // Rounding is independent of the pose; do it once per frame instead of
     // once per accumulated subframe.
-    let rounded = rounded_motion_surface(surface, motion.appearance.border_radius * card_scale);
+    let surface_long = f64::from(surface.width().max(surface.height()).max(1));
+    let rounded = rounded_motion_surface(
+        surface,
+        motion.appearance.border_radius * surface_long / 400.0,
+    );
     let card_surface = rounded.as_ref().unwrap_or(surface);
     // True motion blur is the average of every instant of the exposure.
     // Cairo has no CIMotionBlur/CIZoomBlur, so ApexShot reaches the same
@@ -184,7 +195,7 @@ pub(super) fn draw_motion_foreground(
             motion.sample(time),
             motion.zoom_anchor_at(exposure_start),
             motion.zoom_anchor_at(time),
-            motion.appearance.background_padding,
+            motion.appearance.effective_padding(),
         );
         blur_settings.temporal_offsets(
             frame_rate,
@@ -261,8 +272,7 @@ fn paint_motion_blurred_card(
     ) else {
         return false;
     };
-    let (Ok(accum_context), Ok(scratch_context)) =
-        (Context::new(&accum), Context::new(&scratch))
+    let (Ok(accum_context), Ok(scratch_context)) = (Context::new(&accum), Context::new(&scratch))
     else {
         return false;
     };

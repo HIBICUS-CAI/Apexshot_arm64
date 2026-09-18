@@ -11,6 +11,7 @@ use gtk4::{
     prelude::*, ApplicationWindow, Box as GtkBox, Button, CheckButton, DrawingArea, Entry, Image,
     Popover, Scale,
 };
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -125,6 +126,7 @@ pub(super) fn wire_tool_options(
     sync_picker_for_active_tool: &Rc<dyn Fn()>,
     sync_size_control: &Rc<dyn Fn()>,
     rebuild_effects_async: &Rc<dyn Fn()>,
+    set_background_fill: &Rc<RefCell<Option<Rc<dyn Fn(DrawColor)>>>>,
 ) {
     let ToolOptionsParts {
         pen_weight_button,
@@ -644,6 +646,7 @@ pub(super) fn wire_tool_options(
 
     for (index, button) in color_buttons.iter().enumerate() {
         let state_color = state.clone();
+        let set_background_fill_sw = set_background_fill.clone();
         let drawing_area_color = drawing_area.downgrade();
         let color_buttons_group = color_buttons.to_vec();
         let color_picker_dot_group = color_picker_dot.clone();
@@ -652,15 +655,27 @@ pub(super) fn wire_tool_options(
         let sync_picker_from_color_group = sync_picker_from_color.clone();
         let sync_picker_for_active_tool_group = sync_picker_for_active_tool.clone();
         button.connect_clicked(move |_| {
+            // Background is owned by the shared Motion runtime; a direct
+            // EditorState write would be reverted by the tick sync.
             let (has_active_text, switched_background) = {
                 let mut st = state_color.lock().unwrap();
                 let has_active_text = st.active_text_input.is_some();
                 let mut switched_background = false;
-                if st.selected_tool == Tool::Background {
-                    st.background_style = BackgroundStyle::PlainColor(DRAW_COLORS[index]);
+                let background_fill = if st.selected_tool == Tool::Background {
                     switched_background = true;
+                    Some(DRAW_COLORS[index])
                 } else {
                     st.set_color_index(index);
+                    None
+                };
+                drop(st);
+                if let Some(fill_color) = background_fill {
+                    if let Some(setter) = set_background_fill_sw.borrow().as_ref() {
+                        setter(fill_color);
+                    } else {
+                        state_color.lock().unwrap().background_style =
+                            BackgroundStyle::PlainColor(fill_color);
+                    }
                 }
                 (has_active_text, switched_background)
             };
@@ -723,7 +738,9 @@ mod tests {
                 && production.contains("set_number_size(size)")
                 && production.contains("st.set_color_index(index)")
                 && !production.contains("set_crop_background_color")
-                && production.contains("BackgroundStyle::PlainColor(DRAW_COLORS[index])")
+                && production.contains("Some(DRAW_COLORS[index])")
+                && production.contains("BackgroundStyle::PlainColor(fill_color)")
+                && production.contains("set_background_fill_sw")
                 && production.contains("set_active_size_without_rebuild(value)"),
             "tool options must retain weight, style, direction, numbering, palette, size, and obfuscate policies"
         );

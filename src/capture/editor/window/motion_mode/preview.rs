@@ -25,15 +25,16 @@ pub(super) fn draw_motion_preview(
         );
         return;
     }
-    // The UI thread never composites: it blits the latest finished frame and
-    // schedules background work when the cache misses. Pointer motion paints
-    // stay cheap no matter how heavy a frame is — the same split the video
-    // editor gets from its media sink.
+    // Paused scrub/hover stays off the UI thread (blit the last finished
+    // frame while a worker renders): pointer motion paints stay cheap no
+    // matter how heavy a frame is. Playback instead composites inline on
+    // every miss — blitting the previous frame while the playhead advances
+    // is what reads as a frozen preview with only the clock moving.
     let backdrop = {
         let mut guard = runtime.borrow_mut();
         cached_backdrop(&mut guard, width, height, prefers_dark)
     };
-    let (hit, surface) = {
+    let (hit, surface, live) = {
         let mut runtime = runtime.borrow_mut();
         let time = preview_time(&runtime);
         let live = runtime.live_preview || runtime.playing;
@@ -52,23 +53,27 @@ pub(super) fn draw_motion_preview(
                     .preview_frame
                     .as_ref()
                     .map(|frame| frame.surface.clone()),
+                live,
             )
         } else {
-            schedule_preview_job_locked(
-                &mut runtime,
-                width,
-                height,
-                time,
-                live,
-                gen,
-                backdrop.clone(),
-            );
+            if !live {
+                schedule_preview_job_locked(
+                    &mut runtime,
+                    width,
+                    height,
+                    time,
+                    live,
+                    gen,
+                    backdrop.clone(),
+                );
+            }
             (
                 false,
                 runtime
                     .preview_frame
                     .as_ref()
                     .map(|frame| frame.surface.clone()),
+                live,
             )
         }
     };
@@ -77,13 +82,22 @@ pub(super) fn draw_motion_preview(
             blit_preview_frame(context, width, height, &surface);
             return;
         }
-    } else if let Some(surface) = surface {
-        // A newer frame is rendering; keep showing the previous one.
-        blit_preview_frame(context, width, height, &surface);
-        return;
+    } else if let Some(surface) = surface.as_ref() {
+        // Same-size frame still rendering: keep showing the previous one —
+        // but only while paused. While playing the stale frame is the
+        // frozen preview; fall through and composite the current time.
+        // A resized frame must NOT be stretched to cover — entering Motion
+        // shrinks the preview (timeline dock takes space), so the old tall
+        // frame would keep the card at its old size, touching scene edges.
+        // Fall through and composite inline at the current size instead.
+        if !live && surface.width() == width.max(1) && surface.height() == height.max(1) {
+            blit_preview_frame(context, width, height, surface);
+            return;
+        }
     }
-    // First frame with nothing cached yet: composite inline so the widget
-    // never paints empty, then keep the result as the cache.
+    // First frame with nothing cached yet (or any playing frame): composite
+    // inline so the widget never paints empty — or stale — then keep the
+    // result as the cache.
     let stale = surface;
     let mut runtime = runtime.borrow_mut();
     let Some(backdrop) = backdrop else {
@@ -339,21 +353,37 @@ pub(super) fn poll_preview_results(
         if let Some(last) = last {
             match last {
                 Some(result) => {
-                    if let Some(surface) = surface_from_pixels(&super::session::PreviewPixels {
-                        width: result.width,
-                        height: result.height,
-                        stride: result.stride,
-                        bytes: result.bytes,
-                    }) {
-                        runtime.preview_frame = Some(super::session::PreviewFrame {
+                    // A worker scheduled earlier can land after the cache
+                    // already moved on (edits bump the gen; inline playback
+                    // advances time every frame). Storing it would regress
+                    // the preview to an older frame — including the frozen
+                    // look when a slow worker overwrites a newer inline
+                    // composite. Drop outdated results; the next draw or
+                    // dirty reschedule covers the current input.
+                    let outdated = result.content_gen != runtime.preview_content_gen
+                        || runtime.preview_frame.as_ref().is_some_and(|cached| {
+                            cached.content_gen == result.content_gen
+                                && cached.width == result.width
+                                && cached.height == result.height
+                                && cached.time.to_bits() > result.time.to_bits()
+                        });
+                    if !outdated {
+                        if let Some(surface) = surface_from_pixels(&super::session::PreviewPixels {
                             width: result.width,
                             height: result.height,
-                            time: result.time,
-                            live_preview: result.live_preview,
-                            content_gen: result.content_gen,
-                            surface,
-                        });
-                        finished = true;
+                            stride: result.stride,
+                            bytes: result.bytes,
+                        }) {
+                            runtime.preview_frame = Some(super::session::PreviewFrame {
+                                width: result.width,
+                                height: result.height,
+                                time: result.time,
+                                live_preview: result.live_preview,
+                                content_gen: result.content_gen,
+                                surface,
+                            });
+                            finished = true;
+                        }
                     }
                 }
                 // Render failure unblocks the slot; the next draw retries.
@@ -440,10 +470,15 @@ fn blit_preview_frame(context: &Context, width: i32, height: i32, surface: &Imag
         f64::from(surface.width().max(1)),
         f64::from(surface.height().max(1)),
     );
-    // A resize mid-flight leaves a stale-size frame; stretch it for the odd
-    // frame rather than blocking the paint on a fresh composite.
+    // A resize mid-flight leaves a stale-size frame. Never stretch it: scale
+    // uniformly (cover) and center so the odd frame crops slightly instead of
+    // distorting the card while the fresh composite renders.
     if surface.width() != width.max(1) || surface.height() != height.max(1) {
-        context.scale(f64::from(width.max(1)) / sw, f64::from(height.max(1)) / sh);
+        let scale = (f64::from(width.max(1)) / sw).max(f64::from(height.max(1)) / sh);
+        let dx = (f64::from(width.max(1)) - sw * scale) * 0.5;
+        let dy = (f64::from(height.max(1)) - sh * scale) * 0.5;
+        context.translate(dx, dy);
+        context.scale(scale, scale);
     }
     context.set_source_surface(surface, 0.0, 0.0).ok();
     context.paint().ok();

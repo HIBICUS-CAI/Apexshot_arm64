@@ -16,7 +16,7 @@ fn paint_motion_text(
         stage,
         transform,
         motion.zoom_anchor_at(time),
-        motion.appearance.background_padding,
+        motion.appearance.effective_padding(),
     );
     for segment in &motion.text_segments {
         let Some(style) = segment.sample(time) else {
@@ -92,7 +92,7 @@ fn paint_motion_watermark(
         stage,
         transform,
         motion.zoom_anchor_at(time),
-        motion.appearance.background_padding,
+        motion.appearance.effective_padding(),
     );
     let source_w = f64::from(watermark.width().max(1));
     let source_h = f64::from(watermark.height().max(1));

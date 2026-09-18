@@ -186,7 +186,7 @@ pub(super) fn install(
                 height,
                 runtime.motion.frame.effective_aspect(),
             );
-            let padding = runtime.motion.appearance.background_padding;
+            let padding = runtime.motion.appearance.effective_padding();
             let (pos_x, pos_y) =
                 super::super::super::motion_render::view_point_to_motion_text_position(
                     card,
@@ -235,7 +235,7 @@ pub(super) fn install(
                                 height,
                                 runtime.motion.frame.effective_aspect(),
                             ),
-                            runtime.motion.appearance.background_padding,
+                            runtime.motion.appearance.effective_padding(),
                             runtime.motion.sample(runtime.motion.playhead),
                             runtime.motion.zoom_anchor_at(runtime.motion.playhead),
                             segment,

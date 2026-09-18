@@ -47,6 +47,7 @@ pub fn build_color_picker(
     canvas_queue_draw_signal: Rc<dyn Fn()>,
     drawing_area: Rc<RefCell<Option<glib::object::WeakRef<gtk4::DrawingArea>>>>,
     _show_color_names: bool,
+    set_background_fill: Rc<RefCell<Option<Rc<dyn Fn(DrawColor)>>>>,
 ) -> ColorPickerParts {
     // Color specs (kept for trigger-dot + palette-index mapping; no palette UI).
     let color_specs = [
@@ -284,20 +285,33 @@ pub fn build_color_picker(
         let drawing_area_picker = drawing_area.clone();
         let external_sync = external_sync.clone();
         let set_trigger_dot_exact_color_apply = set_trigger_dot_exact_color.clone();
+        let set_background_fill_picker = set_background_fill.clone();
         move |color| {
-            let has_active_text = {
+            // Background is owned by the shared Motion runtime; a direct
+            // EditorState write would be reverted by the tick sync.
+            let (has_active_text, background_fill) = {
                 let mut st = state_picker_apply.lock().unwrap();
                 let has_active_text = st.active_text_input.is_some();
-                if st.selected_tool == Tool::Background {
-                    st.background_style = BackgroundStyle::PlainColor(color);
-                } else if has_active_text {
-                    st.selected_color = color;
-                    let _ = st.set_selected_action_color(color);
-                } else {
-                    st.selected_color = color;
+                let background_fill =
+                    (st.selected_tool == Tool::Background).then_some(color);
+                if background_fill.is_none() {
+                    if has_active_text {
+                        st.selected_color = color;
+                        let _ = st.set_selected_action_color(color);
+                    } else {
+                        st.selected_color = color;
+                    }
                 }
-                has_active_text
+                (has_active_text, background_fill)
             };
+            if let Some(fill_color) = background_fill {
+                if let Some(setter) = set_background_fill_picker.borrow().as_ref() {
+                    setter(fill_color);
+                } else {
+                    state_picker_apply.lock().unwrap().background_style =
+                        BackgroundStyle::PlainColor(fill_color);
+                }
+            }
 
             let nearest_index = super::super::color::palette_index_for_color(color);
             clear_active_color_picker_palette_state(&color_buttons_picker);

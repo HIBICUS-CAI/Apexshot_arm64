@@ -78,6 +78,12 @@ mod tests {
         assert!(!session.has_segments());
         let identity = session.runtime.borrow().motion.sample(1.5);
         assert!((identity.scale - 1.0).abs() < 1e-6);
+        // Empty track stays perfectly flat so the still matches Static:
+        // no perspective warp, no rotation, no shadow lift.
+        assert!(identity.perspective.abs() < 1e-9);
+        assert!(identity.rotation_x.abs() < 1e-9);
+        assert!(identity.rotation_y.abs() < 1e-9);
+        assert!(identity.rotation_z.abs() < 1e-9);
     }
 
     #[test]
@@ -107,22 +113,96 @@ mod tests {
     }
 
     #[test]
-    fn entering_motion_starts_with_the_default_wallpaper_selected() {
-        let Some(expected) =
-            crate::capture::editor::window::background_panel::default_motion_wallpaper()
-        else {
-            // Environments without the bundled catalog keep the old default.
-            return;
-        };
+    fn entering_motion_starts_with_no_background_so_it_matches_static() {
         let session = MotionSession::new(true, 0.0);
         let runtime = session.runtime.borrow();
+        // Single shared background: a fresh image with no Static fill must
+        // not gain a wallpaper in Motion. Users pick a fill explicitly.
         assert_eq!(
             runtime.motion.appearance.background_fill_type,
-            MotionBackgroundFillType::Wallpaper
+            MotionBackgroundFillType::None
         );
+    }
+
+    #[test]
+    fn motion_snapshot_is_background_free_so_no_second_layer_stacks() {
+        use crate::capture::editor::types::{BackgroundStyle, DrawColor};
+        let mut state = blank_state();
+        state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.9, 0.1, 0.1, 1.0));
+        state.background_padding = 48.0;
+        let card = state.to_motion_card_image().expect("card renders");
+        // Background-free: same pixels as the screenshot, not padded canvas.
+        assert_eq!(card.dimensions(), state.working_image.dimensions());
+        let snapshot_state = state.to_final_image().expect("final renders");
+        assert!(
+            snapshot_state.dimensions() != card.dimensions() || snapshot_state != card,
+            "final image must contain the background the motion card excludes"
+        );
+    }
+
+    #[test]
+    fn entering_motion_preserves_the_static_background_instead_of_doubling() {
+        use crate::capture::editor::types::{BackgroundStyle, DrawColor};
+        let mut state = blank_state();
+        state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.1, 0.2, 0.9, 1.0));
+        state.background_padding = 32.0;
+        let session = MotionSession::new(true, 0.0);
+        // Startup seeds the shared runtime once (see setup_editor_window_full);
+        // entry itself must preserve it, not reseed through lossy converters.
+        {
+            let mut runtime = session.runtime.borrow_mut();
+            runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
+            runtime.motion.appearance.background_color = [0.1, 0.2, 0.9, 1.0];
+            runtime.motion.appearance.background_padding = 32.0;
+        }
+        session.capture_snapshot(&state);
+        let runtime = session.runtime.borrow();
+        // Single shared background: the seeded fill survives entry.
         assert_eq!(
-            runtime.motion.appearance.wallpaper_image_name.as_deref(),
-            Some(expected.as_str())
+            runtime.motion.appearance.background_fill_type,
+            MotionBackgroundFillType::Color
+        );
+        assert!((runtime.motion.appearance.background_padding - 32.0).abs() < f64::EPSILON);
+        // Card itself carries no background padding.
+        let snapshot = runtime.snapshot.as_ref().expect("snapshot");
+        assert_eq!(snapshot.dimensions(), state.working_image.dimensions());
+    }
+
+    #[test]
+    fn entering_motion_keeps_motion_frame_edits_instead_of_reseeding() {
+        use crate::recording::editor::model::MotionFramePreset;
+        let state = blank_state();
+        let session = MotionSession::new(true, 0.0);
+        // User picks a Frame in Motion (e.g. 16:9); re-entering must keep it
+        // instead of overwriting it from Static through lossy crop mapping
+        // (Custom/social presets never round-trip).
+        {
+            let mut runtime = session.runtime.borrow_mut();
+            runtime.motion.frame.preset = MotionFramePreset::SixteenNine;
+            runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
+        }
+        session.capture_snapshot(&state);
+        // Simulate a second entry without leaving: frame must survive.
+        session.capture_snapshot(&state);
+        let runtime = session.runtime.borrow();
+        assert_eq!(runtime.motion.frame.preset, MotionFramePreset::SixteenNine);
+        assert_eq!(
+            runtime.motion.appearance.background_fill_type,
+            MotionBackgroundFillType::Color
+        );
+    }
+
+    #[test]
+    fn entering_motion_with_no_static_background_adds_no_fill() {
+        let state = blank_state();
+        let session = MotionSession::new(true, 0.0);
+        session.capture_snapshot(&state);
+        let runtime = session.runtime.borrow();
+        // Fresh images stay on None so Motion looks like Static instead of
+        // gaining a wallpaper Static never had.
+        assert_eq!(
+            runtime.motion.appearance.background_fill_type,
+            MotionBackgroundFillType::None
         );
     }
 
