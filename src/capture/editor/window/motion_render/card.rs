@@ -27,6 +27,12 @@ fn draw_transformed_card(
         stage.bounds_w,
         stage.bounds_h,
     );
+    // Stage-space corner radius of the rounded card image. Callers bake the
+    // radius into the texture in source pixels and the mesh draws it at
+    // `fit * scale`, so frame geometry must apply both factors to stay glued
+    // to the card edge. Without `scale`, a zoomed card's corners outrun the
+    // frame and a sliver of background shows between image and frame.
+    let card_radius = card_corner_radius(appearance, ref_scale, fit, transform.scale);
     let (cx, cy) = motion_card_center(img_w, img_h, fit, stage, transform, zoom_anchor);
     let corners = project_card_corners(img_w, img_h, fit, transform, cx, cy);
     if alpha >= 0.99 {
@@ -51,7 +57,7 @@ fn draw_transformed_card(
                 < 0.05;
             let hw = img_w * fit * transform.scale / 2.0;
             let hh = img_h * fit * transform.scale / 2.0;
-            let radius = (appearance.border_radius * ref_scale * fit).max(0.0);
+            let radius = card_radius;
             for backing in backings {
                 let c = backing.color;
                 let a = (c.a * alpha).clamp(0.0, 1.0);
@@ -120,7 +126,6 @@ fn draw_transformed_card(
                 < 0.05;
         let hw_flat = img_w * fit * transform.scale / 2.0;
         let hh_flat = img_h * fit * transform.scale / 2.0;
-        let card_radius = (appearance.border_radius * ref_scale * fit).max(0.0);
         // Projection depth for the frame outlines below, from the unexpanded
         // card so the rim tracks the same surface as the image mesh.
         let quad_depth = card_depth(hw_flat, hh_flat, transform.perspective);
@@ -283,6 +288,14 @@ fn draw_transformed_card(
             );
         }
     }
+}
+
+/// Stage-space corner radius of the rounded card image under a camera pose.
+/// Mirrors the caller's texture rounding (`border_radius * long_edge / 400`
+/// in source pixels) plus the mesh's `fit * scale` draw factor, so every
+/// frame path hugs the same corner arc the texture alpha cuts.
+fn card_corner_radius(appearance: &MotionAppearance, ref_scale: f64, fit: f64, scale: f64) -> f64 {
+    (appearance.border_radius * ref_scale * fit * scale).max(0.0)
 }
 
 /// Render the card into a scratch surface clipped to a rounded rectangle so

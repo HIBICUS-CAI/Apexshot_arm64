@@ -330,6 +330,120 @@ mod tests {
         );
     }
 
+    /// Zooming the camera must scale the frame's corner radius together with
+    /// the image. Regression: the frame radius ignored `transform.scale`, so
+    /// at scale > 1 the band's corner curve stayed tighter than the texture's
+    /// rounded corner and a sliver of background showed between them.
+    #[test]
+    fn zoomed_frame_band_stays_glued_to_the_rounded_corner() {
+        const BORDER_RADIUS: f64 = 60.0;
+        const THICKNESS: f64 = 24.0;
+        const SCALE: f64 = 3.0;
+        let card = ImageSurface::create(Format::ARgb32, 100, 50).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 1.0, 1.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+        // Match the compositor: round the texture in source pixels, then let
+        // the mesh draw it at `fit * scale`.
+        let source_radius = BORDER_RADIUS * 100.0 / 400.0;
+        let rounded = super::rounded_motion_surface(&card, source_radius).expect("rounded card");
+
+        let transform = MotionTransform {
+            scale: SCALE,
+            ..MotionTransform::default()
+        };
+        let stage = MotionStage::frame(400.0, 300.0);
+        let fit = super::motion_canvas_fit(100.0, 50.0, 0.0, stage.bounds_w, stage.bounds_h);
+        let (cx, cy) = super::motion_card_center(100.0, 50.0, fit, stage, transform, (0.5, 0.5));
+        let hw = 100.0 * fit * SCALE / 2.0;
+        let hh = 50.0 * fit * SCALE / 2.0;
+        // On-screen corner radius of the texture: the source-pixel radius at
+        // the same `fit * scale` the mesh draws with.
+        let radius = source_radius * fit * SCALE;
+        // Top-right corner arc centre of the rounded image.
+        let arc_x = cx + hw - radius;
+        let arc_y = cy - hh + radius;
+
+        let mut motion = MotionState::default();
+        motion.appearance.background_padding = 0.0;
+        motion.appearance.background_fill_type = MotionBackgroundFillType::None;
+        motion.appearance.frame_style = crate::capture::editor::types::FrameStyle::Border;
+        motion.appearance.border_thickness = THICKNESS;
+        motion.appearance.border_fill_color = [1.0, 1.0, 1.0, 1.0];
+        motion.appearance.border_radius = BORDER_RADIUS;
+        motion.appearance.shadow_opacity = 0.0;
+        let mut frame = ImageSurface::create(Format::ARgb32, 400, 300).unwrap();
+        {
+            let context = Context::new(&frame).unwrap();
+            super::draw_transformed_card(
+                &context,
+                &rounded,
+                stage,
+                transform,
+                (0.5, 0.5),
+                &motion.appearance,
+                1.0,
+                8,
+                gtk4::cairo::Filter::Good,
+            );
+        }
+        frame.flush();
+        let stride = frame.stride() as usize;
+        let data = frame.data().unwrap();
+        let alpha_at = |x: f64, y: f64| -> u8 {
+            data[y.round() as usize * stride + x.round() as usize * 4 + 3]
+        };
+
+        // Walk rays across the corner arc from inside the image outwards. The
+        // image and its frame band must be contiguous, with no background run
+        // between them — that sliver is the reported bug.
+        for step in 0..=10 {
+            let angle_deg = 20.0 + 5.0 * step as f64;
+            let angle = angle_deg.to_radians();
+            let (dx, dy) = (angle.cos(), -angle.sin());
+            let mut samples = Vec::new();
+            let mut d = radius * 0.6;
+            while d <= radius * 1.9 {
+                samples.push(alpha_at(arc_x + dx * d, arc_y + dy * d));
+                d += 1.0;
+            }
+            // Everything past the outermost bright pixel is empty scene; only
+            // the span up to and including the band matters here.
+            let last_bright = samples
+                .iter()
+                .rposition(|alpha| *alpha > 128)
+                .unwrap_or(samples.len().saturating_sub(1));
+            let mut run = 0;
+            let mut worst = 0;
+            for alpha in &samples[..=last_bright] {
+                if *alpha < 24 {
+                    run += 1;
+                    // A single antialiased dip at the seam is fine; a
+                    // sustained transparent run is not.
+                    if run >= 2 {
+                        worst = worst.max(run);
+                    }
+                } else {
+                    run = 0;
+                }
+            }
+            assert!(
+                worst == 0,
+                "background sliver of {worst}px between image and frame band at {angle_deg:.0}°"
+            );
+        }
+        // Sanity: the zoomed corner is still cut, so the band did not simply
+        // swallow the quad corner.
+        let corner_alpha = alpha_at(cx + hw, cy - hh);
+        assert!(
+            corner_alpha < 32,
+            "zoomed quad corner should stay cut, got alpha {corner_alpha}"
+        );
+    }
+
     #[test]
     fn flat_projected_outline_matches_the_card_rect() {
         // Unrotated pose: the projected outline is the card rect itself, so
