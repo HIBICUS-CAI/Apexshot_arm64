@@ -146,6 +146,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             text_size,
             hovered_text_action_index,
             arrow_editing_controls,
+            interactive_frame,
         ) = {
             let st = state_draw.lock().unwrap();
             let (can_undo, can_redo) = st.history_availability();
@@ -177,6 +178,12 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                 st.text_size,
                 st.hovered_text_action_index,
                 st.arrow_editing_controls,
+                // A drag or draft is repainting at pointer rate: that frame has to
+                // stay cheap, so it cannot use the quality image resample.
+                st.select_drag_anchor.is_some()
+                    || st.drag_start.is_some()
+                    || st.active_text_is_dragging
+                    || st.arrow_control_dragging.is_some(),
             )
         };
 
@@ -276,6 +283,16 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
         };
 
         let canvas_t = t;
+
+        // Quality filter while the canvas rests, cheap one while a drag or draft is
+        // repainting at pointer rate (see `editor_interactive_image_filter`).
+        let pick_image_filter = |scale: f64| {
+            if interactive_frame {
+                crate::capture::editor::render::editor_interactive_image_filter()
+            } else {
+                crate::capture::editor::render::editor_image_filter_for_scale(scale)
+            }
+        };
 
         context.set_operator(gtk4::cairo::Operator::Source);
         draw_canvas_checkerboard_background(context, width, height, None, !prefers_dark);
@@ -407,6 +424,9 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                         (virtual_h * canvas_t.scale) / sh,
                     );
                     context.set_source_surface(surface, 0.0, 0.0).unwrap();
+                    context
+                        .source()
+                        .set_filter(pick_image_filter(canvas_t.scale));
                     let _ = context.paint();
                     let _ = context.restore();
                 } else if let BackgroundStyle::PlainColor(color) = &current_style {
@@ -548,6 +568,9 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                         );
                         context.scale(sx, sy);
                         context.set_source_surface(surface, 0.0, 0.0).unwrap();
+                        context
+                            .source()
+                            .set_filter(pick_image_filter(canvas_t.scale));
                         let _ = context.paint();
                         let _ = context.restore();
                     }
@@ -584,7 +607,7 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                 surface,
                 0.0,
                 0.0,
-                crate::capture::editor::render::editor_image_filter_for_scale(t.scale),
+                pick_image_filter(t.scale),
             );
         } else {
             draw_rgba_to_context(context, &working_image);
@@ -989,6 +1012,23 @@ mod tests {
                 && production.contains("MAX_PREVIEW_SHADOW_DIM")
                 && production.contains("fn draw_rounded_rect_path"),
             "canvas_render.rs must own render caches, set_draw_func, lock-release snapshot, and rounded-rect helper"
+        );
+    }
+
+    #[test]
+    fn interactive_drags_repaint_with_the_cheap_image_filter() {
+        let source = include_str!("canvas_render.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production.contains("st.select_drag_anchor.is_some()")
+                && production.contains("st.drag_start.is_some()")
+                && production.contains("st.active_text_is_dragging")
+                && production.contains("st.arrow_control_dragging.is_some()")
+                && production.contains("editor_interactive_image_filter()")
+                && production.contains("editor_image_filter_for_scale(scale)")
+                && production.contains("pick_image_filter(canvas_t.scale)")
+                && production.contains("pick_image_filter(t.scale)"),
+            "Pointer-rate frames must blit with the cheap image filter; the resting frame keeps the quality one"
         );
     }
 }

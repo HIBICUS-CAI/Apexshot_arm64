@@ -83,6 +83,17 @@ pub fn paint_surface_with_filter(
 pub fn editor_image_filter_for_scale(_scale: f64) -> gtk4::cairo::Filter {
     gtk4::cairo::Filter::Good
 }
+
+/// Filter for interactive frames (drags, drafts).
+///
+/// A pointer-driven repaint cannot afford the quality resample — `Good` costs tens
+/// of milliseconds per frame on a screenshot-sized surface, which is what made
+/// dragging feel laggy. Interactive frames trade a little resample quality for a
+/// cheap frame; the resting repaint still uses [`editor_image_filter_for_scale`],
+/// so nothing stays soft once the pointer is released.
+pub fn editor_interactive_image_filter() -> gtk4::cairo::Filter {
+    gtk4::cairo::Filter::Bilinear
+}
 pub fn draw_annotation_action(context: &gtk4::cairo::Context, action: &AnnotationAction) {
     match action {
         AnnotationAction::Pen {
@@ -1279,6 +1290,56 @@ mod tests {
         assert_eq!(
             editor_image_filter_for_scale(0.25),
             gtk4::cairo::Filter::Good
+        );
+    }
+
+    #[test]
+    fn interactive_frames_use_a_cheap_image_filter() {
+        assert_eq!(
+            editor_interactive_image_filter(),
+            gtk4::cairo::Filter::Bilinear,
+            "Dragging must not pay the multi-millisecond `Good` resample per frame"
+        );
+    }
+
+    #[test]
+    fn interactive_blit_is_orders_of_magnitude_cheaper_than_the_quality_one() {
+        // Guards the reason the interactive filter exists: if a future change makes
+        // `Good` cheap again this can be relaxed, but the pointer-rate path must not
+        // silently fall back to the quality resample.
+        let source = gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, 3840, 2160)
+            .expect("source surface");
+        {
+            let context = gtk4::cairo::Context::new(&source).expect("source context");
+            let gradient = gtk4::cairo::LinearGradient::new(0.0, 0.0, 3840.0, 2160.0);
+            gradient.add_color_stop_rgb(0.0, 0.2, 0.3, 0.5);
+            gradient.add_color_stop_rgb(1.0, 0.8, 0.6, 0.4);
+            context.set_source(&gradient).unwrap();
+            context.paint().unwrap();
+        }
+        let target = gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, 1400, 800)
+            .expect("target surface");
+        let scale = 1400.0 / 3840.0;
+
+        let time_blit = |filter: gtk4::cairo::Filter| {
+            let context = gtk4::cairo::Context::new(&target).expect("target context");
+            let start = std::time::Instant::now();
+            for _ in 0..3 {
+                context.save().unwrap();
+                context.scale(scale, scale);
+                context.set_source_surface(&source, 0.0, 0.0).unwrap();
+                context.source().set_filter(filter);
+                context.paint().unwrap();
+                let _ = context.restore();
+            }
+            start.elapsed() / 3
+        };
+
+        let interactive = time_blit(editor_interactive_image_filter());
+        let quality = time_blit(editor_image_filter_for_scale(scale));
+        assert!(
+            interactive * 4 < quality,
+            "interactive blit ({interactive:?}) should be far cheaper than the quality blit ({quality:?})"
         );
     }
 
