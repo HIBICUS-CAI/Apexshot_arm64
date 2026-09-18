@@ -4,6 +4,7 @@
 //! tools stay on Static. Motion plays a composited snapshot; the PNG sidecar
 //! is not flattened until Done.
 
+mod anchor_pad;
 mod appearance;
 mod build;
 mod controls;

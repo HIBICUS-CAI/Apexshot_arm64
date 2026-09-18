@@ -2246,6 +2246,9 @@ msgstr "Заголовок"
 msgid "Drag on the preview to place the title"
 msgstr "Перетащите на предпросмотре, чтобы разместить заголовок"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Щёлкните или перетащите на изображении, чтобы задать якорь масштаба; двойной щелчок — сброс к центру"
+
 msgid "Anchor X"
 msgstr "Якорь X"
 msgid "Anchor Y"

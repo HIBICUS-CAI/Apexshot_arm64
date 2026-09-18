@@ -2208,6 +2208,9 @@ msgstr "标题"
 msgid "Drag on the preview to place the title"
 msgstr "在预览中拖动以放置标题"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "在图像上点击或拖动以放置缩放锚点；双击重新居中"
+
 msgid "Anchor X"
 msgstr "锚点 X"
 msgid "Anchor Y"

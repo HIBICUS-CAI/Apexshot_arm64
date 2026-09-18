@@ -18,6 +18,7 @@ use crate::recording::editor::model::{
 };
 use crate::recording::editor::window::tool_sidebar::FillSlider;
 
+use super::anchor_pad::MotionAnchorPad;
 use super::appearance::build_motion_appearance_panel;
 use super::parts::{
     MotionModeParts, MotionModeShellParts, MotionPanelParts, MotionSharedControlParts,
@@ -157,6 +158,11 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     clip_box.append(&move_title);
 
     let transform_section = motion_settings_section("Transform");
+    // Zoom preview first: it shows the live thumbnail and the anchor the
+    // Scale/Intensity values below act around, so the three read as one zoom
+    // control instead of two disconnected ones.
+    let anchor_pad = MotionAnchorPad::new();
+    transform_section.append(&anchor_pad.widget());
     let scale_slider =
         FillSlider::new_with_value_text(&t("Scale"), |value, _, _| format!("{value:.1}x"));
     scale_slider.set_range(MIN_MOTION_ZOOM, MAX_MOTION_ZOOM);
@@ -170,17 +176,6 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     transform_section.append(&intensity_header);
     transform_section.append(&intensity_slider.widget());
     clip_box.append(&transform_section);
-
-    let zoom_anchor_section = motion_settings_section("Zoom Anchor");
-    let (zoom_anchor_x_header, zoom_anchor_x_value, zoom_anchor_x_slider) =
-        span_slider_row(&t("Anchor X"), 0.5, 0.0, 1.0);
-    zoom_anchor_section.append(&zoom_anchor_x_header);
-    zoom_anchor_section.append(&zoom_anchor_x_slider.widget());
-    let (zoom_anchor_y_header, zoom_anchor_y_value, zoom_anchor_y_slider) =
-        span_slider_row(&t("Anchor Y"), 0.5, 0.0, 1.0);
-    zoom_anchor_section.append(&zoom_anchor_y_header);
-    zoom_anchor_section.append(&zoom_anchor_y_slider.widget());
-    clip_box.append(&zoom_anchor_section);
 
     let rotation_section = motion_settings_section("Rotation & Perspective");
     let yaw_value = Label::new(Some("8°"));
@@ -486,10 +481,7 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
                 scale_slider,
                 intensity_slider,
                 intensity_value,
-                zoom_anchor_x_slider,
-                zoom_anchor_x_value,
-                zoom_anchor_y_slider,
-                zoom_anchor_y_value,
+                anchor_pad,
                 yaw_slider,
                 yaw_value,
                 pitch_slider,

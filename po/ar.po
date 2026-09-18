@@ -2227,6 +2227,9 @@ msgstr "عنوان"
 msgid "Drag on the preview to place the title"
 msgstr "اسحب على المعاينة لوضع العنوان"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "انقر أو اسحب على الصورة لوضع مرساة التكبير؛ انقر نقرًا مزدوجًا لإعادة التمركز"
+
 msgid "Anchor X"
 msgstr "مرساة X"
 msgid "Anchor Y"

@@ -40,10 +40,7 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let scale_slider = parts.transform.scale_slider.clone();
     let intensity_slider = parts.transform.intensity_slider.clone();
     let intensity_value = parts.transform.intensity_value.clone();
-    let zoom_anchor_x_slider = parts.transform.zoom_anchor_x_slider.clone();
-    let zoom_anchor_x_value = parts.transform.zoom_anchor_x_value.clone();
-    let zoom_anchor_y_slider = parts.transform.zoom_anchor_y_slider.clone();
-    let zoom_anchor_y_value = parts.transform.zoom_anchor_y_value.clone();
+    let anchor_pad = parts.transform.anchor_pad.clone();
     let yaw_slider = parts.transform.yaw_slider.clone();
     let yaw_value = parts.transform.yaw_value.clone();
     let pitch_slider = parts.transform.pitch_slider.clone();
@@ -100,6 +97,10 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         }
         let selected = runtime.motion.selected_segment().cloned();
         let selected_text = runtime.motion.selected_text_segment().cloned();
+        let anchor_surface = runtime
+            .card_preview
+            .clone()
+            .or_else(|| runtime.card.clone());
         let (can_undo, can_redo) = runtime.motion_history_availability();
         let blur = runtime.motion.motion_blur;
         let blur_settings = runtime.motion.motion_blur_settings.clamped();
@@ -159,10 +160,7 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         if let Some(segment) = selected {
             intensity_slider.set_value(segment.intensity);
             intensity_value.set_label(&format!("{:.0}%", segment.intensity * 100.0));
-            zoom_anchor_x_slider.set_value(segment.zoom_anchor_x);
-            zoom_anchor_x_value.set_label(&format!("{:.0}%", segment.zoom_anchor_x * 100.0));
-            zoom_anchor_y_slider.set_value(segment.zoom_anchor_y);
-            zoom_anchor_y_value.set_label(&format!("{:.0}%", segment.zoom_anchor_y * 100.0));
+            anchor_pad.set_anchor(segment.zoom_anchor_x, segment.zoom_anchor_y);
             yaw_slider.set_value(segment.to.rotation_y);
             yaw_value.set_label(&format!("{:.0}°", segment.to.rotation_y));
             pitch_slider.set_value(segment.to.rotation_x);
@@ -182,7 +180,10 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
                 transform_timing.transition_duration * 1000.0
             ));
             scale_slider.set_value(segment.to.scale);
+        } else {
+            anchor_pad.set_anchor(0.5, 0.5);
         }
+        anchor_pad.set_surface(anchor_surface);
         delete_btn.set_sensitive(has_clip || has_text);
         undo_btn.set_sensitive(can_undo);
         redo_btn.set_sensitive(can_redo);

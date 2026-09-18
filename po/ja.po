@@ -2211,6 +2211,9 @@ msgstr "タイトル"
 msgid "Drag on the preview to place the title"
 msgstr "プレビューをドラッグしてタイトルを配置"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "画像をクリックまたはドラッグしてズームアンカーを配置、ダブルクリックで中央に戻す"
+
 msgid "Anchor X"
 msgstr "アンカー X"
 msgid "Anchor Y"

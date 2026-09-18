@@ -2257,6 +2257,9 @@ msgstr "Titel"
 msgid "Drag on the preview to place the title"
 msgstr "Ziehe auf der Vorschau, um den Titel zu platzieren"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Klicke oder ziehe auf dem Bild, um den Zoom-Anker zu setzen; Doppelklick zum Zentrieren"
+
 msgid "Anchor X"
 msgstr "Anker X"
 msgid "Anchor Y"

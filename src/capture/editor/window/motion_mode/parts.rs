@@ -5,6 +5,7 @@ use std::rc::Rc;
 use crate::recording::editor::model::{MotionTextAnimation, MotionTextScope, MotionTimingKind};
 use crate::recording::editor::window::tool_sidebar::FillSlider;
 
+use super::anchor_pad::MotionAnchorPad;
 use super::position_pad::MotionPositionPad;
 
 pub(in crate::capture::editor::window) struct MotionModeParts {
@@ -84,10 +85,7 @@ pub(in crate::capture::editor::window) struct MotionTransformControlParts {
     pub scale_slider: FillSlider,
     pub intensity_slider: FillSlider,
     pub intensity_value: Label,
-    pub zoom_anchor_x_slider: FillSlider,
-    pub zoom_anchor_x_value: Label,
-    pub zoom_anchor_y_slider: FillSlider,
-    pub zoom_anchor_y_value: Label,
+    pub anchor_pad: MotionAnchorPad,
     pub yaw_slider: FillSlider,
     pub yaw_value: Label,
     pub pitch_slider: FillSlider,

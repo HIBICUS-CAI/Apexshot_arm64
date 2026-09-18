@@ -73,27 +73,15 @@ pub(super) fn install(
         }
     });
 
-    for (axis, slider, value_label) in [
-        (
-            0_u8,
-            parts.transform.zoom_anchor_x_slider.clone(),
-            parts.transform.zoom_anchor_x_value.clone(),
-        ),
-        (
-            1_u8,
-            parts.transform.zoom_anchor_y_slider.clone(),
-            parts.transform.zoom_anchor_y_value.clone(),
-        ),
-    ] {
+    parts.transform.anchor_pad.connect_value_changed({
         let session = session.runtime.clone();
         let request_transition_preview = request_transition_preview.clone();
         let request_live_preview = request_live_preview.clone();
         let syncing = parts.shared.inspector_syncing.clone();
-        slider.connect_value_changed(move |slider| {
+        move |x, y| {
             if syncing.get() {
                 return;
             }
-            let value = slider.value();
             let segment_start = {
                 let runtime = session.borrow();
                 runtime
@@ -101,28 +89,17 @@ pub(super) fn install(
                     .selected_segment()
                     .map(|segment| segment.start)
             };
-            let mut runtime = session.borrow_mut();
-            runtime.begin_motion_edit();
-            let (mut x, mut y) = runtime
-                .motion
-                .selected_segment()
-                .map_or((0.5, 0.5), |segment| {
-                    (segment.zoom_anchor_x, segment.zoom_anchor_y)
-                });
-            if axis == 0 {
-                x = value;
-            } else {
-                y = value;
+            {
+                let mut runtime = session.borrow_mut();
+                runtime.begin_motion_edit();
+                runtime.motion.set_selected_zoom_anchor(x, y);
             }
-            runtime.motion.set_selected_zoom_anchor(x, y);
-            drop(runtime);
-            value_label.set_label(&format!("{:.0}%", value * 100.0));
             match segment_start {
                 Some(start) => request_transition_preview(start),
                 None => request_live_preview(),
             }
-        });
-    }
+        }
+    });
 
     parts.transform.yaw_slider.connect_value_changed({
         let session = session.runtime.clone();
