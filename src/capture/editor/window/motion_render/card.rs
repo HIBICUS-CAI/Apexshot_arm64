@@ -121,6 +121,9 @@ fn draw_transformed_card(
         let hw_flat = img_w * fit * transform.scale / 2.0;
         let hh_flat = img_h * fit * transform.scale / 2.0;
         let card_radius = (appearance.border_radius * ref_scale * fit).max(0.0);
+        // Projection depth for the frame outlines below, from the unexpanded
+        // card so the rim tracks the same surface as the image mesh.
+        let quad_depth = card_depth(hw_flat, hh_flat, transform.perspective);
         // Liquid Glass paints gradients along the card outline instead of the
         // flat strokes below; the outline is a rounded rect when the card is
         // square to the camera and the projected quad when it is tilted.
@@ -144,12 +147,24 @@ fn draw_transformed_card(
                         },
                     );
                 } else {
-                    let expanded = expand_frame_quad(corners, expand);
-                    path_context.move_to(expanded[0].0, expanded[0].1);
-                    for corner in &expanded[1..] {
-                        path_context.line_to(corner.0, corner.1);
-                    }
-                    path_context.close_path();
+                    // Tilted: the rim follows the rounded card edge through
+                    // the projection. Tracing the sharp quad here drops the
+                    // radius for the whole clip (the image keeps it via
+                    // texture alpha) and snaps back when playback stops.
+                    let outline = projected_rounded_rect_points(
+                        hw_flat + expand,
+                        hh_flat + expand,
+                        if card_radius <= 0.0 {
+                            0.0
+                        } else {
+                            card_radius + expand
+                        },
+                        transform,
+                        quad_depth,
+                        cx,
+                        cy,
+                    );
+                    path_through_points(path_context, &outline);
                 }
             };
             let (top, bottom) = if flat {
@@ -186,12 +201,22 @@ fn draw_transformed_card(
                 );
                 context.stroke().ok();
             } else {
-                let expanded = expand_frame_quad(corners, e);
-                context.move_to(expanded[0].0, expanded[0].1);
-                for corner in &expanded[1..] {
-                    context.line_to(corner.0, corner.1);
-                }
-                context.close_path();
+                // Tilted: same rounded projection as the Liquid rim so the
+                // border never goes sharp mid-clip.
+                let outline = projected_rounded_rect_points(
+                    hw_flat + e,
+                    hh_flat + e,
+                    if card_radius <= 0.0 {
+                        0.0
+                    } else {
+                        card_radius + e
+                    },
+                    transform,
+                    quad_depth,
+                    cx,
+                    cy,
+                );
+                path_through_points(context, &outline);
                 context.stroke().ok();
             }
             extra + thickness
@@ -211,8 +236,8 @@ fn draw_transformed_card(
             let [r, g, b, a] = appearance.border_fill_color;
             context.set_source_rgba(r, g, b, a);
             context.set_line_width(thickness);
+            let e = thickness / 2.0;
             if flat {
-                let e = thickness / 2.0;
                 rounded_rectangle(
                     context,
                     cx - hw_flat + e,
@@ -223,12 +248,18 @@ fn draw_transformed_card(
                 );
                 context.stroke().ok();
             } else {
-                let shrunk = expand_frame_quad(corners, -thickness / 2.0);
-                context.move_to(shrunk[0].0, shrunk[0].1);
-                for corner in &shrunk[1..] {
-                    context.line_to(corner.0, corner.1);
-                }
-                context.close_path();
+                // Tilted: shrink in card space, then project — a uniform
+                // band that matches the flat path under weak perspective.
+                let outline = projected_rounded_rect_points(
+                    (hw_flat * 2.0 - e * 2.0).max(1.0) / 2.0,
+                    (hh_flat * 2.0 - e * 2.0).max(1.0) / 2.0,
+                    (card_radius - e).max(0.0),
+                    transform,
+                    quad_depth,
+                    cx,
+                    cy,
+                );
+                path_through_points(context, &outline);
                 context.stroke().ok();
             }
         }
@@ -252,48 +283,6 @@ fn draw_transformed_card(
             );
         }
     }
-}
-
-/// Expand a card quad outward by `expand` px along mitered edge normals so an
-/// outside border stroke sits fully outside the image (inner edge flush with
-/// the card edge), matching the static canvas/export renderers.
-fn expand_frame_quad(corners: [(f64, f64); 4], expand: f64) -> [(f64, f64); 4] {
-    if expand <= 0.001 {
-        return corners;
-    }
-    let mut normals = [(0.0, 0.0); 4];
-    for i in 0..4 {
-        let p = corners[i];
-        let q = corners[(i + 1) % 4];
-        let dx = q.0 - p.0;
-        let dy = q.1 - p.1;
-        let len = (dx * dx + dy * dy).sqrt().max(1e-6);
-        normals[i] = (dy / len, -dx / len);
-    }
-    let mut out = [(0.0, 0.0); 4];
-    for i in 0..4 {
-        let prev = normals[(i + 3) % 4];
-        let next = normals[i];
-        let mx = prev.0 + next.0;
-        let my = prev.1 + next.1;
-        let mlen = (mx * mx + my * my).sqrt();
-        if mlen < 1e-6 {
-            out[i] = (
-                corners[i].0 + next.0 * expand,
-                corners[i].1 + next.1 * expand,
-            );
-            continue;
-        }
-        let mx = mx / mlen;
-        let my = my / mlen;
-        let denom = (mx * next.0 + my * next.1).abs().max(1e-4);
-        let scale = (1.0 / denom).clamp(0.2, 3.0);
-        out[i] = (
-            corners[i].0 + mx * expand * scale,
-            corners[i].1 + my * expand * scale,
-        );
-    }
-    out
 }
 
 /// Render the card into a scratch surface clipped to a rounded rectangle so

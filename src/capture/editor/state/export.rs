@@ -1,8 +1,8 @@
 use super::super::composition::{BackgroundComposition, CompositionLayout, FloatRect};
 use super::super::pen_weight::{HighlighterMode, PenWeight};
 use super::super::render::{
-    apply_blur_rect, cairo_argb_to_rgba_image, glass_layer, rgba_image_to_surface,
-    GlassLook, GlassRing,
+    apply_blur_rect, cairo_argb_to_rgba_image, glass_layer, rgba_image_to_surface, GlassLook,
+    GlassRing,
 };
 use super::super::types::{
     AnnotationAction, BackgroundStyle, DrawColor, EditorError, FrameStyle, Rect,
@@ -125,12 +125,12 @@ fn stroke_frame_border(
     }
     let mut expand = 0.0;
     let stroke_outside = |context: &gtk4::cairo::Context,
-                              thickness: f64,
-                              r: f64,
-                              g: f64,
-                              b: f64,
-                              a: f64,
-                              extra: f64| {
+                          thickness: f64,
+                          r: f64,
+                          g: f64,
+                          b: f64,
+                          a: f64,
+                          extra: f64| {
         let lw = (thickness * unit).max(0.0);
         if lw <= 0.01 {
             return extra;
@@ -268,8 +268,7 @@ impl EditorState {
         let canvas_w = layout.canvas_width.round().max(1.0) as u32;
         let canvas_h = layout.canvas_height.round().max(1.0) as u32;
         let mut canvas = RgbaImage::from_pixel(canvas_w, canvas_h, image::Rgba([0, 0, 0, 0]));
-        let radius =
-            self.background_corner_radius * layout.scale_factor * layout.draw_scale;
+        let radius = self.background_corner_radius * layout.scale_factor * layout.draw_scale;
         canvas = paint_frame_backings(canvas, &layout.image_rect, radius, self.frame_style)?;
 
         let working: &RgbaImage = self.working_image.as_ref();
@@ -483,8 +482,7 @@ impl EditorState {
             return canvas;
         }
         let unit = layout.scale_factor * layout.draw_scale;
-        let gap = (spec.border_thickness
-            + spec.outer1.map(|outer| outer.thickness).unwrap_or(0.0))
+        let gap = (spec.border_thickness + spec.outer1.map(|outer| outer.thickness).unwrap_or(0.0))
             * unit;
         let ring = GlassRing {
             x: layout.image_rect.x,
@@ -594,9 +592,7 @@ impl EditorState {
 
         // Backing sheets (Stack looks, Retro window) behind the card.
         {
-            let radius = self.background_corner_radius
-                * layout.scale_factor
-                * layout.draw_scale;
+            let radius = self.background_corner_radius * layout.scale_factor * layout.draw_scale;
             canvas = paint_frame_backings(canvas, &layout.image_rect, radius, self.frame_style)?;
         }
 
@@ -734,44 +730,9 @@ fn draw_rounded_rect_path(
     height: f64,
     radius: f64,
 ) {
-    let radius = radius.min(width / 2.0).min(height / 2.0).max(0.0);
-    if radius <= 0.0 {
-        context.rectangle(x, y, width, height);
-        return;
-    }
-
-    let right = x + width;
-    let bottom = y + height;
-    context.new_sub_path();
-    context.arc(
-        right - radius,
-        y + radius,
-        radius,
-        -std::f64::consts::FRAC_PI_2,
-        0.0,
-    );
-    context.arc(
-        right - radius,
-        bottom - radius,
-        radius,
-        0.0,
-        std::f64::consts::FRAC_PI_2,
-    );
-    context.arc(
-        x + radius,
-        bottom - radius,
-        radius,
-        std::f64::consts::FRAC_PI_2,
-        std::f64::consts::PI,
-    );
-    context.arc(
-        x + radius,
-        y + radius,
-        radius,
-        std::f64::consts::PI,
-        std::f64::consts::PI * 1.5,
-    );
-    context.close_path();
+    // One smooth-corner implementation for preview + export; the clip, the
+    // shadow, the borders and the backings must all trace the same outline.
+    super::super::render::rounded_rect_path(context, x, y, width, height, radius);
 }
 
 fn apply_corner_radius(image: &mut RgbaImage, radius: f64) {

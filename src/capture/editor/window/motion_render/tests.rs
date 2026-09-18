@@ -220,6 +220,148 @@ mod tests {
         assert_eq!(&data[card_center..card_center + 4], &[255, 255, 255, 255]);
     }
 
+    /// Tilted frame outlines must keep the card's rounded corners. Regression:
+    /// mid-clip poses traced the sharp projected quad, so the Liquid/border
+    /// frame lost its radius while the clip played and snapped back after.
+    #[test]
+    fn tilted_frame_outline_keeps_the_cards_rounded_corners() {
+        let transform = MotionTransform {
+            rotation_y: 8.0,
+            perspective: 0.18,
+            ..MotionTransform::default()
+        };
+        let depth = crate::recording::editor::model::card_depth(100.0, 60.0, transform.perspective);
+        let outline =
+            super::projected_rounded_rect_points(100.0, 60.0, 20.0, transform, depth, 500.0, 300.0);
+        assert_eq!(outline.len(), 44);
+        assert!(
+            outline.iter().all(|(x, y)| x.is_finite() && y.is_finite()),
+            "tilted outline has non-finite points: {outline:?}"
+        );
+        // No outline point reaches the sharp quad corners: the radius cut
+        // keeps every projected quad corner well clear of the path.
+        let quad = project_card_corners(200.0, 120.0, 1.0, transform, 500.0, 300.0);
+        for (qx, qy) in quad {
+            let nearest = outline
+                .iter()
+                .map(|(x, y)| ((x - qx).powi(2) + (y - qy).powi(2)).sqrt())
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                nearest > 2.0,
+                "tilted outline should cut quad corner ({qx},{qy}), nearest point is {nearest}px away"
+            );
+        }
+    }
+
+    /// Tilted border follows the rounded card edge. Full-frame regression
+    /// for the playback bug: with a radius set, the tilted border must cut
+    /// the projected quad corner instead of stroking through it.
+    #[test]
+    fn tilted_border_stroke_cuts_the_quad_corner_when_radius_is_set() {
+        let card = ImageSurface::create(Format::ARgb32, 100, 50).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 0.0, 0.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+        let transform = MotionTransform {
+            rotation_y: 12.0,
+            perspective: 0.25,
+            ..MotionTransform::default()
+        };
+        let stage = MotionStage::frame(400.0, 300.0);
+        let fit = super::motion_canvas_fit(100.0, 50.0, 0.0, stage.bounds_w, stage.bounds_h);
+        let (cx, cy) = super::motion_card_center(100.0, 50.0, fit, stage, transform, (0.5, 0.5));
+        // Quad order is TL, TR, BR, BL.
+        let (qx, qy) = project_card_corners(100.0, 50.0, fit, transform, cx, cy)[1];
+        let px = qx.round() as i32;
+        let py = qy.round() as i32;
+        assert!(
+            px > 4 && px < 396 && py > 4 && py < 296,
+            "tilted quad corner ({qx},{qy}) should land inside the frame"
+        );
+        let render = |radius: f64| {
+            let mut motion = MotionState::default();
+            motion.appearance.background_padding = 0.0;
+            motion.appearance.background_fill_type = MotionBackgroundFillType::None;
+            motion.appearance.frame_style = crate::capture::editor::types::FrameStyle::Border;
+            motion.appearance.border_thickness = 6.0;
+            motion.appearance.border_fill_color = [1.0, 1.0, 1.0, 1.0];
+            motion.appearance.border_radius = radius;
+            motion.appearance.shadow_opacity = 0.0;
+            let mut frame = ImageSurface::create(Format::ARgb32, 400, 300).unwrap();
+            {
+                let context = Context::new(&frame).unwrap();
+                super::draw_transformed_card(
+                    &context,
+                    &card,
+                    stage,
+                    transform,
+                    (0.5, 0.5),
+                    &motion.appearance,
+                    1.0,
+                    8,
+                    gtk4::cairo::Filter::Good,
+                );
+            }
+            frame.flush();
+            let stride = frame.stride() as usize;
+            let data = frame.data().unwrap();
+            let offset = (py as usize) * stride + (px as usize) * 4;
+            [
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]
+        };
+        // Sharp frame strokes through the quad corner.
+        let sharp = render(0.0);
+        assert!(
+            sharp[0] > 200 && sharp[1] > 200 && sharp[2] > 200,
+            "radius 0 should stroke the tilted quad corner white, got {sharp:?}"
+        );
+        // Rounded frame cuts it: the quad corner shows the scene behind.
+        let rounded = render(120.0);
+        assert!(
+            rounded[0] < 100 && rounded[1] < 100 && rounded[2] < 100,
+            "radius should cut the tilted quad corner, got {rounded:?}"
+        );
+    }
+
+    #[test]
+    fn flat_projected_outline_matches_the_card_rect() {
+        // Unrotated pose: the projected outline is the card rect itself, so
+        // the mid-clip frame path agrees with the flat rounded-rect path.
+        let transform = MotionTransform::default();
+        let depth = crate::recording::editor::model::card_depth(100.0, 60.0, transform.perspective);
+        let outline =
+            super::projected_rounded_rect_points(100.0, 60.0, 20.0, transform, depth, 500.0, 300.0);
+        assert_eq!(outline.len(), 44);
+        // First point is the top edge where the TR corner leaves it.
+        let (x, y) = outline[0];
+        assert!(
+            (x - 580.0).abs() < 1.0 && (y - 240.0).abs() < 1.0,
+            "flat outline should start at the top edge (580,240), got ({x},{y})"
+        );
+        // Zero radius collapses to the sharp quad.
+        let sharp =
+            super::projected_rounded_rect_points(100.0, 60.0, 0.0, transform, depth, 500.0, 300.0);
+        assert_eq!(sharp.len(), 4);
+        let quad = project_card_corners(200.0, 120.0, 1.0, transform, 500.0, 300.0);
+        for (x, y) in &sharp {
+            let nearest = quad
+                .iter()
+                .map(|(qx, qy)| ((x - qx).powi(2) + (y - qy).powi(2)).sqrt())
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                nearest < 1e-6,
+                "zero-radius outline should match the quad, got ({x},{y})"
+            );
+        }
+    }
+
     #[test]
     fn card_shadow_has_a_smooth_falloff_and_stays_inside_the_scene() {
         let mut frame = ImageSurface::create(Format::ARgb32, 160, 120).unwrap();
@@ -305,7 +447,9 @@ mod tests {
 
     #[test]
     fn scene_shadow_placement_splits_above_and_below_the_card() {
-        use crate::recording::editor::model::{MotionSceneShadowPreset, MotionSceneShadowPlacement};
+        use crate::recording::editor::model::{
+            MotionSceneShadowPlacement, MotionSceneShadowPreset,
+        };
 
         let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
         {
@@ -476,7 +620,10 @@ mod tests {
         let motion = fast_linear_motion();
         let time = 0.05;
         let scale = motion.sample(time).scale;
-        assert!((scale - 2.5).abs() < 1e-6, "linear move at half time: {scale}");
+        assert!(
+            (scale - 2.5).abs() < 1e-6,
+            "linear move at half time: {scale}"
+        );
 
         let layout = CardLayout::with_padding(
             &card,
@@ -604,7 +751,10 @@ mod tests {
 
         let mut still = render(false);
         let mut playing = render(true);
-        assert_eq!((still.width(), still.height()), (playing.width(), playing.height()));
+        assert_eq!(
+            (still.width(), still.height()),
+            (playing.width(), playing.height())
+        );
         // Center pixel pins the mesh (card position/geometry): it sits deep
         // inside the solid card in both renders. Edge fringes may differ by a
         // step because the still uses Good (sharp, matches Static) while
@@ -1037,7 +1187,10 @@ mod tests {
             (motion.segments[first].end - motion.segments[first].start - 1.0).abs() < f64::EPSILON,
             "new clips are one second long"
         );
-        assert!(motion.add_segment_at(2.0).is_some(), "second clip in the gap");
+        assert!(
+            motion.add_segment_at(2.0).is_some(),
+            "second clip in the gap"
+        );
         assert_eq!(motion.segments.len(), 2);
 
         // The one-second gap takes a full clip even when the pointer is late
@@ -1150,17 +1303,7 @@ mod tests {
             {
                 let context = Context::new(&frame).unwrap();
                 draw_motion_frame(
-                    &context,
-                    1280,
-                    800,
-                    surface,
-                    &motion,
-                    None,
-                    None,
-                    0.35,
-                    true,
-                    true,
-                    false,
+                    &context, 1280, 800, surface, &motion, None, None, 0.35, true, true, false,
                     card_scale,
                 );
             }

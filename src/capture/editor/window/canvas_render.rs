@@ -966,24 +966,8 @@ fn draw_rounded_rect_path(
     let w = width + expansion * 2.0;
     let h = height + expansion * 2.0;
 
-    context.new_sub_path();
-    context.arc(x + w - r, y + r, r, -std::f64::consts::FRAC_PI_2, 0.0);
-    context.arc(x + w - r, y + h - r, r, 0.0, std::f64::consts::FRAC_PI_2);
-    context.arc(
-        x + r,
-        y + h - r,
-        r,
-        std::f64::consts::FRAC_PI_2,
-        std::f64::consts::PI,
-    );
-    context.arc(
-        x + r,
-        y + r,
-        r,
-        std::f64::consts::PI,
-        std::f64::consts::PI * 1.5,
-    );
-    context.close_path();
+    // Same smooth outline as export; zero/negative radius stays a sharp rect.
+    crate::capture::editor::render::rounded_rect_path(context, x, y, w, h, r);
 }
 
 #[cfg(test)]

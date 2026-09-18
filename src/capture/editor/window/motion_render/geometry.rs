@@ -251,36 +251,92 @@ fn motion_scene_bounds(width: f64, height: f64) -> (f64, f64, f64, f64) {
 }
 
 fn rounded_rectangle(context: &Context, x: f64, y: f64, width: f64, height: f64, radius: f64) {
-    let radius = radius.min(width.min(height) * 0.5).max(0.0);
-    context.new_sub_path();
-    context.arc(
-        x + width - radius,
-        y + radius,
-        radius,
-        -std::f64::consts::FRAC_PI_2,
-        0.0,
-    );
-    context.arc(
-        x + width - radius,
-        y + height - radius,
-        radius,
-        0.0,
-        std::f64::consts::FRAC_PI_2,
-    );
-    context.arc(
-        x + radius,
-        y + height - radius,
-        radius,
-        std::f64::consts::FRAC_PI_2,
-        std::f64::consts::PI,
-    );
-    context.arc(
-        x + radius,
-        y + radius,
-        radius,
-        std::f64::consts::PI,
-        std::f64::consts::FRAC_PI_2 * 3.0,
-    );
+    // Motion card shares the static smooth-corner outline so preview, export
+    // and thumbnails agree; see render::rounded_rect_path.
+    crate::capture::editor::render::rounded_rect_path(context, x, y, width, height, radius);
+}
+
+/// Stage-space outline of a card-space rounded rect under the live camera.
+///
+/// Borders, the Liquid rim and inset bands must hug the card edge even
+/// mid-clip. Tracing the projected quad instead draws a sharp frame around
+/// a rounded image while the clip plays — the image keeps its radius via
+/// texture alpha, so the frame visibly loses it and snaps back when
+/// playback stops. Sampling the same superellipse corners as
+/// `render::rounded_rect_path` and pushing them through the perspective
+/// projection keeps every pose consistent. Straight edges need no samples
+/// (projective transforms preserve lines); `radius` uses the same
+/// card-space units as the mesh grid (`hw`/`hh` include fit and scale).
+fn projected_rounded_rect_points(
+    half_w: f64,
+    half_h: f64,
+    radius: f64,
+    transform: MotionTransform,
+    depth: f64,
+    cx: f64,
+    cy: f64,
+) -> Vec<(f64, f64)> {
+    const SEGMENTS_PER_CORNER: usize = 10;
+    let half_w = half_w.max(0.0);
+    let half_h = half_h.max(0.0);
+    let radius = radius.clamp(0.0, half_w.min(half_h));
+    let project = |x: f64, y: f64| {
+        let (px, py) = project_point(x, y, transform, depth);
+        (cx + px, cy + py)
+    };
+    if radius <= 0.001 {
+        // Sharp-mitered frame, matching the zero-radius flat path.
+        return [
+            (half_w, -half_h),
+            (half_w, half_h),
+            (-half_w, half_h),
+            (-half_w, -half_h),
+        ]
+        .into_iter()
+        .map(|(x, y)| project(x, y))
+        .collect();
+    }
+    // (center_x, center_y, start_angle) in path order: TR, BR, BL, TL.
+    let corners = [
+        (
+            half_w - radius,
+            -half_h + radius,
+            -std::f64::consts::FRAC_PI_2,
+        ),
+        (half_w - radius, half_h - radius, 0.0),
+        (
+            -half_w + radius,
+            half_h - radius,
+            std::f64::consts::FRAC_PI_2,
+        ),
+        (-half_w + radius, -half_h + radius, std::f64::consts::PI),
+    ];
+    let mut out = Vec::with_capacity(4 * (SEGMENTS_PER_CORNER + 1));
+    for (center_x, center_y, start) in corners {
+        for step in 0..=SEGMENTS_PER_CORNER {
+            let angle =
+                start + (step as f64) / (SEGMENTS_PER_CORNER as f64) * std::f64::consts::FRAC_PI_2;
+            let (sine, cosine) = angle.sin_cos();
+            out.push(project(
+                center_x + radius * cosine.signum() * cosine.abs().sqrt(),
+                center_y + radius * sine.signum() * sine.abs().sqrt(),
+            ));
+        }
+    }
+    out
+}
+
+/// Cairo path through projected outline points.
+fn path_through_points(context: &Context, points: &[(f64, f64)]) {
+    let mut first = true;
+    for (x, y) in points {
+        if first {
+            context.move_to(*x, *y);
+            first = false;
+        } else {
+            context.line_to(*x, *y);
+        }
+    }
     context.close_path();
 }
 

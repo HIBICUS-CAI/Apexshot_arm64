@@ -935,6 +935,13 @@ pub fn cairo_argb_to_rgba_image(width: u32, height: u32, stride: usize, data: &[
 /// Closed rounded-rectangle outline at absolute coordinates. Radius is clamped
 /// so an inward expansion (a frame band painted inside the card edge) can never
 /// hand cairo a negative radius, which would poison the context status.
+///
+/// Corners are smooth continuous-curvature (squircle) blends, not circular
+/// arcs: a circle jumps from curvature 0 on the straight edge to 1/r at the
+/// tangent point, which reads as "a curve stuck onto straight lines". Each
+/// corner here is a quarter-superellipse that leaves the edge with zero
+/// curvature and peaks mid-corner, so the edge flows into the curve the way
+/// modern window frames do.
 pub fn rounded_rect_path(
     context: &gtk4::cairo::Context,
     x: f64,
@@ -951,37 +958,37 @@ pub fn rounded_rect_path(
         context.rectangle(x, y, width, height);
         return;
     }
+    // Quarter-superellipse per corner (exponent 4, so |cos|^0.5 shaping via
+    // sqrt, which is exact and cheaper than powf). Curvature is zero where the
+    // corner leaves the straight edge and maximal at 45 degrees: no tangent
+    // break, no "curve then straight line" step.
+    const SEGMENTS_PER_CORNER: usize = 16;
     let right = x + width;
     let bottom = y + height;
+    // (center_x, center_y, start_angle) in path order: TR, BR, BL, TL.
+    let corners = [
+        (right - radius, y + radius, -std::f64::consts::FRAC_PI_2),
+        (right - radius, bottom - radius, 0.0),
+        (x + radius, bottom - radius, std::f64::consts::FRAC_PI_2),
+        (x + radius, y + radius, std::f64::consts::PI),
+    ];
     context.new_sub_path();
-    context.arc(
-        right - radius,
-        y + radius,
-        radius,
-        -std::f64::consts::FRAC_PI_2,
-        0.0,
-    );
-    context.arc(
-        right - radius,
-        bottom - radius,
-        radius,
-        0.0,
-        std::f64::consts::FRAC_PI_2,
-    );
-    context.arc(
-        x + radius,
-        bottom - radius,
-        radius,
-        std::f64::consts::FRAC_PI_2,
-        std::f64::consts::PI,
-    );
-    context.arc(
-        x + radius,
-        y + radius,
-        radius,
-        std::f64::consts::PI,
-        std::f64::consts::PI * 1.5,
-    );
+    let mut first = true;
+    for (center_x, center_y, start) in corners {
+        for step in 0..=SEGMENTS_PER_CORNER {
+            let angle =
+                start + (step as f64) / (SEGMENTS_PER_CORNER as f64) * std::f64::consts::FRAC_PI_2;
+            let (sine, cosine) = angle.sin_cos();
+            let point_x = center_x + radius * cosine.signum() * cosine.abs().sqrt();
+            let point_y = center_y + radius * sine.signum() * sine.abs().sqrt();
+            if first {
+                context.move_to(point_x, point_y);
+                first = false;
+            } else {
+                context.line_to(point_x, point_y);
+            }
+        }
+    }
     context.close_path();
 }
 
@@ -1070,10 +1077,34 @@ impl LiquidFrame {
                 // whisper-thin with a cool cast so black backdrops stay black and
                 // the highlights do the talking, like the reference shader.
                 let a = (tint.a * 0.45).clamp(0.0, 1.0);
-                gradient.add_color_stop_rgba(0.0, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.5);
-                gradient.add_color_stop_rgba(0.35, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.12);
-                gradient.add_color_stop_rgba(0.78, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.18);
-                gradient.add_color_stop_rgba(1.0, tint.r * 0.92, tint.g * 0.95, (tint.b * 1.05).min(1.0), a * 0.32);
+                gradient.add_color_stop_rgba(
+                    0.0,
+                    tint.r * 0.92,
+                    tint.g * 0.95,
+                    (tint.b * 1.05).min(1.0),
+                    a * 0.5,
+                );
+                gradient.add_color_stop_rgba(
+                    0.35,
+                    tint.r * 0.92,
+                    tint.g * 0.95,
+                    (tint.b * 1.05).min(1.0),
+                    a * 0.12,
+                );
+                gradient.add_color_stop_rgba(
+                    0.78,
+                    tint.r * 0.92,
+                    tint.g * 0.95,
+                    (tint.b * 1.05).min(1.0),
+                    a * 0.18,
+                );
+                gradient.add_color_stop_rgba(
+                    1.0,
+                    tint.r * 0.92,
+                    tint.g * 0.95,
+                    (tint.b * 1.05).min(1.0),
+                    a * 0.32,
+                );
             }
             context.set_fill_rule(gtk4::cairo::FillRule::EvenOdd);
             path(context, band);
@@ -1108,7 +1139,12 @@ impl LiquidFrame {
             // across the top so dark frames still show a reflection. Frost
             // stays diffuse — no specular streaks.
             if band > 3.0 && !frost {
-                let sheen = gtk4::cairo::LinearGradient::new(0.0, top, band * 3.0, top + (bottom - top) * 0.35);
+                let sheen = gtk4::cairo::LinearGradient::new(
+                    0.0,
+                    top,
+                    band * 3.0,
+                    top + (bottom - top) * 0.35,
+                );
                 sheen.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 0.0);
                 sheen.add_color_stop_rgba(0.35, 1.0, 1.0, 1.0, 0.20);
                 sheen.add_color_stop_rgba(0.55, 1.0, 1.0, 1.0, 0.06);
@@ -1307,6 +1343,69 @@ mod tests {
         assert_eq!(
             pixel.0[3], 0,
             "selecting a box must not draw a connector to a number marker, got {pixel:?}"
+        );
+    }
+
+    #[test]
+    fn smooth_rounded_rect_path_handles_degenerate_inputs() {
+        for (w, h, r) in [
+            (100.0, 80.0, 0.0),
+            (100.0, 80.0, -4.0),
+            (100.0, 80.0, 24.0),
+            (100.0, 80.0, 10_000.0),
+            (0.0, 80.0, 8.0),
+            (100.0, 0.0, 8.0),
+        ] {
+            let surface = gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, 120, 100)
+                .expect("surface");
+            let context = gtk4::cairo::Context::new(&surface).expect("context");
+            rounded_rect_path(&context, 10.0, 10.0, w, h, r);
+            context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+            let _ = context.fill();
+            assert!(
+                context.status().is_ok(),
+                "rounded rect {w}x{h} r={r} poisoned the cairo context"
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_rounded_rect_blends_without_a_tangent_step() {
+        // 200x200 card, radius 40: a circular arc already cuts the diagonal
+        // at ~(12,12); the smooth corner keeps material there and only cuts
+        // the extreme corner, so the edge flows into the curve.
+        let mut surface = gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, 200, 200)
+            .expect("surface");
+        let context = gtk4::cairo::Context::new(&surface).expect("context");
+        rounded_rect_path(&context, 0.0, 0.0, 200.0, 200.0, 40.0);
+        context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+        let _ = context.fill();
+        drop(context);
+        surface.flush();
+        let stride = surface.stride() as usize;
+        let data = surface.data().expect("surface data");
+        let image = cairo_argb_to_rgba_image(200, 200, stride, &data);
+        assert!(
+            image.get_pixel(2, 2).0[3] < 128,
+            "extreme corner should stay transparent, got {:?}",
+            image.get_pixel(2, 2)
+        );
+        assert_eq!(
+            *image.get_pixel(100, 1),
+            image::Rgba([255, 255, 255, 255]),
+            "straight edge should reach full extent, got {:?}",
+            image.get_pixel(100, 1)
+        );
+        assert!(
+            image.get_pixel(10, 10).0[3] > 200,
+            "smooth corner should keep diagonal material a circular arc would cut, got {:?}",
+            image.get_pixel(10, 10)
+        );
+        assert_eq!(
+            *image.get_pixel(100, 100),
+            image::Rgba([255, 255, 255, 255]),
+            "card interior should stay filled, got {:?}",
+            image.get_pixel(100, 100)
         );
     }
 }

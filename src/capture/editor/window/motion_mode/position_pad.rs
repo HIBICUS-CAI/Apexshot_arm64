@@ -156,37 +156,7 @@ fn rounded_rect(
     height: f64,
     radius: f64,
 ) {
-    let radius = radius.min(width * 0.5).min(height * 0.5);
-    context.new_sub_path();
-    context.arc(
-        x + width - radius,
-        y + radius,
-        radius,
-        -std::f64::consts::FRAC_PI_2,
-        0.0,
-    );
-    context.arc(
-        x + width - radius,
-        y + height - radius,
-        radius,
-        0.0,
-        std::f64::consts::FRAC_PI_2,
-    );
-    context.arc(
-        x + radius,
-        y + height - radius,
-        radius,
-        std::f64::consts::FRAC_PI_2,
-        std::f64::consts::PI,
-    );
-    context.arc(
-        x + radius,
-        y + radius,
-        radius,
-        std::f64::consts::PI,
-        std::f64::consts::FRAC_PI_2 * 3.0,
-    );
-    context.close_path();
+    crate::capture::editor::render::rounded_rect_path(context, x, y, width, height, radius);
 }
 
 #[cfg(test)]

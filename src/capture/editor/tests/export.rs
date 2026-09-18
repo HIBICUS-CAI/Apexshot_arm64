@@ -123,8 +123,18 @@ fn annotation_canvas_bounds_include_wallpaper_padding() {
     state.background_corner_radius = 0.0;
 
     let (min_x, min_y, max_x, max_y) = state.annotation_canvas_bounds();
-    assert!(min_x < 0.0 && min_y < 0.0, "padding should map to negative coords, got ({}, {})", min_x, min_y);
-    assert!(max_x > 100.0 && max_y > 100.0, "padding should extend beyond screenshot, got ({}, {})", max_x, max_y);
+    assert!(
+        min_x < 0.0 && min_y < 0.0,
+        "padding should map to negative coords, got ({}, {})",
+        min_x,
+        min_y
+    );
+    assert!(
+        max_x > 100.0 && max_y > 100.0,
+        "padding should extend beyond screenshot, got ({}, {})",
+        max_x,
+        max_y
+    );
 }
 
 #[test]
@@ -137,7 +147,11 @@ fn number_marker_can_be_placed_on_background_padding() {
     state.background_corner_radius = 0.0;
 
     let (min_x, _, _, _) = state.annotation_canvas_bounds();
-    assert!(min_x < 0.0, "expected negative canvas origin, got {}", min_x);
+    assert!(
+        min_x < 0.0,
+        "expected negative canvas origin, got {}",
+        min_x
+    );
     // Request a point inside the left wallpaper padding; the marker must not be
     // snapped back onto the screenshot (old behavior clamped to 0..image).
     state.add_number_marker(Point {
@@ -179,7 +193,9 @@ fn final_image_draws_border_on_top_of_wallpaper_background() {
     );
 }
 
-fn retro_backing_is_solid_down_right(backing: &crate::capture::editor::types::FrameBacking) -> bool {
+fn retro_backing_is_solid_down_right(
+    backing: &crate::capture::editor::types::FrameBacking,
+) -> bool {
     backing.offset_x > 0.0
         && backing.offset_y > 0.0
         && backing.rotation_deg.abs() < f64::EPSILON
@@ -274,13 +290,21 @@ fn retro_window_renders_without_background_and_follows_radius() {
         "retro window must not peek top-left, got {:?}",
         final_image.get_pixel(2, 2)
     );
-    // Border radius rounds the card: the extreme corner lets the surround
-    // through while the inside of the arc stays image.
-    let corner = *final_image.get_pixel(5, 5);
+    // Border radius rounds the card with a smooth continuous corner: the
+    // extreme corner is still cut away, but the fuller diagonal — which a
+    // circular arc would already cut — stays covered by the Retro frame
+    // tracing the same smooth outline.
+    let extreme = *final_image.get_pixel(1, 1);
     assert!(
-        corner[3] < 128,
-        "expected rounded card corner to show transparency, got {:?}",
-        corner
+        extreme[3] < 128,
+        "expected smooth card corner to cut the extreme corner, got {:?}",
+        extreme
+    );
+    let diagonal = *final_image.get_pixel(5, 5);
+    assert!(
+        diagonal[3] > 200,
+        "expected smooth corner diagonal to stay covered, got {:?}",
+        diagonal
     );
     let inside = *final_image.get_pixel(30, 30);
     assert_eq!(
@@ -456,14 +480,18 @@ fn card_preset_draws_a_single_backing_sheet_behind_the_card() {
     // so the card sits at (23, 28) with its backing sheet at (17, 12).
     let sheet = *final_image.get_pixel(20, 60);
     assert!(
-        sheet[0] > 170 && sheet[0] < 230
+        sheet[0] > 170
+            && sheet[0] < 230
             && (sheet[0] as i32 - sheet[1] as i32).abs() < 12
             && (sheet[0] as i32 - sheet[2] as i32).abs() < 12,
         "expected gray backing sheet behind card, got pixel {:?}",
         sheet
     );
     // Main image pixels stay intact.
-    assert_eq!(*final_image.get_pixel(70, 70), image::Rgba([100, 100, 100, 255]));
+    assert_eq!(
+        *final_image.get_pixel(70, 70),
+        image::Rgba([100, 100, 100, 255])
+    );
 }
 
 #[test]
@@ -485,7 +513,8 @@ fn stack_preset_fans_diagonally_top_right_and_bottom_left() {
     // the top edge on the right half and below the bottom edge on the left.
     let top = *final_image.get_pixel(100, 19);
     assert!(
-        top[0] > 150 && top[0] < 235
+        top[0] > 150
+            && top[0] < 235
             && (top[0] as i32 - top[1] as i32).abs() < 14
             && (top[0] as i32 - top[2] as i32).abs() < 14,
         "expected diagonal sheet peeking above top-right, got pixel {:?}",
@@ -493,15 +522,22 @@ fn stack_preset_fans_diagonally_top_right_and_bottom_left() {
     );
     let bottom = *final_image.get_pixel(40, 120);
     assert!(
-        bottom[0] > 150 && bottom[0] < 235
+        bottom[0] > 150
+            && bottom[0] < 235
             && (bottom[0] as i32 - bottom[1] as i32).abs() < 14
             && (bottom[0] as i32 - bottom[2] as i32).abs() < 14,
         "expected diagonal sheet peeking below bottom-left, got pixel {:?}",
         bottom
     );
     // Top-left and bottom-right stay clean background.
-    assert_eq!(*final_image.get_pixel(10, 10), image::Rgba([255, 255, 255, 255]));
-    assert_eq!(*final_image.get_pixel(70, 70), image::Rgba([100, 100, 100, 255]));
+    assert_eq!(
+        *final_image.get_pixel(10, 10),
+        image::Rgba([255, 255, 255, 255])
+    );
+    assert_eq!(
+        *final_image.get_pixel(70, 70),
+        image::Rgba([100, 100, 100, 255])
+    );
 }
 
 #[test]
@@ -525,7 +561,8 @@ fn stack2_preset_draws_two_backing_sheets_like_stacked_prints() {
     // far sheet left of the near sheet's left edge.
     let far = *final_image.get_pixel(37, 60);
     assert!(
-        far[0] > 115 && far[0] < 175
+        far[0] > 115
+            && far[0] < 175
             && (far[0] as i32 - far[1] as i32).abs() < 12
             && (far[0] as i32 - far[2] as i32).abs() < 12,
         "expected far gray backing sheet, got pixel {:?}",
@@ -534,13 +571,15 @@ fn stack2_preset_draws_two_backing_sheets_like_stacked_prints() {
     // Near sheet peeks between far sheet and card.
     let near = *final_image.get_pixel(44, 50);
     assert!(
-        near[0] > 175 && near[0] < 225
-            && (near[0] as i32 - near[1] as i32).abs() < 12,
+        near[0] > 175 && near[0] < 225 && (near[0] as i32 - near[1] as i32).abs() < 12,
         "expected near gray backing sheet, got pixel {:?}",
         near
     );
     // Card itself stays intact and borderless.
-    assert_eq!(*final_image.get_pixel(140, 100), image::Rgba([100, 100, 100, 255]));
+    assert_eq!(
+        *final_image.get_pixel(140, 100),
+        image::Rgba([100, 100, 100, 255])
+    );
 }
 
 #[test]
@@ -630,8 +669,7 @@ fn glass_frost_siblings_share_the_3px_edge_with_opposite_tints() {
         );
         let image = RgbaImage::from_pixel(400, 400, image::Rgba([60, 60, 60, 255]));
         let mut state = EditorState::new(image);
-        state.background_style =
-            BackgroundStyle::PlainColor(DrawColor::new(0.5, 0.5, 0.5, 1.0));
+        state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.5, 0.5, 0.5, 1.0));
         state.background_padding = 80.0;
         state.background_shadow = 0.0;
         state.background_corner_radius = 0.0;
@@ -656,10 +694,7 @@ fn dump_liquid_glass_preview() {
     let image = RgbaImage::from_pixel(1373, 882, image::Rgba([150, 160, 175, 255]));
     let spec = FrameStyle::Liquid.spec();
     let cases: [(&str, BackgroundStyle); 3] = [
-        (
-            "purple",
-            BackgroundStyle::Gradient(7),
-        ),
+        ("purple", BackgroundStyle::Gradient(7)),
         (
             "wallpaper",
             BackgroundStyle::Wallpaper(
@@ -701,8 +736,7 @@ fn dump_liquid_glass_preview() {
     ] {
         let spec = style.spec();
         let mut state = EditorState::new(image.clone());
-        state.background_style =
-            BackgroundStyle::PlainColor(DrawColor::new(0.05, 0.05, 0.06, 1.0));
+        state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.05, 0.05, 0.06, 1.0));
         state.background_padding = 60.0;
         state.background_shadow = 20.0;
         state.background_corner_radius = 20.0;
