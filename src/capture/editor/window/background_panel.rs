@@ -10,6 +10,7 @@ use gtk4::{ApplicationWindow, Box as GtkBox, DrawingArea};
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 
 use super::super::state::EditorState;
 use super::super::types::{BackgroundStyle, CropAspectRatio, DrawColor};
@@ -564,12 +565,15 @@ pub(super) fn sync_motion_appearance_to_static(
 /// bound to the shared MotionSession so both modes edit one runtime.
 /// `preview` is the static canvas (edits redraw static); motion preview
 /// redraws via the motion inspector's own panel (same runtime, live on switch).
+/// `on_interact` arms the Background tool on any Appearance interaction so a
+/// stale Pen/Arrow/etc. never draws when the user meant to tweak background.
 pub(super) fn build_shared_background_panel(
     window: &ApplicationWindow,
     session: &super::motion_mode::MotionSession,
     preview: &DrawingArea,
+    on_interact: Option<Rc<dyn Fn()>>,
 ) -> GtkBox {
-    super::motion_mode::build_motion_appearance_panel(window, session, preview)
+    super::motion_mode::build_motion_appearance_panel(window, session, preview, on_interact)
 }
 
 #[cfg(test)]

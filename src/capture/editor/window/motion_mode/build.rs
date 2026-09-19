@@ -397,7 +397,7 @@ pub(in crate::capture::editor::window) fn build_motion_mode(
     delete_btn.set_sensitive(false);
     inspector.append(&delete_btn);
 
-    let appearance_inspector = build_motion_appearance_panel(window, &session, &preview);
+    let appearance_inspector = build_motion_appearance_panel(window, &session, &preview, None);
     let watermark_inspector = build_motion_watermark_panel(window, &session, &preview);
 
     let confirm_overlay = GtkBox::new(Orientation::Vertical, 0);

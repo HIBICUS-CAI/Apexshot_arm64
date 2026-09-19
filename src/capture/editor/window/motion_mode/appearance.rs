@@ -1,8 +1,8 @@
 use gtk4::cairo::Context;
 use gtk4::{
     glib, prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Entry,
-    FileChooserAction, FileChooserNative, FileFilter, Grid, Label, Orientation, Overlay,
-    ResponseType, Revealer, Separator, Stack,
+    FileChooserAction, FileChooserNative, FileFilter, GestureClick, Grid, Label, Orientation,
+    Overlay, ResponseType, Revealer, Separator, Stack,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -48,6 +48,7 @@ fn motion_gradient_preset_button(
     none_button: &Button,
     apply_gradient_colors: &Rc<dyn Fn(gtk4::gdk::RGBA, gtk4::gdk::RGBA)>,
     selection_buttons: &Rc<RefCell<Vec<(usize, Button)>>>,
+    on_interact: &Rc<dyn Fn()>,
 ) -> Button {
     let button = Button::new();
     button.set_has_frame(false);
@@ -64,7 +65,9 @@ fn motion_gradient_preset_button(
         let none_button = none_button.clone();
         let selection_buttons = selection_buttons.clone();
         let apply_gradient_colors = apply_gradient_colors.clone();
+        let on_interact = on_interact.clone();
         move |_| {
+            on_interact();
             {
                 let mut runtime = runtime.borrow_mut();
                 runtime.begin_motion_edit();
@@ -97,7 +100,12 @@ fn motion_gradient_preset_button(
 
 /// The compact strip's expand affordance: a fifth preset rendered like a
 /// wallpaper thumbnail with the catalog's stack glyph, opening the full grid.
-fn motion_gradient_expand_tile(start: [f64; 4], end: [f64; 4], stack: &Stack) -> Button {
+fn motion_gradient_expand_tile(
+    start: [f64; 4],
+    end: [f64; 4],
+    stack: &Stack,
+    on_interact: &Rc<dyn Fn()>,
+) -> Button {
     let button = Button::new();
     button.set_has_frame(false);
     button.set_size_request(56, 56);
@@ -116,7 +124,11 @@ fn motion_gradient_expand_tile(start: [f64; 4], end: [f64; 4], stack: &Stack) ->
     button.set_child(Some(&overlay));
     button.connect_clicked({
         let stack = stack.clone();
-        move |_| stack.set_visible_child_name("all")
+        let on_interact = on_interact.clone();
+        move |_| {
+            on_interact();
+            stack.set_visible_child_name("all")
+        }
     });
     button
 }
@@ -265,7 +277,12 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     window: &ApplicationWindow,
     session: &MotionSession,
     preview: &DrawingArea,
+    on_interact: Option<Rc<dyn Fn()>>,
 ) -> GtkBox {
+    // Static image editor: interacting with Appearance must arm the Background
+    // tool so a later canvas click previews instead of drawing with a stale
+    // Pen/Arrow/etc. Motion callers pass None (no static toolbar to sync).
+    let notify_interact: Rc<dyn Fn()> = on_interact.unwrap_or_else(|| Rc::new(|| {}));
     let (
         initial_background_color,
         initial_gradient_start,
@@ -302,6 +319,16 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     root.add_css_class("editor-motion-inspector");
     root.set_hexpand(false);
     root.set_vexpand(false);
+    // Safety net for view-only toggles and future controls: any pointer press
+    // inside Appearance arms Background. Mutating controls also call
+    // notify_interact explicitly so keyboard/popover edits are covered.
+    {
+        let notify = notify_interact.clone();
+        let capture = GestureClick::new();
+        capture.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        capture.connect_pressed(move |_, _, _, _| notify());
+        root.add_controller(capture);
+    }
 
     let title = Label::new(Some(&t("Appearance")));
     title.add_css_class("editor-inspector-title");
@@ -322,7 +349,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let runtime = session.runtime.clone();
         let preview = preview.clone();
         let none_button = none_button.clone();
+        let notify = notify_interact.clone();
         move |_| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::None;
@@ -342,7 +371,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let runtime = session.runtime.clone();
         let preview = preview.clone();
         let none_button = none_button.clone();
+        let notify = notify_interact.clone();
         move |rgba| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_color = [
@@ -372,7 +403,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let preview = preview.clone();
             let none_button = none_button.clone();
             let preset_buttons = preset_buttons.clone();
+            let notify = notify_interact.clone();
             move |stop, rgba| {
+                notify();
                 let mut runtime = runtime.borrow_mut();
                 runtime.begin_motion_edit();
                 let color = [
@@ -435,6 +468,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             &none_button,
             &apply_gradient_colors,
             &preset_buttons,
+            &notify_interact,
         );
         if initial_active == Some(index) {
             button.add_css_class("active-background-option");
@@ -449,6 +483,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         expand_preset.1,
         expand_preset.2,
         &presets_stack,
+        &notify_interact,
     ));
     for row_start in (0..MOTION_GRADIENT_PRESETS.len()).step_by(4) {
         let row = GtkBox::new(Orientation::Horizontal, 5);
@@ -465,12 +500,16 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     }
     show_less.connect_clicked({
         let stack = presets_stack.clone();
-        move |_| stack.set_visible_child_name("compact")
+        let notify = notify_interact.clone();
+        move |_| {
+            notify();
+            stack.set_visible_child_name("compact")
+        }
     });
     presets_stack.set_visible_child_name("compact");
     gradient_section.append(&presets_section);
     let (wallpaper_catalog, activate_wallpaper_catalog) =
-        motion_wallpaper_catalog_section(session, preview, &none_button);
+        motion_wallpaper_catalog_section(session, preview, &none_button, &notify_interact);
     let image_section = motion_image_section(
         "Image",
         "Choose Background Image",
@@ -479,6 +518,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         session,
         preview,
         &none_button,
+        &notify_interact,
     );
 
     // Choices remain visible inside one background card. Clicking a choice
@@ -526,7 +566,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let gradient_choice = gradient_choice.clone();
         let wallpapers_choice = wallpapers_choice.clone();
         let image_choice = image_choice.clone();
+        let notify = notify_interact.clone();
         move |_| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
@@ -548,7 +590,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let gradient_choice = gradient_choice.clone();
         let wallpapers_choice = wallpapers_choice.clone();
         let image_choice = image_choice.clone();
+        let notify = notify_interact.clone();
         move |_| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Gradient;
@@ -569,7 +613,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let gradient_choice = gradient_choice.clone();
         let wallpapers_choice = wallpapers_choice.clone();
         let image_choice = image_choice.clone();
+        let notify = notify_interact.clone();
         move |_| {
+            notify();
             activate_wallpaper_catalog();
             none_button.remove_css_class("active-background-option");
             color_choice.remove_css_class("active-background-option");
@@ -586,7 +632,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let gradient_choice = gradient_choice.clone();
         let wallpapers_choice = wallpapers_choice.clone();
         let image_choice = image_choice.clone();
+        let notify = notify_interact.clone();
         move |_| {
+            notify();
             none_button.remove_css_class("active-background-option");
             color_choice.remove_css_class("active-background-option");
             gradient_choice.remove_css_class("active-background-option");
@@ -602,7 +650,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let wallpapers_choice = wallpapers_choice.clone();
         let image_choice = image_choice.clone();
         let none_button = none_button.clone();
+        let notify = notify_interact.clone();
         move |_| {
+            notify();
             none_button.add_css_class("active-background-option");
             color_choice.remove_css_class("active-background-option");
             gradient_choice.remove_css_class("active-background-option");
@@ -617,7 +667,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     padding.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_padding = slider.value();
@@ -631,7 +683,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     blur.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_blur = slider.value();
@@ -647,7 +701,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     noise.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.background_noise = slider.value();
@@ -665,7 +721,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     shadow_opacity.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_opacity = slider.value();
@@ -680,7 +738,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     shadow_blur.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_blur = slider.value();
@@ -700,7 +760,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     shadow_x.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_position.0 = slider.value();
@@ -720,7 +782,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     shadow_y.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.shadow_position.1 = slider.value();
@@ -766,7 +830,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
                 let preview = preview.clone();
                 let style_buttons = style_buttons.clone();
                 let radius_slider_slot = radius_slider_slot.clone();
+                let notify = notify_interact.clone();
                 move |_| {
+                    notify();
                     // Glass needs corners to catch the light: a sharp-corner
                     // card collapses the edge into flat hairlines (and the
                     // wide frost looks blunt). Lift a ~sharp card onto a
@@ -827,7 +893,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     radius.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.appearance.border_radius = slider.value();
@@ -997,7 +1065,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let w_entry = w_entry.clone();
         let h_entry = h_entry.clone();
         let sync_frame_selection = sync_frame_selection.clone();
+        let notify = notify_interact.clone();
         Rc::new(move |preset| {
+            notify();
             let (frame, display) = {
                 let mut runtime = runtime.borrow_mut();
                 let should_reset = runtime.motion.frame.preset == preset;
@@ -1036,7 +1106,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
         let w_entry = w_entry.clone();
         let h_entry = h_entry.clone();
         let sync_frame_selection = sync_frame_selection.clone();
+        let notify = notify_interact.clone();
         Rc::new(move || {
+            notify();
             fn parse_dim(text: &str) -> Option<u32> {
                 text.trim()
                     .parse::<u32>()
@@ -1140,7 +1212,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     frame_revealer.set_child(Some(&frame_expanded));
     {
         let frame_revealer = frame_revealer.clone();
+        let notify = notify_interact.clone();
         expand_button.clone().connect_clicked(move |button| {
+            notify();
             let revealed = frame_revealer.reveals_child();
             frame_revealer.set_reveal_child(!revealed);
             button.set_label(if revealed { "\u{2304}" } else { "\u{2303}" });
@@ -1495,7 +1569,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let runtime = session.runtime.clone();
             let preview = preview.clone();
             let shadow_preset_buttons = shadow_preset_buttons.clone();
+            let notify = notify_interact.clone();
             move |_| {
+                notify();
                 {
                     let mut runtime = runtime.borrow_mut();
                     runtime.begin_motion_edit();
@@ -1530,7 +1606,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     shadow_opacity.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
+        let notify = notify_interact.clone();
         move |slider| {
+            notify();
             let mut runtime = runtime.borrow_mut();
             runtime.begin_motion_edit();
             runtime.motion.scene_shadow.opacity = slider.value();
@@ -1567,7 +1645,9 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
             let runtime = session.runtime.clone();
             let preview = preview.clone();
             let shadow_placement_buttons = shadow_placement_buttons.clone();
+            let notify = notify_interact.clone();
             move |_| {
+                notify();
                 {
                     let mut runtime = runtime.borrow_mut();
                     runtime.begin_motion_edit();
@@ -1639,6 +1719,7 @@ fn motion_wallpaper_catalog_section(
     session: &MotionSession,
     preview: &DrawingArea,
     none_button: &Button,
+    on_interact: &Rc<dyn Fn()>,
 ) -> (GtkBox, Rc<dyn Fn()>) {
     let catalog = GtkBox::new(Orientation::Vertical, 6);
     catalog.add_css_class("editor-motion-wallpaper-catalog");
@@ -1694,6 +1775,7 @@ fn motion_wallpaper_catalog_section(
             preview,
             none_button,
             selection_buttons.clone(),
+            on_interact,
         ));
     }
     // Keep the compact strip eager, then populate one small row per frame when
@@ -1708,6 +1790,7 @@ fn motion_wallpaper_catalog_section(
         let none_button = none_button.clone();
         let selection_buttons = selection_buttons.clone();
         let all_populated = all_populated.clone();
+        let on_interact = on_interact.clone();
         move || {
             if all_populated.replace(true) {
                 return;
@@ -1721,6 +1804,7 @@ fn motion_wallpaper_catalog_section(
                 let none_button = none_button.clone();
                 let selection_buttons = selection_buttons.clone();
                 let next_row = next_row.clone();
+                let on_interact = on_interact.clone();
                 move || {
                     let start = next_row.get();
                     if start >= paths.len() {
@@ -1738,6 +1822,7 @@ fn motion_wallpaper_catalog_section(
                             &preview,
                             &none_button,
                             selection_buttons.clone(),
+                            &on_interact,
                         ));
                     }
                     all_grid.append(&row);
@@ -1751,12 +1836,17 @@ fn motion_wallpaper_catalog_section(
             preview_path,
             &stack,
             populate_all,
+            on_interact,
         ));
     }
 
     show_less.connect_clicked({
         let stack = stack.clone();
-        move |_| stack.set_visible_child_name("compact")
+        let notify = on_interact.clone();
+        move |_| {
+            notify();
+            stack.set_visible_child_name("compact")
+        }
     });
     stack.set_visible_child_name("compact");
     let activate_catalog: Rc<dyn Fn()> = Rc::new({
@@ -1765,7 +1855,9 @@ fn motion_wallpaper_catalog_section(
         let none_button = none_button.clone();
         let selection_buttons = selection_buttons.clone();
         let default_entry = paths.first().cloned();
+        let notify = on_interact.clone();
         move || {
+            notify();
             let Some((default_path, default_preview)) = default_entry.clone() else {
                 return;
             };
@@ -1829,6 +1921,7 @@ fn motion_wallpaper_thumbnail(
     preview: &DrawingArea,
     none_button: &Button,
     selection_buttons: Rc<RefCell<Vec<(PathBuf, Button)>>>,
+    on_interact: &Rc<dyn Fn()>,
 ) -> Button {
     let button = Button::new();
     button.set_has_frame(false);
@@ -1877,7 +1970,9 @@ fn motion_wallpaper_thumbnail(
         let none_button = none_button.clone();
         let selection_buttons = selection_buttons.clone();
         let preview_path = preview_path.clone();
+        let notify = on_interact.clone();
         move |_| {
+            notify();
             // Re-clicking the active wallpaper must not re-decode + recomposite.
             // ponytail: early return, not another async load.
             let already_selected = {
@@ -1927,6 +2022,7 @@ fn motion_wallpaper_stack_thumbnail(
     preview_path: &std::path::Path,
     stack: &Stack,
     populate_all: Rc<dyn Fn()>,
+    on_interact: &Rc<dyn Fn()>,
 ) -> Button {
     let button = Button::new();
     button.set_has_frame(false);
@@ -1960,7 +2056,9 @@ fn motion_wallpaper_stack_thumbnail(
     button.set_child(Some(&overlay));
     button.connect_clicked({
         let stack = stack.clone();
+        let notify = on_interact.clone();
         move |_| {
+            notify();
             populate_all();
             stack.set_visible_child_name("all");
         }
@@ -2082,6 +2180,7 @@ fn motion_image_section(
     session: &MotionSession,
     preview: &DrawingArea,
     none_button: &Button,
+    on_interact: &Rc<dyn Fn()>,
 ) -> GtkBox {
     let section = GtkBox::new(Orientation::Vertical, 6);
     let label = Label::new(Some(&t(title)));
@@ -2096,7 +2195,9 @@ fn motion_image_section(
         let preview = preview.clone();
         let none_button = none_button.clone();
         let dialog_title = dialog_title.to_string();
+        let notify = on_interact.clone();
         move |_| {
+            notify();
             let chooser = FileChooserNative::new(
                 Some(&dialog_title),
                 window.upgrade().as_ref(),
@@ -2114,7 +2215,9 @@ fn motion_image_section(
             let preview = preview.clone();
             let kind = kind.clone();
             let none_button = none_button.clone();
+            let notify_response = notify.clone();
             chooser.connect_response(move |dialog, response| {
+                notify_response();
                 if response != ResponseType::Accept {
                     return;
                 }

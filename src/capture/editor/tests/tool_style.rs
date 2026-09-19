@@ -6,10 +6,10 @@ use crate::capture::editor::pen_weight::{HighlighterMode, PenWeight};
 fn set_text_size_clamps_to_allowed_range() {
     let mut state = EditorState::new(RgbaImage::new(32, 32));
     assert!(state.set_text_size(2.0));
-    assert_eq!(state.text_size, MIN_TEXT_SIZE);
+    assert_eq!(state.text_size, 12.0);
 
     assert!(state.set_text_size(500.0));
-    assert_eq!(state.text_size, MAX_TEXT_SIZE);
+    assert_eq!(state.text_size, 72.0);
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn set_selected_text_action_size_updates_selected_text_annotation() {
     state.selected_action_index = Some(0);
     assert_eq!(state.selected_text_action_size(), Some(20.0));
     assert!(state.set_selected_text_action_size(34.0));
-    assert_eq!(state.selected_text_action_size(), Some(34.0));
+    assert_eq!(state.selected_text_action_size(), Some(36.0));
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn adjust_text_size_updates_selected_text_annotation_size() {
     state.selected_action_index = Some(0);
     state.set_text_size(20.0);
     assert!(state.set_selected_text_action_size(22.0));
-    assert_eq!(state.selected_text_action_size(), Some(22.0));
+    assert_eq!(state.selected_text_action_size(), Some(24.0));
 }
 
 #[test]

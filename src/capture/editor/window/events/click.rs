@@ -546,8 +546,10 @@ pub(super) fn wire_canvas_click(
                         }
                     } else {
                         // Click on empty area: deselect and start a new text box.
+                        // Wide initial box so short words ("god") never wrap on
+                        // the 3rd char and read as phantom whitespace/lag.
                         st.selected_action_index = None;
-                        let initial_width = (st.text_size * 1.8).max(140.0);
+                        let initial_width = (st.text_size * 3.2).max(220.0);
                         let initial_height = (st.text_size * 1.45 + 16.0).max(44.0);
                         st.begin_text_input(image_point, initial_width, initial_height);
                     }

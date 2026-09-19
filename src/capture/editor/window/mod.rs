@@ -327,6 +327,7 @@ mod motion_render;
 mod motion_timeline;
 mod number_bar;
 mod obfuscate_bar;
+mod text_bar;
 mod toolbar;
 
 use background_assets::BackgroundAssetCaches;
@@ -1311,10 +1312,24 @@ fn setup_editor_window_full(
 
     // Static Background shares Motion Appearance: same builder, same session,
     // same side-panel tools (Appearance). No crop here.
+    // Auto-select slot: filled once the toolbar wiring exists below. The panel
+    // captures this forwarder now, so Appearance clicks (and Motion-leave
+    // rebuilds) arm Background even though tool buttons don't exist yet.
+    let background_auto_select_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> =
+        Rc::new(RefCell::new(None));
+    let background_interact_forwarder: Rc<dyn Fn()> = Rc::new({
+        let slot = background_auto_select_slot.clone();
+        move || {
+            if let Some(switch) = slot.borrow().as_ref() {
+                switch();
+            }
+        }
+    });
     let background_inspector = background_panel::build_shared_background_panel(
         &window,
         &motion_host.session(),
         &drawing_area,
+        Some(background_interact_forwarder.clone()),
     );
     let static_appearance_slot = Rc::new(RefCell::new(background_inspector.clone()));
 
@@ -1554,81 +1569,6 @@ fn setup_editor_window_full(
 
     *drawing_area_placeholder.borrow_mut() = Some(drawing_area.downgrade());
 
-    // Floating text toolbar (Shotbase-style): font + size, anchored above the
-    // blue text outline (active_text_bounds). Lives in canvas_overlay so it scrolls/zooms with the image.
-    // (Color lives in the toolbar chip next to -/□/×, which opens the picker.)
-    let text_floating_bar = GtkBox::new(Orientation::Horizontal, 8);
-    text_floating_bar.add_css_class("editor-text-floating-bar");
-    text_floating_bar.set_halign(gtk4::Align::Start);
-    text_floating_bar.set_valign(gtk4::Align::Start);
-    text_floating_bar.append(&font_family_group);
-    text_floating_bar.append(&text_size_group);
-    text_floating_bar.set_visible(false);
-    canvas_overlay.add_overlay(&text_floating_bar);
-
-    // Tick: anchor the bar above active_text_bounds (blue outline), flip below if no room.
-    // Owns visibility: only Text tool + existing bounds shows it.
-    // Never covers the outline: uses measured bar size (sticky max) + outline clearance.
-    {
-        let state_t = state.clone();
-        let transform_t = transform.clone();
-        let bar = text_floating_bar.clone();
-        let known = Rc::new(Cell::new((320.0f64, 48.0f64)));
-        drawing_area.add_tick_callback(move |widget, _| {
-            let (is_text, bounds_opt, t) = {
-                let st = state_t.lock().unwrap();
-                (
-                    st.selected_tool == Tool::Text,
-                    st.active_text_bounds.clone(),
-                    *transform_t.lock().unwrap(),
-                )
-            };
-            let Some(bounds) = bounds_opt.filter(|_| is_text) else {
-                if bar.is_visible() {
-                    bar.set_visible(false);
-                }
-                return glib::ControlFlow::Continue;
-            };
-            // Remember size: height uses sticky max (never underestimate -> never covers
-            // the outline); width uses last measured (max would off-center a narrower bar).
-            let (mut known_w, mut known_h) = known.get();
-            let (bw, bh) = (bar.width() as f64, bar.height() as f64);
-            if bw > 1.0 {
-                known_w = bw;
-            }
-            if bh > 1.0 {
-                known_h = known_h.max(bh);
-            }
-            known.set((known_w, known_h));
-            let area_w = widget.width() as f64;
-            let area_h = widget.height() as f64;
-            let x = bounds.rect.x as f64 * t.scale + t.offset_x;
-            let y = bounds.rect.y as f64 * t.scale + t.offset_y;
-            // Outline clearance: border (2px) + handle radius (7px) + breathing room.
-            let gap = 12.0;
-            let mut top = y - known_h - gap;
-            if top < 0.0 {
-                top = y + bounds.rect.height as f64 * t.scale + gap;
-            }
-            if top + known_h > area_h {
-                top = (area_h - known_h).max(0.0);
-            }
-            let left = (x + bounds.rect.width as f64 * t.scale / 2.0 - known_w / 2.0)
-                .max(0.0)
-                .min((area_w - known_w).max(0.0));
-            if (bar.margin_start() as f64 - left).abs() >= 1.0
-                || (bar.margin_top() as f64 - top).abs() >= 1.0
-            {
-                bar.set_margin_start(left as i32);
-                bar.set_margin_top(top as i32);
-            }
-            if !bar.is_visible() {
-                bar.set_visible(true);
-            }
-            glib::ControlFlow::Continue
-        });
-    }
-
     // Vertical space docked tool bars claim from the canvas (see `DockedBarInset`).
     // Docked tool bars reflow the canvas: they claim a band above it through this
     // shared inset (the layout and the draw transform both read it), so the image
@@ -1638,6 +1578,15 @@ fn setup_editor_window_full(
         scroller: canvas_scroller.clone(),
         drawing_area: drawing_area.clone(),
     };
+
+    // Docked text bar (font + size) below the main toolbar, like the other
+    // tool bars. Shows while Text is armed, with a text selected, or editing.
+    // (Color lives in the toolbar chip next to -/□/×, which opens the picker.)
+    // Clicking an existing text with Text/Select re-selects it, which is how
+    // the bar comes back for an older text.
+    let text_bar = text_bar::build_text_bar(&font_family_group, &text_size_group);
+    canvas_overlay.add_overlay(&text_bar.root);
+    text_bar::install_text_bar_tick(&text_bar, &drawing_area, &state, &dock_refs, &docked_inset);
 
     // Floating number bar (mirrors the pen/highlighter bars): one contextual bar
     // that stays docked above the canvas while the Number tool is armed or the
@@ -2277,6 +2226,7 @@ fn setup_editor_window_full(
         empty_drop_zone,
         static_preview: &drawing_area,
         static_appearance_slot: static_appearance_slot.clone(),
+        static_appearance_interact: Some(background_interact_forwarder.clone()),
     });
 
     if empty_drop_zone {
@@ -2484,6 +2434,43 @@ fn setup_editor_window_full(
 
     // Highlight whatever tool preferences restored (Background is only the default).
     set_active_tool_button(&tool_buttons, tool_button_index(initial_tool));
+
+    // Appearance interaction arms Background: a Pen/Arrow/etc. left selected
+    // would otherwise draw when the user clicks empty canvas to inspect a
+    // background change. No toggle — always land on Background.
+    *background_auto_select_slot.borrow_mut() = Some(Rc::new({
+        let state = state.clone();
+        let tool_buttons = tool_buttons.clone();
+        let update_toolbar_for_tool = update_toolbar_for_tool.clone();
+        let sync_shared_colors = sync_shared_colors_for_active_tool.clone();
+        let sync_size_control = sync_size_control.clone();
+        let rebuild_effects_async = rebuild_effects_async.clone();
+        let drawing_area = drawing_area.clone();
+        let window = window.clone();
+        let in_motion = in_motion.clone();
+        move || {
+            if in_motion.get() {
+                return;
+            }
+            let needs_switch = state.lock().unwrap().selected_tool != Tool::Background;
+            if !needs_switch {
+                return;
+            }
+            let rebuild = state
+                .lock()
+                .unwrap()
+                .set_tool_without_rebuild(Tool::Background);
+            if rebuild {
+                rebuild_effects_async();
+            }
+            set_active_tool_button(&tool_buttons, tool_button_index(Tool::Background));
+            update_toolbar_for_tool(Tool::Background);
+            sync_shared_colors();
+            sync_size_control();
+            cursor::set_window_cursor_name(&window, Some("default"));
+            drawing_area.queue_draw();
+        }
+    }));
 
     events::wire_editor_events(events::EventContext {
         app: app.clone(),
@@ -3139,6 +3126,7 @@ mod tests {
                 && production.contains("canvas_overlay.add_overlay(&number_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&highlighter_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&arrow_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&text_bar.root);")
                 && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.method_bar);")
                 && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);")
                 && production.contains("canvas_overlay.add_overlay(&focus_bar.slider_bar);")
