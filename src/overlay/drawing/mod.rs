@@ -1,6 +1,6 @@
 use super::background::{paint_surface_clipped, paint_surface_fullscreen, BackgroundFrame};
 use super::geometry::current_selection_rect;
-use super::icons::{draw_toolbar_icon, ToolbarIcon, TOOLBAR_ICONS, TOOLBAR_LABELS};
+use super::icons::{draw_toolbar_icon, ToolbarIcon};
 use super::layout::*;
 use super::recording::state::OverlayIntent;
 use super::state::{OverlayMode, SelectorState};
@@ -73,190 +73,6 @@ pub(crate) fn rounded_rect_path(
     context.arc(x + r, y + height - r, r, PI / 2.0, PI);
     context.arc(x + r, y + r, r, PI, PI * 1.5);
     context.close_path();
-}
-
-pub(crate) fn draw_feature_toolbar(
-    context: &gtk4::cairo::Context,
-    selection_x: f64,
-    selection_y: f64,
-    selection_width: f64,
-    selection_height: f64,
-    screen_width: f64,
-    screen_height: f64,
-    background: Option<&BackgroundFrame>,
-    capture_menu_area_mode: bool,
-    active_tool_index: usize,
-    hover_tool_index: Option<usize>,
-    timer_delay_active: bool,
-    capture_delay_seconds: i32,
-) {
-    let layout = compute_toolbar_layout(
-        selection_x,
-        selection_y,
-        selection_width,
-        selection_height,
-        screen_width,
-        screen_height,
-    );
-
-    let active_tool_index = active_tool_index.min(TOOLBAR_ICONS.len().saturating_sub(1));
-    let timer_tool_active = timer_delay_active && capture_delay_seconds > 0;
-
-    if !capture_menu_area_mode {
-        draw_frosted_panel(
-            context,
-            layout.tools_panel.x,
-            layout.tools_panel.y,
-            layout.tools_panel.width,
-            layout.tools_panel.height,
-            FEATURE_PANEL_RADIUS,
-            screen_width,
-            screen_height,
-            background,
-        );
-    }
-
-    // The legacy FRAME size/crop card is gone: the screen-fixed top-center
-    // instruction bar owns aspect selection now (see draw_top_instruction_bar).
-    let draw_accent = |context: &gtk4::cairo::Context, rect: RectF, active: bool| {
-        rounded_rect_path(
-            context,
-            rect.x + 4.0,
-            rect.y + 4.0,
-            rect.width - 8.0,
-            rect.height - 8.0,
-            10.0,
-        );
-        let alpha = if active { 76.0 / 255.0 } else { 22.0 / 255.0 };
-        let (r, g, b) = if active {
-            (176.0 / 255.0, 92.0 / 255.0, 56.0 / 255.0)
-        } else {
-            (1.0, 1.0, 1.0)
-        };
-        context.set_source_rgba(r, g, b, alpha);
-        let _ = context.fill();
-    };
-
-    if !capture_menu_area_mode {
-        draw_accent(context, layout.item_cells[active_tool_index], true);
-        if timer_tool_active && active_tool_index != super::icons::TOOLBAR_TIMER_INDEX {
-            draw_accent(
-                context,
-                layout.item_cells[super::icons::TOOLBAR_TIMER_INDEX],
-                true,
-            );
-        }
-        if let Some(index) = hover_tool_index {
-            if let Some(cell) = layout.item_cells.get(index) {
-                if index != active_tool_index {
-                    draw_accent(context, *cell, false);
-                }
-            }
-        }
-    }
-    // Icons + labels.  The compact capture-menu area flow intentionally has
-    // no legacy tool rail, exactly as CaptureOverlay_ToolbarDrawing.cpp.
-    for (index, icon) in (!capture_menu_area_mode)
-        .then_some(())
-        .into_iter()
-        .flat_map(|_| TOOLBAR_ICONS.iter().enumerate())
-    {
-        let cell = layout.item_cells[index];
-        let center_x = cell.x + cell.width / 2.0;
-        let label = t(TOOLBAR_LABELS[index]);
-        let is_hovered = hover_tool_index == Some(index);
-        let is_active = index == active_tool_index
-            || (index == super::icons::TOOLBAR_TIMER_INDEX && timer_tool_active);
-
-        // Icon: brighter + reduced shadow on hover
-        let icon_alpha = if is_hovered || is_active { 1.0 } else { 0.94 };
-        let shadow_alpha = if is_hovered {
-            0.24
-        } else if is_active {
-            0.32
-        } else {
-            0.50
-        };
-        let icon_y = if is_hovered || is_active {
-            cell.y + 23.5
-        } else {
-            cell.y + 24.0
-        };
-        draw_toolbar_icon(
-            context,
-            *icon,
-            center_x + 0.6,
-            icon_y + 0.8,
-            (0.0, 0.0, 0.0, shadow_alpha),
-        );
-        draw_toolbar_icon(
-            context,
-            *icon,
-            center_x,
-            icon_y,
-            if is_active {
-                (1.0, 229.0 / 255.0, 206.0 / 255.0, icon_alpha)
-            } else {
-                (244.0 / 255.0, 244.0 / 255.0, 244.0 / 255.0, icon_alpha)
-            },
-        );
-
-        // Label: bold + brighter on hover
-        let font_weight = if is_hovered || is_active {
-            gtk4::cairo::FontWeight::Bold
-        } else {
-            gtk4::cairo::FontWeight::Normal
-        };
-        context.select_font_face(
-            crate::typography::UI_FONT_FAMILY,
-            gtk4::cairo::FontSlant::Normal,
-            font_weight,
-        );
-        context.set_font_size(9.5);
-        context.set_source_rgba(0.0, 0.0, 0.0, shadow_alpha);
-        if let Ok(extents) = context.text_extents(&label) {
-            let text_x = center_x - extents.width() / 2.0 - extents.x_bearing() + 0.6;
-            let text_y = cell.y + 50.0 + 0.8;
-            context.move_to(text_x, text_y);
-            let _ = context.show_text(&label);
-        }
-
-        if is_active {
-            context.set_source_rgba(1.0, 229.0 / 255.0, 206.0 / 255.0, icon_alpha);
-        } else {
-            context.set_source_rgba(244.0 / 255.0, 244.0 / 255.0, 244.0 / 255.0, icon_alpha);
-        }
-        if let Ok(extents) = context.text_extents(&label) {
-            let text_x = center_x - extents.width() / 2.0 - extents.x_bearing();
-            let text_y = cell.y + 50.0;
-            context.move_to(text_x, text_y);
-            let _ = context.show_text(&label);
-        }
-
-        if index == super::icons::TOOLBAR_TIMER_INDEX && timer_tool_active {
-            let badge_text = format!("{}s", capture_delay_seconds);
-            context.select_font_face(
-                crate::typography::UI_FONT_FAMILY,
-                gtk4::cairo::FontSlant::Normal,
-                gtk4::cairo::FontWeight::Bold,
-            );
-            context.set_font_size(8.8);
-            if let Ok(extents) = context.text_extents(&badge_text) {
-                let badge_w = (extents.width() + 10.0).max(22.0);
-                let badge_h = 14.0;
-                let badge_x = cell.x + cell.width - badge_w - 6.0;
-                let badge_y = cell.y + 6.0;
-                rounded_rect_path(context, badge_x, badge_y, badge_w, badge_h, 7.0);
-                context.set_source_rgba(178.0 / 255.0, 84.0 / 255.0, 42.0 / 255.0, 230.0 / 255.0);
-                let _ = context.fill();
-                context.set_source_rgba(1.0, 1.0, 1.0, 248.0 / 255.0);
-                let text_x = badge_x + (badge_w - extents.width()) / 2.0 - extents.x_bearing();
-                let text_y = badge_y + (badge_h - extents.height()) / 2.0 - extents.y_bearing();
-                context.move_to(text_x, text_y);
-                let _ = context.show_text(&badge_text);
-            }
-        }
-    }
 }
 
 pub(crate) fn draw_frosted_panel(
@@ -572,6 +388,7 @@ pub(crate) fn draw_top_instruction_bar(
             context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
             let _ = context.fill();
         } else if hovered {
+            // Hover wash matches the C++ bar (both crop and cancel buttons).
             context.set_source_rgba(1.0, 1.0, 1.0, 26.0 / 255.0);
             let _ = context.fill();
         }
@@ -585,6 +402,10 @@ pub(crate) fn draw_top_instruction_bar(
             };
             draw_toolbar_icon(context, ToolbarIcon::Crop, cx, cy, color);
         } else {
+            // Clear the unfilled button rect built above — move_to/line_to
+            // append to the current path, so stroke() would otherwise outline
+            // the whole button on top of the X glyph.
+            context.new_path();
             context.set_source_rgba(240.0 / 255.0, 240.0 / 255.0, 244.0 / 255.0, 1.0);
             context.set_line_width(1.7);
             context.set_line_cap(gtk4::cairo::LineCap::Round);
@@ -887,24 +708,9 @@ pub(crate) fn draw_overlay(
                 st.recording.dim_screen,
                 st.recording.show_countdown,
             );
-        } else {
-            // Toolbar (auto-positioned below / above the full-screen rect)
-            draw_feature_toolbar(
-                context,
-                0.0,
-                0.0,
-                screen_width,
-                screen_height,
-                screen_width,
-                screen_height,
-                background,
-                st.capture_menu_area_mode,
-                st.active_tool_index,
-                st.hover_tool_index,
-                st.timer_delay_active,
-                st.capture_delay_seconds,
-            );
         }
+        // No legacy left tool rail: quick capture owns mode selection up
+        // front; the top-center bar (drawn last below) owns aspects.
     } else if st.is_dragging || st.completed {
         // ── Normal area-selection mode ──
         let rect = current_selection_rect(&st);
@@ -1017,23 +823,8 @@ pub(crate) fn draw_overlay(
                     );
                 }
             }
-        } else {
-            draw_feature_toolbar(
-                context,
-                x,
-                y,
-                sel_w,
-                sel_h,
-                screen_width,
-                screen_height,
-                background,
-                st.capture_menu_area_mode,
-                st.active_tool_index,
-                st.hover_tool_index,
-                st.timer_delay_active,
-                st.capture_delay_seconds,
-            );
         }
+        // No legacy left tool rail here either (see above).
 
         // Popups rendered on top of everything (both recording and area modes)
         if st.window_picker_open {
@@ -1116,22 +907,27 @@ pub(crate) fn draw_overlay(
 
 #[cfg(test)]
 mod tests {
-    /// Regression: timer delay badge must key off TOOLBAR_TIMER_INDEX (3),
-    /// not a hard-coded OCR index (4). The seven-cell era left this mismatch.
+    /// The legacy left tool rail (tools panel, tool icons/labels, timer
+    /// badge) is retired: quick capture owns mode selection up front and the
+    /// top-center bar owns aspects. The rail renderer must stay deleted.
     #[test]
-    fn timer_badge_uses_toolbar_timer_index_not_ocr_slot() {
+    fn legacy_tool_rail_stays_removed() {
         let source = include_str!("mod.rs");
         let production = source
             .split("#[cfg(test)]")
             .next()
             .expect("production drawing source");
         assert!(
-            production.contains("index == super::icons::TOOLBAR_TIMER_INDEX && timer_tool_active"),
-            "timer badge must use TOOLBAR_TIMER_INDEX"
+            !production.contains("fn draw_feature_toolbar"),
+            "legacy tool rail renderer must not come back"
         );
         assert!(
-            !production.contains("index == 4 && timer_tool_active"),
-            "timer badge must not hard-code OCR index 4"
+            !production.contains("TOOLBAR_ICONS.iter()"),
+            "tool icon loop must not come back"
+        );
+        assert!(
+            production.contains("fn draw_top_instruction_bar"),
+            "top-center bar must remain the aspect UI"
         );
     }
 }

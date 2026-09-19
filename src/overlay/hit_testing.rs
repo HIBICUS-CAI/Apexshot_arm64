@@ -1,4 +1,4 @@
-use super::icons::{ToolbarIcon, TOOLBAR_ICONS};
+use super::icons::ToolbarIcon;
 use super::layout::*;
 use super::recording::state::OverlayIntent;
 use super::state::{OverlayMode, SelectorState};
@@ -104,145 +104,62 @@ pub(crate) fn top_bar_crop_menu_contains(
 }
 
 pub(crate) fn toolbar_item_at(
-    selection_x: f64,
-    selection_y: f64,
-    selection_width: f64,
-    selection_height: f64,
-    screen_width: f64,
-    screen_height: f64,
-    x: f64,
-    y: f64,
+    _selection_x: f64,
+    _selection_y: f64,
+    _selection_width: f64,
+    _selection_height: f64,
+    _screen_width: f64,
+    _screen_height: f64,
+    _x: f64,
+    _y: f64,
 ) -> Option<ToolbarIcon> {
-    match toolbar_hit_at(
-        selection_x,
-        selection_y,
-        selection_width,
-        selection_height,
-        screen_width,
-        screen_height,
-        x,
-        y,
-    ) {
-        Some(ToolbarHit::Tool(index)) => TOOLBAR_ICONS.get(index).copied(),
-        _ => None,
-    }
+    // Rail retired (see toolbar_hit_at): no icon ever resolves here.
+    None
 }
 
 pub(crate) fn toolbar_hit_at(
-    selection_x: f64,
-    selection_y: f64,
-    selection_width: f64,
-    selection_height: f64,
-    screen_width: f64,
-    screen_height: f64,
-    x: f64,
-    y: f64,
+    _selection_x: f64,
+    _selection_y: f64,
+    _selection_width: f64,
+    _selection_height: f64,
+    _screen_width: f64,
+    _screen_height: f64,
+    _x: f64,
+    _y: f64,
 ) -> Option<ToolbarHit> {
-    let layout = compute_toolbar_layout(
-        selection_x,
-        selection_y,
-        selection_width,
-        selection_height,
-        screen_width,
-        screen_height,
-    );
-
-    for (index, cell) in layout.item_cells.iter().enumerate() {
-        if cell.contains(x, y) {
-            // Never return a tool index outside TOOLBAR_ICONS.
-            if index < TOOLBAR_ICONS.len() {
-                return Some(ToolbarHit::Tool(index));
-            }
-            return None;
-        }
-    }
-
-    // Size/crop panels are legacy capture chrome: the top-center instruction
-    // bar owns aspect selection now, so the capture path never hits them.
-    // (`ToolbarHit::SizePanel`/`CropPanel` stay for API compat.)
-    let _ = (layout.size_panel, layout.crop_panel);
-
+    // Legacy capture chrome retired: the left tool rail is gone and the
+    // top-center instruction bar owns aspect selection, so nothing here ever
+    // hits on the capture path. (`ToolbarHit::SizePanel`/`CropPanel` stay for
+    // API compat with defensive match arms.)
     None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::overlay::icons::{
-        TOOLBAR_AREA_INDEX, TOOLBAR_ICONS, TOOLBAR_OCR_INDEX, TOOLBAR_TIMER_INDEX,
-    };
-
-    fn hit_on_cell(cell_index: usize) -> Option<ToolbarHit> {
-        let layout = compute_toolbar_layout(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0);
-        assert!(
-            cell_index < layout.item_cells.len(),
-            "test cell index must exist in layout"
-        );
-        let cell = layout.item_cells[cell_index];
-        let x = cell.x + cell.width / 2.0;
-        let y = cell.y + cell.height / 2.0;
-        toolbar_hit_at(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0, x, y)
-    }
 
     #[test]
-    fn toolbar_hit_returns_only_valid_icon_indices() {
-        for i in 0..TOOLBAR_ICONS.len() {
-            match hit_on_cell(i) {
-                Some(ToolbarHit::Tool(index)) => {
-                    assert_eq!(index, i);
-                    assert!(index < TOOLBAR_ICONS.len());
-                    assert!(toolbar_item_at(
-                        200.0,
-                        200.0,
-                        400.0,
-                        300.0,
-                        1920.0,
-                        1080.0,
-                        {
-                            let layout =
-                                compute_toolbar_layout(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0);
-                            let cell = layout.item_cells[i];
-                            cell.x + cell.width / 2.0
-                        },
-                        {
-                            let layout =
-                                compute_toolbar_layout(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0);
-                            let cell = layout.item_cells[i];
-                            cell.y + cell.height / 2.0
-                        }
-                    )
-                    .is_some());
-                }
-                other => panic!("expected Tool({i}), got {other:?}"),
+    fn toolbar_hit_never_returns_tool_hits() {
+        // Legacy left rail retired: a screen-wide sweep must yield no legacy
+        // hit anywhere — quick capture owns mode selection up front and the
+        // top bar owns aspects.
+        let mut y = 0.0;
+        while y <= 1080.0 {
+            let mut x = 0.0;
+            while x <= 1920.0 {
+                assert_eq!(
+                    toolbar_hit_at(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0, x, y),
+                    None,
+                    "retired rail hit at ({x},{y})"
+                );
+                assert_eq!(
+                    toolbar_item_at(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0, x, y),
+                    None,
+                    "retired rail icon at ({x},{y})"
+                );
+                x += 64.0;
             }
-        }
-    }
-
-    #[test]
-    fn toolbar_hit_never_returns_index_outside_toolbar_icons() {
-        // Sample a dense grid over the tools panel plus a band below it where a
-        // phantom 7th cell used to live. No hit may index past TOOLBAR_ICONS.
-        let layout = compute_toolbar_layout(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0);
-        let panel = layout.tools_panel;
-        let mut y = panel.y - 20.0;
-        while y <= panel.y + panel.height + FEATURE_PANEL_HEIGHT + 20.0 {
-            let mut x = panel.x - 10.0;
-            while x <= panel.x + panel.width + 10.0 {
-                if let Some(ToolbarHit::Tool(index)) =
-                    toolbar_hit_at(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0, x, y)
-                {
-                    assert!(
-                        index < TOOLBAR_ICONS.len(),
-                        "toolbar hit returned out-of-range index {index} at ({x},{y})"
-                    );
-                    assert!(
-                        TOOLBAR_ICONS.get(index).is_some(),
-                        "toolbar_item_at must resolve icon for index {index}"
-                    );
-                }
-                x += 4.0;
-            }
-            y += 4.0;
+            y += 64.0;
         }
     }
 
@@ -329,36 +246,11 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_hit_no_longer_returns_legacy_size_crop_panels() {
-        // The capture path owns aspect via the top bar; a sweep over both
-        // legacy panels must never report SizePanel/CropPanel.
-        let layout = compute_toolbar_layout(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0);
-        for panel in [layout.size_panel, layout.crop_panel] {
-            let mut y = panel.y;
-            while y <= panel.y + panel.height {
-                let mut x = panel.x;
-                while x <= panel.x + panel.width {
-                    assert!(
-                        !matches!(
-                            toolbar_hit_at(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0, x, y),
-                            Some(ToolbarHit::SizePanel) | Some(ToolbarHit::CropPanel)
-                        ),
-                        "legacy panel hit at ({x},{y})"
-                    );
-                    x += 4.0;
-                }
-                y += 4.0;
-            }
-        }
-    }
-
-    #[test]
-    fn toolbar_timer_and_ocr_indices_are_distinct() {
-        assert_eq!(TOOLBAR_TIMER_INDEX, 3);
-        assert_eq!(TOOLBAR_OCR_INDEX, 4);
-        assert_ne!(TOOLBAR_TIMER_INDEX, TOOLBAR_OCR_INDEX);
-        assert_eq!(hit_on_cell(TOOLBAR_TIMER_INDEX), Some(ToolbarHit::Tool(3)));
-        assert_eq!(hit_on_cell(TOOLBAR_OCR_INDEX), Some(ToolbarHit::Tool(4)));
-        assert_eq!(hit_on_cell(TOOLBAR_AREA_INDEX), Some(ToolbarHit::Tool(0)));
+    fn toolbar_item_at_never_resolves_without_rail_hits() {
+        // No rail hit can occur, so no icon ever resolves on the capture path.
+        assert_eq!(
+            toolbar_item_at(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0, 210.0, 210.0),
+            None
+        );
     }
 }

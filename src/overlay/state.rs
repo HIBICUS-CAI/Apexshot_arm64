@@ -1,5 +1,4 @@
 use super::geometry::SelectionRectF;
-use super::icons::TOOLBAR_AREA_INDEX;
 pub(crate) use super::recording::state::{OverlayIntent, RecordingState};
 use crate::compositor::WindowInfo;
 
@@ -44,7 +43,8 @@ pub(crate) struct SelectorState {
     pub(crate) is_dragging: bool,
     pub(crate) cancelled: bool,
     pub(crate) completed: bool,
-    pub(crate) active_tool_index: usize,
+    // Legacy rail's active-tool slot retired with it; hover slots stay as
+    // generic (always-None) hover state consumed by leave/reset paths.
     pub(crate) hover_tool_index: Option<usize>,
     pub(crate) hover_size_panel: bool,
     pub(crate) hover_crop_panel: bool,
@@ -119,7 +119,6 @@ impl Default for SelectorState {
             is_dragging: false,
             cancelled: false,
             completed: false,
-            active_tool_index: TOOLBAR_AREA_INDEX,
             hover_tool_index: None,
             hover_size_panel: false,
             hover_crop_panel: false,
@@ -161,11 +160,13 @@ impl Default for SelectorState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::overlay::icons::TOOLBAR_AREA_INDEX;
 
     #[test]
-    fn selector_state_defaults_to_area_tool_panel_active() {
+    fn selector_state_defaults_to_top_bar_freeform() {
+        // No rail tool is active anymore; aspect state lives on the top bar.
         let state = SelectorState::default();
-        assert_eq!(state.active_tool_index, TOOLBAR_AREA_INDEX);
+        assert!((state.top_bar_aspect_ratio - 0.0).abs() < 1e-9);
+        assert!(state.top_bar_snap_to_ratios);
+        assert!(!state.top_bar_crop_menu_open);
     }
 }

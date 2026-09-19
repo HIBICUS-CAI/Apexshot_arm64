@@ -3,7 +3,6 @@
 use super::super::super::api::{OverlaySelection, SelectionResult};
 use super::super::super::background::BackgroundFrame;
 use super::super::super::geometry::{current_selection_rect, set_selection_rect, SelectionRectF};
-use super::super::super::icons::TOOLBAR_AREA_INDEX;
 use super::super::super::state::SelectorState;
 use super::super::countdown::try_start_capture_countdown;
 use super::super::result::send_selection_result;
@@ -121,7 +120,6 @@ pub(in crate::overlay::window) fn wire_window_keyboard(
                     };
                     set_selection_rect(&mut st, moved);
                     st.fullscreen_mode = false;
-                    st.active_tool_index = TOOLBAR_AREA_INDEX;
                     drop(st);
                     if let Some(drawing_area) = drawing_area_weak_key.upgrade() {
                         drawing_area.queue_draw();

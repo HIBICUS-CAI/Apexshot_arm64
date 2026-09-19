@@ -1,5 +1,3 @@
-use super::icons::TOOLBAR_ICONS;
-
 pub(crate) const DEFAULT_SELECTION_WIDTH: f64 = 600.0;
 pub(crate) const DEFAULT_SELECTION_HEIGHT: f64 = 744.0;
 pub(crate) const MIN_SELECTION_WIDTH: f64 = 24.0;
@@ -12,7 +10,6 @@ pub(crate) const BRAND_ORANGE_G: f64 = 0.4;
 pub(crate) const BRAND_ORANGE_B: f64 = 0.0;
 pub(crate) const FEATURE_PANEL_ITEM_WIDTH: f64 = 76.0;
 pub(crate) const FEATURE_PANEL_HEIGHT: f64 = 62.0;
-pub(crate) const FEATURE_PANEL_RADIUS: f64 = 13.0;
 pub(crate) const FEATURE_PANEL_TOP_GAP: f64 = 12.0;
 pub(crate) const FEATURE_PANEL_MARGIN: f64 = 16.0;
 /// Keep bottom-anchored chrome above the app dock, mirroring BOTTOM_LIFT in
@@ -21,7 +18,6 @@ pub(crate) const DOCK_LIFT: f64 = 76.0;
 pub(crate) const TOOL_RAIL_GAP: f64 = 18.0;
 pub(crate) const ACTION_CARD_GAP: f64 = 8.0;
 pub(crate) const SIZE_CARD_WIDTH: f64 = 152.0;
-pub(crate) const SIZE_CARD_HEIGHT: f64 = 56.0;
 pub(crate) const CROP_CARD_WIDTH: f64 = 62.0;
 
 // ── Top-center instruction bar ("Draw an area" frame) ────────────────────────
@@ -77,9 +73,6 @@ pub(crate) const TOP_BAR_CROP_ROW_SNAP: usize = 10;
 pub(crate) const TOP_BAR_CROP_MENU_W: f64 = 196.0;
 pub(crate) const TOP_BAR_CROP_ITEM_H: f64 = 32.0;
 
-/// Must stay equal to `TOOLBAR_ICONS.len()` — used for cell array sizing.
-pub(crate) const TOOLBAR_TOOL_COUNT: usize = TOOLBAR_ICONS.len();
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RectF {
     pub(crate) x: f64,
@@ -94,17 +87,11 @@ impl RectF {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ToolbarLayout {
-    pub(crate) tools_panel: RectF,
-    pub(crate) size_panel: RectF,
-    pub(crate) crop_panel: RectF,
-    /// One cell per entry in `TOOLBAR_ICONS` (never more).
-    pub(crate) item_cells: [RectF; TOOLBAR_TOOL_COUNT],
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolbarHit {
+    // Retired with the legacy left rail: nothing constructs these on the
+    // capture path anymore (see hit_testing). Kept for API compat.
+    #[allow(dead_code)]
     Tool(usize),
     // Legacy FRAME panels: no longer hit-tested on the capture path (the
     // top-center bar owns aspects now). Kept for API compat with defensive
@@ -128,74 +115,6 @@ pub(crate) const ASPECT_RATIO_OPTIONS: &[&str] = &[
     "2 : 3",
     "9 : 16",
 ];
-
-pub(crate) fn compute_toolbar_layout(
-    selection_x: f64,
-    selection_y: f64,
-    selection_width: f64,
-    selection_height: f64,
-    screen_width: f64,
-    screen_height: f64,
-) -> ToolbarLayout {
-    let tool_panel_height = FEATURE_PANEL_HEIGHT * TOOLBAR_TOOL_COUNT as f64;
-    let center_y = selection_y + selection_height / 2.0;
-    let tool_x = (selection_x - TOOL_RAIL_GAP - FEATURE_PANEL_ITEM_WIDTH).max(FEATURE_PANEL_MARGIN);
-    let tool_y = (center_y - tool_panel_height / 2.0).clamp(
-        FEATURE_PANEL_MARGIN,
-        (screen_height - tool_panel_height - FEATURE_PANEL_MARGIN - DOCK_LIFT)
-            .max(FEATURE_PANEL_MARGIN),
-    );
-
-    let tools_panel = RectF {
-        x: tool_x,
-        y: tool_y,
-        width: FEATURE_PANEL_ITEM_WIDTH,
-        height: tool_panel_height,
-    };
-
-    let top_width = SIZE_CARD_WIDTH + ACTION_CARD_GAP + CROP_CARD_WIDTH;
-    let top_x = (selection_x + (selection_width - top_width) / 2.0).clamp(
-        FEATURE_PANEL_MARGIN,
-        (screen_width - top_width - FEATURE_PANEL_MARGIN).max(FEATURE_PANEL_MARGIN),
-    );
-    let top_y = (selection_y - FEATURE_PANEL_TOP_GAP - SIZE_CARD_HEIGHT).clamp(
-        FEATURE_PANEL_MARGIN,
-        (screen_height - SIZE_CARD_HEIGHT - FEATURE_PANEL_MARGIN - DOCK_LIFT)
-            .max(FEATURE_PANEL_MARGIN),
-    );
-
-    let size_panel = RectF {
-        x: top_x,
-        y: top_y,
-        width: SIZE_CARD_WIDTH,
-        height: SIZE_CARD_HEIGHT,
-    };
-    let crop_panel = RectF {
-        x: top_x + SIZE_CARD_WIDTH + ACTION_CARD_GAP,
-        y: top_y,
-        width: CROP_CARD_WIDTH,
-        height: SIZE_CARD_HEIGHT,
-    };
-
-    let mut item_cells = [RectF {
-        x: 0.0,
-        y: 0.0,
-        width: FEATURE_PANEL_ITEM_WIDTH,
-        height: FEATURE_PANEL_HEIGHT,
-    }; TOOLBAR_TOOL_COUNT];
-
-    for (index, cell) in item_cells.iter_mut().enumerate() {
-        cell.x = tools_panel.x;
-        cell.y = tools_panel.y + index as f64 * FEATURE_PANEL_HEIGHT;
-    }
-
-    ToolbarLayout {
-        tools_panel,
-        size_panel,
-        crop_panel,
-        item_cells,
-    }
-}
 
 /// Top-center instruction bar layout. All rects are screen coordinates.
 /// `pills`: 0=Free, 1=16:9, 2=4:3, 3=1:1. `buttons`: 0=Crop, 1=Cancel.
@@ -512,35 +431,18 @@ pub(crate) fn compute_settings_menu_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::overlay::icons::TOOLBAR_ICONS;
 
     #[test]
-    fn toolbar_tool_count_matches_icons() {
-        assert_eq!(TOOLBAR_TOOL_COUNT, TOOLBAR_ICONS.len());
-        assert_eq!(TOOLBAR_TOOL_COUNT, 6);
-    }
-
-    #[test]
-    fn toolbar_layout_item_cells_match_icon_count() {
-        let layout = compute_toolbar_layout(200.0, 200.0, 400.0, 300.0, 1920.0, 1080.0);
-        assert_eq!(layout.item_cells.len(), TOOLBAR_ICONS.len());
-        assert_eq!(
-            layout.tools_panel.height,
-            FEATURE_PANEL_HEIGHT * TOOLBAR_ICONS.len() as f64
-        );
-        // Every cell is stacked inside the tools panel.
-        for (i, cell) in layout.item_cells.iter().enumerate() {
-            assert!(
-                (cell.y - (layout.tools_panel.y + i as f64 * FEATURE_PANEL_HEIGHT)).abs() < 1e-9
-            );
-            assert!((cell.x - layout.tools_panel.x).abs() < 1e-9);
-            let cell_bottom = cell.y + cell.height;
-            let panel_bottom = layout.tools_panel.y + layout.tools_panel.height;
-            assert!(
-                cell_bottom <= panel_bottom + 1e-9,
-                "cell {i} extends past tools panel"
-            );
-        }
+    fn top_bar_layout_centers_and_fits_pills_and_buttons() {
+        // Legacy rail geometry is retired; the top-center bar carries the
+        // aspect UI. Pin its centered layout instead.
+        let layout = compute_top_bar_layout(1920.0).expect("bar must fit 1080p");
+        let bar_cx = layout.bar.x + layout.bar.width / 2.0;
+        assert!((bar_cx - 960.0).abs() < 1e-9);
+        assert_eq!(layout.bar.height, TOP_BAR_H);
+        assert_eq!(layout.pills.len(), TOP_BAR_PILL_LABELS.len());
+        assert_eq!(layout.buttons.len(), 2);
+        assert!(compute_top_bar_layout(300.0).is_none());
     }
 
     #[test]

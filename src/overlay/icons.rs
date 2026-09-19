@@ -1,14 +1,10 @@
 use super::drawing::rounded_rect_path;
 use std::f64::consts::PI;
 
-#[derive(Clone, Copy, Debug)]
+// Rail icons (Area/Fullscreen/Scroll/Timer/Ocr/Recording) retired with the
+// legacy left toolbar. Remaining glyphs serve the top bar and panels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ToolbarIcon {
-    Area,
-    Fullscreen,
-    Scroll,
-    Timer,
-    Ocr,
-    Recording,
     Controls,
     Crop,
     Mic,
@@ -17,24 +13,9 @@ pub(crate) enum ToolbarIcon {
     Video,
 }
 
-pub(crate) const TOOLBAR_ICONS: [ToolbarIcon; 6] = [
-    ToolbarIcon::Area,
-    ToolbarIcon::Fullscreen,
-    ToolbarIcon::Scroll,
-    ToolbarIcon::Timer,
-    ToolbarIcon::Ocr,
-    ToolbarIcon::Recording,
-];
-
-pub(crate) const TOOLBAR_AREA_INDEX: usize = 0;
-pub(crate) const TOOLBAR_FULLSCREEN_INDEX: usize = 1;
-pub(crate) const TOOLBAR_SCROLL_INDEX: usize = 2;
-pub(crate) const TOOLBAR_TIMER_INDEX: usize = 3;
-pub(crate) const TOOLBAR_OCR_INDEX: usize = 4;
-pub(crate) const TOOLBAR_RECORDING_INDEX: usize = 5;
-
-pub(crate) const TOOLBAR_LABELS: [&str; 6] =
-    ["Area", "Fullscreen", "Scroll", "Timer", "OCR", "Recording"];
+// Rail menu table retired with the legacy left toolbar: mode selection
+// belongs to quick capture up front. The `ToolbarIcon` glyphs above stay —
+// Crop/Mic/Speaker/Video/Controls still serve the top bar and panels.
 
 pub(crate) fn draw_toolbar_icon(
     context: &gtk4::cairo::Context,
@@ -51,78 +32,6 @@ pub(crate) fn draw_toolbar_icon(
     context.set_line_join(gtk4::cairo::LineJoin::Round);
 
     match icon {
-        ToolbarIcon::Area => {
-            let h = 5.5;
-            context.move_to(cx - 7.0, cy - 1.5);
-            context.line_to(cx - 7.0, cy - h);
-            context.line_to(cx - 1.5, cy - h);
-
-            context.move_to(cx + 1.5, cy - h);
-            context.line_to(cx + 7.0, cy - h);
-            context.line_to(cx + 7.0, cy - 1.5);
-
-            context.move_to(cx - 7.0, cy + 1.5);
-            context.line_to(cx - 7.0, cy + h);
-            context.line_to(cx - 1.5, cy + h);
-
-            context.move_to(cx + 1.5, cy + h);
-            context.line_to(cx + 7.0, cy + h);
-            context.line_to(cx + 7.0, cy + 1.5);
-            let _ = context.stroke();
-        }
-        ToolbarIcon::Fullscreen => {
-            rounded_rect_path(context, cx - 7.0, cy - 6.0, 14.0, 10.5, 2.0);
-            let _ = context.stroke();
-            context.move_to(cx, cy + 4.5);
-            context.line_to(cx, cy + 7.5);
-            context.move_to(cx - 4.5, cy + 7.5);
-            context.line_to(cx + 4.5, cy + 7.5);
-            let _ = context.stroke();
-        }
-        ToolbarIcon::Scroll => {
-            context.new_path();
-            context.move_to(cx, cy - 4.8);
-            context.line_to(cx, cy + 1.8);
-            context.move_to(cx - 3.2, cy - 1.0);
-            context.line_to(cx, cy + 1.9);
-            context.line_to(cx + 3.2, cy - 1.0);
-            let _ = context.stroke();
-        }
-        ToolbarIcon::Timer => {
-            context.new_path();
-            context.arc(cx, cy, 6.0, 0.0, PI * 2.0);
-            let _ = context.stroke();
-            context.new_path();
-            context.move_to(cx, cy);
-            context.line_to(cx, cy - 2.8);
-            context.move_to(cx, cy);
-            context.line_to(cx + 2.2, cy + 1.7);
-            let _ = context.stroke();
-        }
-        ToolbarIcon::Ocr => {
-            context.select_font_face(
-                crate::typography::UI_FONT_FAMILY,
-                gtk4::cairo::FontSlant::Normal,
-                gtk4::cairo::FontWeight::Bold,
-            );
-            context.set_font_size(8.0);
-            if let Ok(extents) = context.text_extents("Aa") {
-                let text_x = cx - extents.width() / 2.0 - extents.x_bearing();
-                let text_y = cy - (extents.y_bearing() + extents.height() / 2.0) + 0.2;
-                context.move_to(text_x, text_y);
-                let _ = context.show_text("Aa");
-            }
-        }
-        ToolbarIcon::Recording => {
-            rounded_rect_path(context, cx - 8.0, cy - 5.0, 10.5, 10.0, 2.5);
-            let _ = context.stroke();
-            context.move_to(cx + 2.4, cy - 2.8);
-            context.line_to(cx + 7.4, cy - 5.2);
-            context.line_to(cx + 7.4, cy + 5.2);
-            context.line_to(cx + 2.4, cy + 2.8);
-            context.close_path();
-            let _ = context.stroke();
-        }
         ToolbarIcon::Controls => {
             for i in 0..3 {
                 let x = cx - 4.5 + i as f64 * 4.5;

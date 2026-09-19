@@ -9,7 +9,6 @@ use super::super::super::geometry::{
 use super::super::super::hit_testing::{
     point_in_top_bar, toolbar_hit_at, toolbar_item_at, top_bar_crop_menu_contains, top_bar_visible,
 };
-use super::super::super::icons::TOOLBAR_AREA_INDEX;
 use super::super::super::layout::ToolbarHit;
 use super::super::super::recording::hit_testing::recording_tile_at;
 use super::super::super::state::{DragMode, OverlayMode, SelectorState};
@@ -67,7 +66,6 @@ pub(in crate::overlay::window) fn wire_selection_drag(
                 st.initial_rect = None;
                 st.is_dragging = true;
                 st.completed = false;
-                st.active_tool_index = TOOLBAR_AREA_INDEX;
                 drop(st);
 
                 if let Some(drawing_area) = drawing_area_weak.upgrade() {
@@ -218,9 +216,6 @@ pub(in crate::overlay::window) fn wire_selection_drag(
                     st.is_dragging = true;
                 }
                 st.fullscreen_mode = false;
-                if !st.recording.panel_open {
-                    st.active_tool_index = TOOLBAR_AREA_INDEX;
-                }
             } else {
                 st.is_dragging = true;
             }

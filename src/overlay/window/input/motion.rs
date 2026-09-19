@@ -344,9 +344,8 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                         next_hover_record_tile,
                         cursor_name,
                     ) = match hit {
-                        Some(ToolbarHit::Tool(index)) if !st.recording.panel_open => {
-                            (Some(index), false, false, None, "pointer")
-                        }
+                        // Legacy rail retired: Tool never hits (see hit_testing),
+                        // so only the compat arms below remain.
                         Some(ToolbarHit::SizePanel) if !st.recording.panel_open => {
                             (None, true, false, None, "default")
                         }
