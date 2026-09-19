@@ -27,6 +27,14 @@ inline constexpr double SCROLL_BUTTON_MIN_W       = 128.0;
 inline constexpr double REC_TOP_CLUSTER_W         = 292.0;
 inline constexpr double REC_TOP_CLUSTER_H         = 56.0;
 inline constexpr double REC_DECK_TOP_GAP          = 14.0;
+// ── Top-center instruction bar ("Draw an area" frame) ───────────────────────
+// Fixed to the top-center of the screen, NOT attached to the selection, so it
+// never shifts while dragging. See CaptureOverlay_Layout.cpp.
+inline constexpr double TOP_BAR_H                 = 44.0;
+inline constexpr double TOP_BAR_Y                 = 16.0;
+inline constexpr double TOP_BAR_RADIUS            = 14.0;
+inline constexpr double TOP_BAR_ASPECT_H          = 28.0;
+inline constexpr double TOP_BAR_BTN_SIZE          = 32.0;
 inline constexpr int    SCROLL_CAPTURE_INTERVAL_MS = 300;
 inline constexpr int    DEFAULT_SELECTION_W       = 600;
 inline constexpr int    DEFAULT_SELECTION_H       = 744;
@@ -56,6 +64,17 @@ struct RecordingDeckLayout {
     bool placedAbove = false;
 };
 
+// Top-center instruction bar layout. All rects are in overlay-local coords.
+// aspectPills: 0=Free, 1=16:9, 2=4:3, 3=1:1
+// buttons: 0=Crop (opens ratio dropdown), 1=Cancel
+struct TopBarLayout {
+    QRectF bar;
+    QRectF labelRect;
+    QRectF aspectPills[4];
+    QRectF buttons[2];
+    bool valid = false;
+};
+
 ToolbarLayout computeToolbarLayout(double selX, double selY,
                                    double selW, double selH,
                                    double screenW, double screenH,
@@ -64,3 +83,5 @@ ToolbarLayout computeToolbarLayout(double selX, double selY,
 RecordingDeckLayout computeRecordingDeckLayout(double selX, double selY,
                                                double selW, double selH,
                                                double screenW, double screenH);
+
+TopBarLayout computeTopBarLayout(double screenW);

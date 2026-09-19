@@ -4,7 +4,10 @@ use super::super::super::geometry::{
     clamp_point_to_bounds, current_selection_rect, cursor_name_for_handle, detect_resize_handle,
     is_inside_selection,
 };
-use super::super::super::hit_testing::{capture_crop_menu_hit_item, toolbar_hit_at};
+use super::super::super::hit_testing::{
+    point_in_top_bar, toolbar_hit_at, top_bar_aspect_at, top_bar_button_at, top_bar_crop_item_at,
+    top_bar_visible,
+};
 use super::super::super::layout::{
     compute_scroll_popup_layout, compute_volume_popup_layout, compute_window_picker_layout,
     volume_from_pill_y, ToolbarHit,
@@ -90,32 +93,39 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                     return;
                 }
 
-                // Capture crop menu hover check
-                if st.capture_crop_menu_open {
-                    let item = capture_crop_menu_hit_item(
-                        rect.left,
-                        rect.top,
-                        rect.width(),
-                        rect.height(),
-                        screen_width as f64,
-                        screen_height as f64,
-                        x,
-                        y,
-                    );
+                // Top-bar crop menu hover first (skipped while dragging so
+                // drags pass underneath). Only claims the pointer on an item;
+                // elsewhere execution falls through to bar/toolbar hover.
+                if st.top_bar_crop_menu_open && !st.is_dragging {
+                    let item = top_bar_crop_item_at(&st, screen_width as f64, x, y);
                     let next = item.map(|i| i as i32).unwrap_or(-1);
-                    let changed = next != st.hovered_capture_crop_menu_item;
+                    let changed = next != st.hovered_top_bar_crop_item;
                     if changed {
-                        st.hovered_capture_crop_menu_item = next;
+                        st.hovered_top_bar_crop_item = next;
                     }
                     st.recording.hovered_crop_menu_item = -1;
                     st.recording.hovered_settings_item = -1;
-                    // Clear other hovers
                     st.hover_tool_index = None;
                     st.hover_size_panel = false;
                     st.hover_crop_panel = false;
                     st.recording.hover_record_tile = None;
-                    ("pointer".to_string(), changed, true)
-                } else if st.recording.crop_menu_open {
+                    if next >= 0 {
+                        drop(st);
+                        if let Some(win) = window_weak_motion.upgrade() {
+                            if let Some(surf) = win.surface() {
+                                let cursor = gdk::Cursor::from_name("pointer", None);
+                                surf.set_cursor(cursor.as_ref());
+                            }
+                        }
+                        if changed {
+                            if let Some(da) = drawing_area_weak_motion.upgrade() {
+                                da.queue_draw();
+                            }
+                        }
+                        return;
+                    }
+                }
+                if st.recording.crop_menu_open {
                     let item = recording_crop_menu_hit_item(
                         rect.left,
                         rect.top,
@@ -250,6 +260,33 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                     st.hover_crop_panel = false;
                     st.recording.hover_record_tile = None;
                     ("pointer".to_string(), true, true)
+                } else if top_bar_visible(&st)
+                    && !st.is_dragging
+                    && (top_bar_aspect_at(&st, screen_width as f64, x, y).is_some()
+                        || top_bar_button_at(&st, screen_width as f64, x, y).is_some())
+                {
+                    // Top-center bar pills/buttons claim the pointer + highlight.
+                    let pill = top_bar_aspect_at(&st, screen_width as f64, x, y);
+                    let button = if pill.is_none() {
+                        top_bar_button_at(&st, screen_width as f64, x, y)
+                    } else {
+                        None
+                    };
+                    let next_aspect = pill.map(|p| p as i32).unwrap_or(-1);
+                    let next_button = button.map(|b| b as i32).unwrap_or(-1);
+                    let changed = st.hovered_top_bar_aspect != next_aspect
+                        || st.hovered_top_bar_button != next_button;
+                    st.hovered_top_bar_aspect = next_aspect;
+                    st.hovered_top_bar_button = next_button;
+                    st.hover_tool_index = None;
+                    st.hover_size_panel = false;
+                    st.hover_crop_panel = false;
+                    st.recording.hover_record_tile = None;
+                    st.hovered_capture_crop_menu_item = -1;
+                    st.recording.hovered_crop_menu_item = -1;
+                    st.recording.hovered_settings_item = -1;
+                    st.recording.hovered_settings_dropdown_item = -1;
+                    ("pointer".to_string(), changed, true)
                 } else {
                     let record_hit = if st.recording.panel_open {
                         recording_tile_at(
@@ -336,6 +373,8 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                                     }
                                 } else if next_hovered_window.is_some() {
                                     "pointer"
+                                } else if point_in_top_bar(&st, screen_width as f64, x, y) {
+                                    "default"
                                 } else {
                                     "crosshair"
                                 };
@@ -349,11 +388,15 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                         || st.hover_size_panel != next_hover_size_panel
                         || st.hover_crop_panel != next_hover_crop_panel
                         || st.recording.hover_record_tile != next_hover_record_tile
-                        || st.hovered_window != next_hovered_window;
+                        || st.hovered_window != next_hovered_window
+                        || st.hovered_top_bar_aspect != -1
+                        || st.hovered_top_bar_button != -1;
 
                     st.hover_tool_index = next_hover_tool_index;
                     st.hover_size_panel = next_hover_size_panel;
                     st.hover_crop_panel = next_hover_crop_panel;
+                    st.hovered_top_bar_aspect = -1;
+                    st.hovered_top_bar_button = -1;
                     st.recording.hover_record_tile = next_hover_record_tile;
                     st.hovered_window = next_hovered_window;
                     st.hovered_capture_crop_menu_item = -1;
@@ -389,6 +432,9 @@ pub(in crate::overlay::window) fn wire_selection_motion(
             || st.hover_crop_panel
             || st.recording.hover_record_tile.is_some()
             || st.hovered_capture_crop_menu_item != -1
+            || st.hovered_top_bar_aspect != -1
+            || st.hovered_top_bar_button != -1
+            || st.hovered_top_bar_crop_item != -1
             || st.recording.hovered_crop_menu_item != -1
             || st.recording.hovered_settings_item != -1
             || st.recording.hovered_settings_dropdown_item != -1;
@@ -396,6 +442,9 @@ pub(in crate::overlay::window) fn wire_selection_motion(
         st.hover_size_panel = false;
         st.hover_crop_panel = false;
         st.recording.hover_record_tile = None;
+        st.hovered_top_bar_aspect = -1;
+        st.hovered_top_bar_button = -1;
+        st.hovered_top_bar_crop_item = -1;
         st.hovered_capture_crop_menu_item = -1;
         st.recording.hovered_crop_menu_item = -1;
         st.recording.hovered_settings_item = -1;
@@ -441,7 +490,7 @@ mod tests {
             "motion must own active slider drags"
         );
         assert!(
-            production.contains("capture_crop_menu_open")
+            production.contains("top_bar_crop_menu_open")
                 && production.contains("window_picker_open")
                 && production.contains("scroll_popup_open")
                 && production.contains("settings_menu_open"),

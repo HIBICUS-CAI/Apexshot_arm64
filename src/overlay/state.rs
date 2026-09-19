@@ -55,10 +55,20 @@ pub(crate) struct SelectorState {
     /// the C++ overlay deliberately omits its legacy left tool rail; only the
     /// frame and crop controls remain available.
     pub(crate) capture_menu_area_mode: bool,
-    // Menu state (capture-area only)
-    pub(crate) capture_crop_menu_open: bool,
+    // Menu state (capture-area only; aspect owned by the top-center bar,
+    // `capture_aspect_ratio_index` kept as a legacy-index mirror for compat)
     pub(crate) capture_aspect_ratio_index: usize,
     pub(crate) hovered_capture_crop_menu_item: i32,
+    // Top-center instruction bar state (mirrors C++ m_topBar* members).
+    // `top_bar_aspect_ratio` is 0.0 for Free, else W/H; the pill highlight is
+    // ratio-based, never index-based.
+    pub(crate) top_bar_aspect_ratio: f64,
+    pub(crate) top_bar_snap_to_ratios: bool,
+    pub(crate) top_bar_crop_menu_open: bool,
+    pub(crate) hovered_top_bar_aspect: i32,
+    /// -1 = none, 0 = crop dropdown, 1 = cancel.
+    pub(crate) hovered_top_bar_button: i32,
+    pub(crate) hovered_top_bar_crop_item: i32,
     pub(crate) overlay_mode: OverlayMode,
     // ── Timer capture state ──
     #[allow(dead_code)]
@@ -115,9 +125,14 @@ impl Default for SelectorState {
             hover_crop_panel: false,
             fullscreen_mode: false,
             capture_menu_area_mode: false,
-            capture_crop_menu_open: false,
             capture_aspect_ratio_index: 0,
             hovered_capture_crop_menu_item: -1,
+            top_bar_aspect_ratio: 0.0,
+            top_bar_snap_to_ratios: true,
+            top_bar_crop_menu_open: false,
+            hovered_top_bar_aspect: -1,
+            hovered_top_bar_button: -1,
+            hovered_top_bar_crop_item: -1,
             overlay_mode: OverlayMode::StandardArea,
             timer_delay_active: false,
             capture_delay_seconds: 5,

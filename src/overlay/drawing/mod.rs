@@ -87,11 +87,6 @@ pub(crate) fn draw_feature_toolbar(
     capture_menu_area_mode: bool,
     active_tool_index: usize,
     hover_tool_index: Option<usize>,
-    hover_size_panel: bool,
-    hover_crop_panel: bool,
-    capture_crop_menu_open: bool,
-    capture_aspect_ratio_index: usize,
-    hovered_capture_crop_menu_item: i32,
     timer_delay_active: bool,
     capture_delay_seconds: i32,
 ) {
@@ -104,12 +99,7 @@ pub(crate) fn draw_feature_toolbar(
         screen_height,
     );
 
-    let size_panel_x = layout.size_panel.x;
-    let size_panel_y = layout.size_panel.y;
-    let size_panel_width = layout.size_panel.width;
-    let crop_panel = layout.crop_panel;
     let active_tool_index = active_tool_index.min(TOOLBAR_ICONS.len().saturating_sub(1));
-    let crop_active = capture_crop_menu_open || capture_aspect_ratio_index > 0;
     let timer_tool_active = timer_delay_active && capture_delay_seconds > 0;
 
     if !capture_menu_area_mode {
@@ -126,36 +116,8 @@ pub(crate) fn draw_feature_toolbar(
         );
     }
 
-    // Single combined panel for size + crop, in the quick-capture language:
-    // solid dark fill, white rim, and drop shadow (matches CaptureMenu).
-    let top_cluster_x = layout.size_panel.x;
-    let top_cluster_y = layout.size_panel.y;
-    let top_cluster_w = layout.size_panel.width + ACTION_CARD_GAP + layout.crop_panel.width;
-    let top_cluster_h = layout.size_panel.height;
-    rounded_rect_path(
-        context,
-        top_cluster_x,
-        top_cluster_y + 3.0,
-        top_cluster_w,
-        top_cluster_h,
-        15.0,
-    );
-    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
-    let _ = context.fill();
-    rounded_rect_path(
-        context,
-        top_cluster_x,
-        top_cluster_y,
-        top_cluster_w,
-        top_cluster_h,
-        15.0,
-    );
-    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
-    let _ = context.fill_preserve();
-    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
-    context.set_line_width(1.2);
-    let _ = context.stroke();
-
+    // The legacy FRAME size/crop card is gone: the screen-fixed top-center
+    // instruction bar owns aspect selection now (see draw_top_instruction_bar).
     let draw_accent = |context: &gtk4::cairo::Context, rect: RectF, active: bool| {
         rounded_rect_path(
             context,
@@ -175,29 +137,6 @@ pub(crate) fn draw_feature_toolbar(
         let _ = context.fill();
     };
 
-    // Quick-capture cell accent for the size/crop card: orange fill when
-    // active, white fill + orange rim on hover (matches CaptureMenu).
-    let draw_quick_accent = |context: &gtk4::cairo::Context, rect: RectF, active: bool| {
-        rounded_rect_path(
-            context,
-            rect.x + 4.0,
-            rect.y + 4.0,
-            rect.width - 8.0,
-            rect.height - 8.0,
-            10.0,
-        );
-        if active {
-            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
-            let _ = context.fill();
-        } else {
-            context.set_source_rgba(1.0, 1.0, 1.0, 24.0 / 255.0);
-            let _ = context.fill_preserve();
-            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 170.0 / 255.0);
-            context.set_line_width(1.0);
-            let _ = context.stroke();
-        }
-    };
-
     if !capture_menu_area_mode {
         draw_accent(context, layout.item_cells[active_tool_index], true);
         if timer_tool_active && active_tool_index != super::icons::TOOLBAR_TIMER_INDEX {
@@ -215,13 +154,6 @@ pub(crate) fn draw_feature_toolbar(
             }
         }
     }
-    if hover_size_panel {
-        draw_quick_accent(context, layout.size_panel, false);
-    }
-    if hover_crop_panel || crop_active {
-        draw_quick_accent(context, crop_panel, crop_active);
-    }
-
     // Icons + labels.  The compact capture-menu area flow intentionally has
     // no legacy tool rail, exactly as CaptureOverlay_ToolbarDrawing.cpp.
     for (index, icon) in (!capture_menu_area_mode)
@@ -324,69 +256,6 @@ pub(crate) fn draw_feature_toolbar(
                 let _ = context.show_text(&badge_text);
             }
         }
-    }
-
-    let size_text = format!("{}×{}", selection_width as i32, selection_height as i32);
-    let size_center_x = size_panel_x + size_panel_width / 2.0;
-    let frame_label = t("FRAME");
-
-    context.select_font_face(
-        crate::typography::UI_FONT_FAMILY,
-        gtk4::cairo::FontSlant::Normal,
-        gtk4::cairo::FontWeight::Bold,
-    );
-    context.set_font_size(9.6);
-    context.set_source_rgba(164.0 / 255.0, 164.0 / 255.0, 172.0 / 255.0, 1.0);
-    if let Ok(extents) = context.text_extents(&frame_label) {
-        let text_x = size_center_x - extents.width() / 2.0 - extents.x_bearing();
-        let text_y = size_panel_y + 17.0;
-        context.move_to(text_x, text_y);
-        let _ = context.show_text(&frame_label);
-    }
-
-    context.select_font_face(
-        crate::typography::UI_FONT_FAMILY,
-        gtk4::cairo::FontSlant::Normal,
-        gtk4::cairo::FontWeight::Bold,
-    );
-    context.set_font_size(12.5);
-    context.set_source_rgba(1.0, 1.0, 1.0, 0.98);
-    if let Ok(extents) = context.text_extents(&size_text) {
-        let text_x = size_center_x - extents.width() / 2.0 - extents.x_bearing();
-        let text_y = size_panel_y + 39.0;
-        context.move_to(text_x, text_y);
-        let _ = context.show_text(&size_text);
-    }
-
-    let crop_center_x = crop_panel.x + crop_panel.width / 2.0;
-    let crop_y = crop_panel.y
-        + if hover_crop_panel || crop_active {
-            27.0
-        } else {
-            27.5
-        };
-    draw_toolbar_icon(
-        context,
-        ToolbarIcon::Crop,
-        crop_center_x,
-        crop_y,
-        if crop_active {
-            (1.0, 1.0, 1.0, 1.0)
-        } else {
-            (245.0 / 255.0, 245.0 / 255.0, 247.0 / 255.0, 1.0)
-        },
-    );
-
-    if capture_crop_menu_open {
-        draw_capture_crop_menu(
-            context,
-            crop_panel,
-            hovered_capture_crop_menu_item,
-            capture_aspect_ratio_index,
-            screen_width,
-            screen_height,
-            background,
-        );
     }
 }
 
@@ -592,24 +461,237 @@ pub(super) fn draw_aspect_ratio_menu(
     item_rects
 }
 
-pub(crate) fn draw_capture_crop_menu(
+/// Screen-fixed top-center instruction bar ("Draw an area" + aspect pills +
+/// crop/cancel buttons). Mirrors C++ `drawTopInstructionBar`: dark fill
+/// (25,25,28,246) with a white rim, active pill/button in orange, hover as a
+/// white wash. Cairo font sizes are C++ points scaled by 4/3, matching the
+/// existing toolbar conversions (e.g. 9.4pt -> 12.5).
+pub(crate) fn draw_top_instruction_bar(
     context: &gtk4::cairo::Context,
-    crop_card_rect: RectF,
-    hovered_item: i32,
-    selected_index: usize,
+    st: &SelectorState,
     screen_width: f64,
-    screen_height: f64,
-    background: Option<&BackgroundFrame>,
-) -> Vec<RectF> {
-    draw_aspect_ratio_menu(
+) {
+    use super::geometry::ratios_equal;
+    use super::hit_testing::top_bar_visible;
+    if !top_bar_visible(st) {
+        return;
+    }
+    let Some(layout) = compute_top_bar_layout(screen_width) else {
+        return;
+    };
+    let bar = layout.bar;
+
+    // Shadow + solid dark body + rim.
+    rounded_rect_path(
         context,
-        crop_card_rect,
-        hovered_item,
-        selected_index,
-        screen_width,
-        screen_height,
-        background,
-    )
+        bar.x,
+        bar.y + 3.0,
+        bar.width,
+        bar.height,
+        TOP_BAR_RADIUS,
+    );
+    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
+    let _ = context.fill();
+    rounded_rect_path(context, bar.x, bar.y, bar.width, bar.height, TOP_BAR_RADIUS);
+    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
+    let _ = context.fill_preserve();
+    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
+    context.set_line_width(1.2);
+    let _ = context.stroke();
+
+    // Label.
+    context.select_font_face(
+        crate::typography::UI_FONT_FAMILY,
+        gtk4::cairo::FontSlant::Normal,
+        gtk4::cairo::FontWeight::Bold,
+    );
+    context.set_font_size(14.0);
+    context.set_source_rgba(244.0 / 255.0, 244.0 / 255.0, 246.0 / 255.0, 245.0 / 255.0);
+    if let Ok(extents) = context.text_extents("Draw an area") {
+        let text_x = layout.label.x - extents.x_bearing();
+        let text_y = layout.label.y + layout.label.height / 2.0
+            - extents.height() / 2.0
+            - extents.y_bearing();
+        context.move_to(text_x, text_y);
+        let _ = context.show_text("Draw an area");
+    }
+
+    // Separators.
+    context.set_source_rgba(1.0, 1.0, 1.0, 30.0 / 255.0);
+    context.set_line_width(1.0);
+    let sep1_x = layout.label.x + layout.label.width + 12.0;
+    let sep2_x = layout.pills[3].x + layout.pills[3].width + 12.0;
+    context.move_to(sep1_x, bar.y + 10.0);
+    context.line_to(sep1_x, bar.y + bar.height - 10.0);
+    context.move_to(sep2_x, bar.y + 10.0);
+    context.line_to(sep2_x, bar.y + bar.height - 10.0);
+    let _ = context.stroke();
+
+    // Aspect pills (active when the current ratio matches, Free = 0.0).
+    for (i, pill) in layout.pills.iter().enumerate() {
+        let active = ratios_equal(st.top_bar_aspect_ratio, TOP_BAR_PILL_RATIOS[i]);
+        let hovered = st.hovered_top_bar_aspect == i as i32;
+        rounded_rect_path(context, pill.x, pill.y, pill.width, pill.height, 8.0);
+        if active {
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
+        } else if hovered {
+            context.set_source_rgba(1.0, 1.0, 1.0, 26.0 / 255.0);
+        } else {
+            context.set_source_rgba(1.0, 1.0, 1.0, 12.0 / 255.0);
+        }
+        let _ = context.fill();
+        let color = if active {
+            (1.0, 1.0, 1.0, 1.0)
+        } else {
+            (232.0 / 255.0, 232.0 / 255.0, 236.0 / 255.0, 1.0)
+        };
+        draw_text_centered(
+            context,
+            *pill,
+            TOP_BAR_PILL_LABELS[i],
+            12.7,
+            active || hovered,
+            color,
+        );
+    }
+
+    // Action buttons: crop (opens the ratio dropdown) + cancel X.
+    for (i, button) in layout.buttons.iter().enumerate() {
+        let hovered = st.hovered_top_bar_button == i as i32;
+        let crop_active = i == TOP_BAR_CROP_BUTTON
+            && (st.top_bar_crop_menu_open || st.top_bar_aspect_ratio > 0.0);
+        rounded_rect_path(
+            context,
+            button.x,
+            button.y,
+            button.width,
+            button.height,
+            8.0,
+        );
+        if crop_active {
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
+            let _ = context.fill();
+        } else if hovered {
+            context.set_source_rgba(1.0, 1.0, 1.0, 26.0 / 255.0);
+            let _ = context.fill();
+        }
+        let cx = button.x + button.width / 2.0;
+        let cy = button.y + button.height / 2.0;
+        if i == TOP_BAR_CROP_BUTTON {
+            let color = if crop_active {
+                (1.0, 1.0, 1.0, 1.0)
+            } else {
+                (240.0 / 255.0, 240.0 / 255.0, 244.0 / 255.0, 1.0)
+            };
+            draw_toolbar_icon(context, ToolbarIcon::Crop, cx, cy, color);
+        } else {
+            context.set_source_rgba(240.0 / 255.0, 240.0 / 255.0, 244.0 / 255.0, 1.0);
+            context.set_line_width(1.7);
+            context.set_line_cap(gtk4::cairo::LineCap::Round);
+            context.set_line_join(gtk4::cairo::LineJoin::Round);
+            context.move_to(cx - 4.5, cy - 4.5);
+            context.line_to(cx + 4.5, cy + 4.5);
+            context.move_to(cx - 4.5, cy + 4.5);
+            context.line_to(cx + 4.5, cy - 4.5);
+            let _ = context.stroke();
+        }
+    }
+
+    draw_top_bar_crop_menu(context, st, screen_width);
+}
+
+/// Ratio dropdown anchored under the crop button. Mirrors C++
+/// `drawTopBarCropMenu`: same dark style, hover wash + orange rim, white
+/// checkmark on Free / the matching ratio / Snap, separators after "Reset
+/// selection" and before "Snap to ratios".
+fn draw_top_bar_crop_menu(context: &gtk4::cairo::Context, st: &SelectorState, screen_width: f64) {
+    use super::geometry::ratios_equal;
+    use super::hit_testing::top_bar_visible;
+    if !top_bar_visible(st) || !st.top_bar_crop_menu_open {
+        return;
+    }
+    let Some(layout) = compute_top_bar_layout(screen_width) else {
+        return;
+    };
+    let anchor = layout.buttons[TOP_BAR_CROP_BUTTON];
+    let (panel, items) =
+        compute_top_bar_crop_menu(anchor, layout.bar.y + layout.bar.height, screen_width);
+    let menu_x = panel.x;
+    let menu_y = panel.y;
+    let menu_w = panel.width;
+    let menu_h = panel.height;
+
+    rounded_rect_path(context, menu_x, menu_y + 3.0, menu_w, menu_h, 12.0);
+    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
+    let _ = context.fill();
+    rounded_rect_path(context, menu_x, menu_y, menu_w, menu_h, 12.0);
+    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
+    let _ = context.fill_preserve();
+    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
+    context.set_line_width(1.2);
+    let _ = context.stroke();
+
+    for (i, item) in items.iter().enumerate() {
+        let indicator_x = item.x + 8.0;
+        if i as i32 == st.hovered_top_bar_crop_item {
+            rounded_rect_path(context, item.x, item.y, item.width, item.height, 7.0);
+            context.set_source_rgba(1.0, 1.0, 1.0, 24.0 / 255.0);
+            let _ = context.fill_preserve();
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 170.0 / 255.0);
+            context.set_line_width(1.0);
+            let _ = context.stroke();
+        }
+        let checked = if i == TOP_BAR_CROP_ROW_RESET {
+            false
+        } else if TOP_BAR_CROP_RATIOS[i] <= 0.0 && i != TOP_BAR_CROP_ROW_SNAP {
+            // "Free" row (ratio 0.0): checked when no ratio is set.
+            st.top_bar_aspect_ratio <= 0.0
+        } else if i == TOP_BAR_CROP_ROW_SNAP {
+            st.top_bar_snap_to_ratios
+        } else {
+            ratios_equal(st.top_bar_aspect_ratio, TOP_BAR_CROP_RATIOS[i])
+        };
+        if checked {
+            context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+            context.set_line_width(1.5);
+            context.set_line_cap(gtk4::cairo::LineCap::Round);
+            context.set_line_join(gtk4::cairo::LineJoin::Round);
+            let cy = item.y + item.height / 2.0;
+            context.move_to(indicator_x + 3.5, cy);
+            context.line_to(indicator_x + 6.5, cy + 3.0);
+            context.line_to(indicator_x + 12.5, cy - 4.0);
+            let _ = context.stroke();
+        }
+        let bold = checked || i == TOP_BAR_CROP_ROW_RESET;
+        context.select_font_face(
+            crate::typography::UI_FONT_FAMILY,
+            gtk4::cairo::FontSlant::Normal,
+            if bold {
+                gtk4::cairo::FontWeight::Bold
+            } else {
+                gtk4::cairo::FontWeight::Normal
+            },
+        );
+        context.set_font_size(13.3);
+        context.set_source_rgba(242.0 / 255.0, 242.0 / 255.0, 244.0 / 255.0, 1.0);
+        if let Ok(extents) = context.text_extents(TOP_BAR_CROP_LABELS[i]) {
+            let label_x = item.x + 30.0 - extents.x_bearing();
+            let label_y = item.y + item.height / 2.0 - extents.height() / 2.0 - extents.y_bearing();
+            context.move_to(label_x, label_y);
+            let _ = context.show_text(TOP_BAR_CROP_LABELS[i]);
+        }
+    }
+
+    // Separators: below "Reset selection" and above "Snap to ratios".
+    context.set_source_rgba(1.0, 1.0, 1.0, 26.0 / 255.0);
+    context.set_line_width(1.0);
+    let y1 = menu_y + 5.0 + TOP_BAR_CROP_ITEM_H;
+    context.move_to(menu_x + 12.0, y1);
+    context.line_to(menu_x + menu_w - 12.0, y1);
+    let y2 = menu_y + 5.0 + TOP_BAR_CROP_ROW_SNAP as f64 * TOP_BAR_CROP_ITEM_H;
+    context.move_to(menu_x + 12.0, y2);
+    context.line_to(menu_x + menu_w - 12.0, y2);
+    let _ = context.stroke();
 }
 
 pub(crate) fn draw_overlay(
@@ -819,11 +901,6 @@ pub(crate) fn draw_overlay(
                 st.capture_menu_area_mode,
                 st.active_tool_index,
                 st.hover_tool_index,
-                st.hover_size_panel,
-                st.hover_crop_panel,
-                st.capture_crop_menu_open,
-                st.capture_aspect_ratio_index,
-                st.hovered_capture_crop_menu_item,
                 st.timer_delay_active,
                 st.capture_delay_seconds,
             );
@@ -953,11 +1030,6 @@ pub(crate) fn draw_overlay(
                 st.capture_menu_area_mode,
                 st.active_tool_index,
                 st.hover_tool_index,
-                st.hover_size_panel,
-                st.hover_crop_panel,
-                st.capture_crop_menu_open,
-                st.capture_aspect_ratio_index,
-                st.hovered_capture_crop_menu_item,
                 st.timer_delay_active,
                 st.capture_delay_seconds,
             );
@@ -1032,6 +1104,14 @@ pub(crate) fn draw_overlay(
             st.hovered_scroll_download,
         );
     }
+
+    // ── Top-center instruction bar ("Draw an area") ─────────────────────────
+    // Screen-fixed; painted last so it floats above dim/selection chrome in
+    // fullscreen, area, and pre-selection idle states alike. Hidden while
+    // recording, picking windows, counting down, or scroll-capturing (see
+    // hit_testing::top_bar_visible). The frozen-background crop path excludes
+    // it from the saved image, so overlap with the drag is safe.
+    draw_top_instruction_bar(context, &st, screen_width);
 }
 
 #[cfg(test)]

@@ -241,6 +241,28 @@ private:
     int hitTestWindowPickerToolbar(const QPoint& pos) const;
     int hitTestWindowPickerCard(const QPoint& pos) const;
 
+    // ── Top-center instruction bar ("Draw an area" frame) ───────────────────
+    // Screen-fixed bar; never attached to the selection so dragging near/over
+    // it is safe. Final capture crops the pre-overlay freeze (or re-captures
+    // after hide()+settle), so this chrome never appears in the screenshot.
+    enum class TopBarButton {
+        None,
+        Crop,
+        Cancel
+    };
+    void drawTopInstructionBar(QPainter& p, double screenW, double screenH);
+    void drawTopBarCropMenu(QPainter& p, double screenW, double screenH);
+    bool topBarVisible() const;
+    int hitTestTopBarAspect(const QPoint& pos) const; // 0..3, -1 = none
+    TopBarButton hitTestTopBarButton(const QPoint& pos) const;
+    bool pointInTopBar(const QPoint& pos) const;
+    void handleTopBarAspectClick(int pillIndex);
+    void handleTopBarButtonClick(TopBarButton button);
+    void handleTopBarCropMenuClick(const QPoint& pos);
+    void applyTopBarAspectToSelection();
+    double topBarAspectRatio() const { return m_topBarAspectRatio; }
+    bool topBarSnapEnabled() const { return m_topBarSnapToRatios; }
+
     // Hit testing / cursor
     void updateCursor(const QPoint& pos);
     HandlePos hitTest(const QPoint& pos) const;
@@ -440,6 +462,16 @@ private:
     QList<QRectF> m_recTileRects; // Matches RecordPanelTile order (skip None)
     QList<QRectF> m_settingsClickableRects; // checkbox & tab rects for hit testing
     QList<QRectF> m_cropMenuItemRects;
+
+    // Top-center instruction bar state (pill 0..3, -1 = none)
+    int  m_hoveredTopBarAspect;
+    TopBarButton m_hoveredTopBarButton;
+    double m_topBarAspectRatio; // 0.0 = Free, else W/H
+    bool m_topBarSnapToRatios;
+    bool m_topBarCropMenuOpen;
+    int  m_hoveredTopBarCropItem; // -1 = none, else menu row index
+    QRectF m_topBarCropMenuPanelRect;
+    QList<QRectF> m_topBarCropMenuItemRects;
 
     // Toolbar hover state
     int  m_hoveredTool;             // -1 = none

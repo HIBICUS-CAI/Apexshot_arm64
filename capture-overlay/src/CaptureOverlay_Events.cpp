@@ -96,6 +96,44 @@ void CaptureOverlay::mousePressEvent(QMouseEvent* event)
         return;
     }
 
+    // ── Top-center instruction bar ─────────────────────────────────────────
+    // Swallow presses starting inside the bar so they never begin a selection
+    // drag. Drags started elsewhere may still pass underneath the bar.
+    if (event->button() == Qt::LeftButton && topBarVisible()) {
+        if (m_topBarCropMenuOpen) {
+            for (int i = 0; i < m_topBarCropMenuItemRects.size(); ++i) {
+                if (m_topBarCropMenuItemRects[i].contains(pos)) {
+                    handleTopBarCropMenuClick(pos);
+                    return;
+                }
+            }
+            // Click on the crop button toggles the menu (handled below).
+            const TopBarButton menuToggle = hitTestTopBarButton(pos);
+            if (menuToggle == TopBarButton::None && !pointInTopBar(pos)
+                && !m_topBarCropMenuPanelRect.contains(pos)) {
+                // Dismiss the dropdown without starting a drag on this click.
+                m_topBarCropMenuOpen = false;
+                m_hoveredTopBarCropItem = -1;
+                update();
+                return;
+            }
+        }
+        const int pill = hitTestTopBarAspect(pos);
+        if (pill >= 0) {
+            handleTopBarAspectClick(pill);
+            return;
+        }
+        const TopBarButton barButton = hitTestTopBarButton(pos);
+        if (barButton != TopBarButton::None) {
+            handleTopBarButtonClick(barButton);
+            return;
+        }
+        if (pointInTopBar(pos) || m_topBarCropMenuPanelRect.contains(pos)) {
+            // Click on bar chrome (label/separators) or menu padding — do nothing.
+            return;
+        }
+    }
+
     auto closeRecordingMenus = [&]() {
         m_settingsOpen = false;
         m_cropMenuOpen = false;
@@ -320,20 +358,7 @@ void CaptureOverlay::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    if (m_captureCropMenuOpen) {
-        for (int i = 0; i < m_captureCropMenuItemRects.size(); ++i) {
-            if (m_captureCropMenuItemRects[i].contains(pos)) {
-                m_captureAspectRatioIndex = i;
-                closeCaptureCropMenu();
-                applyCurrentCaptureAspect();
-                update();
-                return;
-            }
-        }
-        closeCaptureCropMenu();
-        update();
-    }
-
+    // Old FRAME crop menu removed — aspect is owned by the top-center bar.
     if (m_cropMenuOpen) {
         for (int i = 0; i < m_cropMenuItemRects.size(); ++i) {
             if (m_cropMenuItemRects[i].contains(pos)) {
@@ -663,30 +688,14 @@ void CaptureOverlay::mousePressEvent(QMouseEvent* event)
                     return;
                 }
             }
-            if (layout.cropCard.contains(pos)) {
-                const bool wasOpen = m_captureCropMenuOpen;
-                closeCaptureCropMenu();
-                m_captureCropMenuOpen = !wasOpen;
-                update();
-                return;
-            }
         } else {
-            bool clickedToolbar = (!m_captureMenuAreaMode && layout.leftToolsPanel.contains(pos)) ||
-                                  layout.sizeCard.contains(pos) ||
-                                  layout.cropCard.contains(pos);
+            bool clickedToolbar = (!m_captureMenuAreaMode && layout.leftToolsPanel.contains(pos));
             if (clickedToolbar) {
                 for (int i = 0; !m_captureMenuAreaMode && i < NUM_TOOLS; ++i) {
                     if (layout.toolCells[i].contains(pos)) {
                         handleToolClick(i);
                         return;
                     }
-                }
-                if (layout.cropCard.contains(pos)) {
-                    const bool wasOpen = m_captureCropMenuOpen;
-                    closeCaptureCropMenu();
-                    m_captureCropMenuOpen = !wasOpen;
-                    update();
-                    return;
                 }
                 // Clicked toolbar panel background but not a specific tool —
                 // do nothing (don't start a new selection from here).
@@ -848,24 +857,6 @@ void CaptureOverlay::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
-    if (!m_recordingPanelOpen && m_captureCropMenuOpen) {
-        int newHover = -1;
-        for (int i = 0; i < m_captureCropMenuItemRects.size(); ++i) {
-            if (m_captureCropMenuItemRects[i].contains(pos)) {
-                newHover = i;
-                break;
-            }
-        }
-        if (newHover != m_hoveredCaptureCropMenuItem) {
-            m_hoveredCaptureCropMenuItem = newHover;
-            update();
-        }
-        if (newHover != -1) {
-            setCursor(Qt::PointingHandCursor);
-            return;
-        }
-    }
-
     // Recording panel hover
     if (m_recordingPanelOpen && !m_dragging && m_resizing == HandlePos::None && !m_moving) {
         if (m_cropMenuOpen && m_cropMenuPanelRect.contains(pos)) {
@@ -956,8 +947,8 @@ void CaptureOverlay::mouseMoveEvent(QMouseEvent* event)
         double aspectRatio = 0.0;
         if (m_recordingPanelOpen && m_recordAspectRatioIndex > 0) {
             aspectRatio = aspectRatioForIndex(m_recordAspectRatioIndex);
-        } else if (!m_recordingPanelOpen && m_captureAspectRatioIndex > 0) {
-            aspectRatio = aspectRatioForIndex(m_captureAspectRatioIndex);
+        } else if (!m_recordingPanelOpen && m_topBarSnapToRatios && m_topBarAspectRatio > 0.0) {
+            aspectRatio = m_topBarAspectRatio;
         }
 
         if (aspectRatio > 0.0) {
@@ -1100,6 +1091,55 @@ void CaptureOverlay::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
+    // Hover — crop dropdown menu first so it stays interactive below the bar.
+    if (!m_dragging && !m_moving && m_resizing == HandlePos::None && topBarVisible() && m_topBarCropMenuOpen) {
+        int newMenuHover = -1;
+        for (int i = 0; i < m_topBarCropMenuItemRects.size(); ++i) {
+            if (m_topBarCropMenuItemRects[i].contains(pos)) {
+                newMenuHover = i;
+                break;
+            }
+        }
+        if (newMenuHover != m_hoveredTopBarCropItem) {
+            m_hoveredTopBarCropItem = newMenuHover;
+            update();
+        }
+        if (newMenuHover >= 0) {
+            setCursor(Qt::PointingHandCursor);
+            return;
+        }
+    }
+    // Hover — top-center bar first (only when not dragging/resizing/moving so
+    // drags can pass underneath it without flicker).
+    if (!m_dragging && !m_moving && m_resizing == HandlePos::None && topBarVisible()) {
+        const int newAspectHover = hitTestTopBarAspect(pos);
+        const TopBarButton newButtonHover = hitTestTopBarButton(pos);
+        const int settledAspect = (newButtonHover == TopBarButton::None) ? newAspectHover : -1;
+        if (settledAspect != m_hoveredTopBarAspect || newButtonHover != m_hoveredTopBarButton) {
+            m_hoveredTopBarAspect = settledAspect;
+            m_hoveredTopBarButton = newButtonHover;
+            update();
+        }
+        if (settledAspect >= 0 || newButtonHover != TopBarButton::None) {
+            setCursor(Qt::PointingHandCursor);
+            return;
+        }
+        if (pointInTopBar(pos)) {
+            if (m_hoveredTopBarAspect != -1 || m_hoveredTopBarButton != TopBarButton::None) {
+                m_hoveredTopBarAspect = -1;
+                m_hoveredTopBarButton = TopBarButton::None;
+                update();
+            }
+            setCursor(Qt::ArrowCursor);
+            // Fall through to toolbar hover so a bar-adjacent selection still
+            // highlights correctly; bar chrome itself keeps arrow cursor.
+        } else if (m_hoveredTopBarAspect != -1 || m_hoveredTopBarButton != TopBarButton::None) {
+            m_hoveredTopBarAspect = -1;
+            m_hoveredTopBarButton = TopBarButton::None;
+            update();
+        }
+    }
+
     // Hover — update toolbar highlight + cursor
     if (m_hasSelection) {
         const QRect sel = m_selection.normalized();
@@ -1116,14 +1156,13 @@ void CaptureOverlay::mouseMoveEvent(QMouseEvent* event)
         for (int i = 0; i < NUM_TOOLS; ++i) {
             if (layout.toolCells[i].contains(pos)) { newHover = i; break; }
         }
-        bool newSizeHover = layout.sizeCard.contains(pos);
-        bool newCropHover = layout.cropCard.contains(pos);
-        if (newHover != m_hoveredTool
-            || newSizeHover != m_hoveredSizeCard
-            || newCropHover != m_hoveredCaptureCropCard) {
+        if (newHover != m_hoveredTool) {
             m_hoveredTool = newHover;
-            m_hoveredSizeCard = newSizeHover;
-            m_hoveredCaptureCropCard = newCropHover;
+            update();
+        }
+        if (m_hoveredSizeCard || m_hoveredCaptureCropCard) {
+            m_hoveredSizeCard = false;
+            m_hoveredCaptureCropCard = false;
             update();
         }
     }
@@ -1249,9 +1288,7 @@ void CaptureOverlay::mouseDoubleClickEvent(QMouseEvent* event)
             height(),
             m_captureIntent == CaptureIntent::Scroll
         );
-        bool clickedToolbar = layout.leftToolsPanel.contains(pos) ||
-                              layout.sizeCard.contains(pos) ||
-                              layout.cropCard.contains(pos);
+        bool clickedToolbar = layout.leftToolsPanel.contains(pos);
         if (clickedToolbar) {
             for (int i = 0; i < NUM_TOOLS; ++i) {
                 if (layout.toolCells[i].contains(pos)) {
@@ -1315,12 +1352,6 @@ void CaptureOverlay::mouseDoubleClickEvent(QMouseEvent* event)
                     }
                     return;
                 }
-            }
-            if (layout.cropCard.contains(pos)) {
-                const bool wasOpen = m_captureCropMenuOpen;
-                m_captureCropMenuOpen = !wasOpen;
-                update();
-                return;
             }
             return; // Clicked toolbar background — do nothing
         }
@@ -1433,6 +1464,12 @@ void CaptureOverlay::keyPressEvent(QKeyEvent* event)
     bool shift = event->modifiers() & Qt::ShiftModifier;
     switch (event->key()) {
     case Qt::Key_Escape:
+        if (m_topBarCropMenuOpen) {
+            m_topBarCropMenuOpen = false;
+            m_hoveredTopBarCropItem = -1;
+            update();
+            break;
+        }
         // In window picker, ESC returns to area selection instead of quitting.
         if (m_windowMode) {
             exitWindowMode(true);
