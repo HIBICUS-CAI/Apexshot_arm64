@@ -102,13 +102,28 @@ impl MotionState {
             .and_then(|index| self.segments.get(index))
             .map(|segment| segment.timing)
             .unwrap_or_default();
+        // Keep the zoom anchor fixed across a flush chain: a new clip inherits
+        // the anchor of the move it chains from (else the selected clip's
+        // anchor, else center). Resetting to center here would hard-cut the
+        // zoom focus at every boundary of a Position-driven edge tour.
+        let (anchor_x, anchor_y) = self
+            .segments
+            .iter()
+            .find(|segment| !segment.is_disabled && (segment.end - start).abs() <= 1e-9)
+            .map(|segment| (segment.zoom_anchor_x, segment.zoom_anchor_y))
+            .or_else(|| {
+                self.selected
+                    .and_then(|index| self.segments.get(index))
+                    .map(|segment| (segment.zoom_anchor_x, segment.zoom_anchor_y))
+            })
+            .unwrap_or((0.5, 0.5));
         self.segments.push(MotionSegment {
             start,
             end,
             zoom_mode: MotionZoomMode::Manual,
             intensity: 1.0,
-            zoom_anchor_x: 0.5,
-            zoom_anchor_y: 0.5,
+            zoom_anchor_x: anchor_x,
+            zoom_anchor_y: anchor_y,
             is_disabled: false,
             from: MotionTransform::default(),
             to: MotionTransform {

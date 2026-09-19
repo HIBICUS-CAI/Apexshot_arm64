@@ -2,8 +2,10 @@ use gtk4::{gdk, prelude::*, DrawingArea, GestureClick, GestureDrag, Widget};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-/// Direct 2D control for a Motion transform's signed X/Y position.
+/// Direct 2D control for a Motion transform's camera framing (Ken Burns).
 ///
+/// Pad top-right shows top-right, matching Final Cut / iMovie: the card moves
+/// opposite the camera so the requested region lands in the stage center.
 /// The pad is deliberately a view/controller only: callers can synchronize it
 /// from sliders without emitting another change, avoiding feedback loops.
 #[derive(Clone)]
@@ -59,6 +61,7 @@ impl MotionPositionPad {
         });
         area.add_controller(drag);
         area.set_cursor(gdk::Cursor::from_name("move", None).as_ref());
+        area.set_tooltip_text(Some("Drag to choose what the camera shows"));
         pad
     }
 
@@ -81,8 +84,8 @@ impl MotionPositionPad {
         let width = f64::from(self.area.allocated_width().max(1));
         let height = f64::from(self.area.allocated_height().max(1));
         let x = (point_x / width * 2.0 - 1.0).clamp(-1.0, 1.0);
-        // Motion's positive Y moves the card down, which matches GTK's
-        // top-to-bottom coordinate system.
+        // Camera framing: positive Y shows the lower part of the scene, which
+        // matches GTK's top-to-bottom coordinate system.
         let y = (point_y / height * 2.0 - 1.0).clamp(-1.0, 1.0);
         self.set_position(x, y);
         for listener in self.listeners.borrow().iter().cloned() {
