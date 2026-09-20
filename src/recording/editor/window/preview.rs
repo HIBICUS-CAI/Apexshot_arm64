@@ -99,7 +99,43 @@ fn build_preview_inner(
     overlay.set_halign(Align::Fill);
     overlay.set_valign(Align::Fill);
     overlay.set_overflow(gtk4::Overflow::Hidden);
-    overlay.set_child(Some(&clip));
+
+    // Background sits behind the video so wallpaper/color surrounds the
+    // padded canvas instead of painting over the footage. `clip` (the video)
+    // becomes an overlay with an 18px inset when a background is active,
+    // leaving the fill visible around it.
+    let bg_box = GtkBox::new(Orientation::Vertical, 0);
+    bg_box.add_css_class("recording-editor-preview-bg");
+    bg_box.set_hexpand(true);
+    bg_box.set_vexpand(true);
+    bg_box.set_halign(Align::Fill);
+    bg_box.set_valign(Align::Fill);
+    let bg_picture = Picture::new();
+    bg_picture.add_css_class("recording-editor-preview-bg-image");
+    bg_picture.set_hexpand(true);
+    bg_picture.set_vexpand(true);
+    bg_picture.set_halign(Align::Fill);
+    bg_picture.set_valign(Align::Fill);
+    bg_picture.set_content_fit(gtk4::ContentFit::Cover);
+    bg_picture.set_can_shrink(true);
+    bg_picture.set_visible(false);
+    let bg_css = CssProvider::new();
+    if let Some(display) = gtk4::gdk::Display::default() {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &bg_css,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
+        );
+    }
+    let bg_stack = Overlay::new();
+    bg_stack.set_hexpand(true);
+    bg_stack.set_vexpand(true);
+    bg_stack.set_halign(Align::Fill);
+    bg_stack.set_valign(Align::Fill);
+    bg_stack.set_child(Some(&bg_box));
+    bg_stack.add_overlay(&bg_picture);
+    overlay.set_child(Some(&bg_stack));
+    overlay.add_overlay(&clip);
 
     let initial_ratio = {
         let state = state.lock().unwrap();
@@ -169,6 +205,9 @@ fn build_preview_inner(
         let picture = picture.clone();
         let clip = clip.clone();
         let zoom_css = zoom_css.clone();
+        let bg_css = bg_css.clone();
+        let bg_picture = bg_picture.clone();
+        let overlay_tick = overlay.clone();
         let stage = stage.clone();
         let clock = clock.clone();
         let aspect_label = aspect_label.clone();
@@ -178,14 +217,18 @@ fn build_preview_inner(
         let cursor_layer_tick = cursor_layer.clone();
         let empty_hint = empty_hint.clone();
         let last_zoom_css = Rc::new(RefCell::new(String::new()));
+        let last_bg_css = Rc::new(RefCell::new(String::new()));
+        let last_wallpaper = Rc::new(RefCell::new(String::new()));
+        let last_margins = Rc::new(RefCell::new((i32::MIN, 0, 0, 0)));
         glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
             let playing = media_tick.is_playing();
-            let (dims, zoom, pad, playhead, duration, hidden, label, placing) = {
+            let (dims, base, zoom, pad, playhead, duration, hidden, label, placing, background) = {
                 let s = state.lock().unwrap();
                 let source_t = s.source_playhead();
                 let (scale, _) = s.eval_zoom(source_t);
                 (
                     s.padded_output_dimensions(),
+                    s.canvas_dimensions(),
                     scale,
                     !s.background.is_none(),
                     source_t,
@@ -193,6 +236,7 @@ fn build_preview_inner(
                     s.video_hidden,
                     s.canvas_label(),
                     placing_manual(&s, playing),
+                    s.background.clone(),
                 )
             };
             placing_focus.set(placing);
@@ -220,6 +264,19 @@ fn build_preview_inner(
             if (stage.ratio() - next_ratio).abs() > 0.001 {
                 stage.set_ratio(next_ratio);
             }
+            // Centered base-aspect rect first so the zoom transform below
+            // measures the video rect: wallpaper surrounds the video, no
+            // black letterbox bars. Covers the unpadded case too (zero
+            // margins), and keeps cursor math mapped to the video.
+            apply_preview_clip(
+                &clip,
+                &cursor_layer,
+                &overlay_tick,
+                base,
+                dims,
+                pad,
+                &last_margins,
+            );
             apply_preview_view(
                 &state,
                 &picture,
@@ -229,7 +286,13 @@ fn build_preview_inner(
                 playhead,
                 placing,
             );
-            apply_preview_pad(&clip, pad);
+            apply_preview_background(
+                &bg_css,
+                &bg_picture,
+                &last_bg_css,
+                &last_wallpaper,
+                &background,
+            );
             cursor_layer.queue_draw();
             glib::ControlFlow::Continue
         });
@@ -625,12 +688,51 @@ fn canvas_ratio(width: u32, height: u32) -> f32 {
     width.max(1) as f32 / height.max(1) as f32
 }
 
-fn apply_preview_pad(clip: &Overlay, padded: bool) {
-    let pad = if padded { 18 } else { 0 };
-    clip.set_margin_start(pad);
-    clip.set_margin_end(pad);
-    clip.set_margin_top(pad);
-    clip.set_margin_bottom(pad);
+// Center the base-size video rect inside the padded stage for both the
+// video and the cursor layer. The stage already has the padded canvas
+// aspect, so the rect is scaled by the base/out fractions: padding shows on
+// all four sides exactly like export (which centers base in out), instead
+// of a maximized fit that touches the long edges. Cursor math (which
+// assumes the layer maps exactly to the video) stays correct.
+fn apply_preview_clip(
+    clip: &Overlay,
+    cursor_layer: &DrawingArea,
+    overlay: &Overlay,
+    base: (u32, u32),
+    out: (u32, u32),
+    padded: bool,
+    last_margins: &RefCell<(i32, i32, i32, i32)>,
+) {
+    let margins = if !padded {
+        (0, 0, 0, 0)
+    } else {
+        let ow = overlay.allocated_width().max(0) as f64;
+        let oh = overlay.allocated_height().max(0) as f64;
+        if ow < 2.0 || oh < 2.0 {
+            // Allocation not ready yet; fixed inset until the next frame
+            // measures the stage.
+            (18, 18, 18, 18)
+        } else {
+            let fx = 1.0 - base.0.max(1) as f64 / out.0.max(1) as f64;
+            let fy = 1.0 - base.1.max(1) as f64 / out.1.max(1) as f64;
+            let mx = ((fx / 2.0 * ow).round().max(0.0)) as i32;
+            let my = ((fy / 2.0 * oh).round().max(0.0)) as i32;
+            (mx, mx, my, my)
+        }
+    };
+    if *last_margins.borrow() == margins {
+        return;
+    }
+    last_margins.replace(margins);
+    let (ms, me, mt, mb) = margins;
+    clip.set_margin_start(ms);
+    clip.set_margin_end(me);
+    clip.set_margin_top(mt);
+    clip.set_margin_bottom(mb);
+    cursor_layer.set_margin_start(ms);
+    cursor_layer.set_margin_end(me);
+    cursor_layer.set_margin_top(mt);
+    cursor_layer.set_margin_bottom(mb);
 }
 
 fn visible_source_view(
@@ -711,6 +813,55 @@ fn apply_preview_view(
     }
 }
 
+fn apply_preview_background(
+    provider: &CssProvider,
+    picture: &Picture,
+    last_css: &RefCell<String>,
+    last_wallpaper: &RefCell<String>,
+    background: &VideoBackground,
+) {
+    // Solid fills go through CSS on the stage box; wallpapers use a Cover-fit
+    // Picture so bundled JPGs render without a Cairo decode on this path.
+    let (css, wallpaper) = match background {
+        VideoBackground::None => (
+            ".recording-editor-preview-bg { background: transparent; }".to_string(),
+            None,
+        ),
+        VideoBackground::Plain { r, g, b } => (
+            format!(".recording-editor-preview-bg {{ background: rgb({r},{g},{b}); }}"),
+            None,
+        ),
+        VideoBackground::Gradient(_) => (
+            ".recording-editor-preview-bg { background: linear-gradient(135deg, #2e3857 0%, #6b2f47 100%); }".to_string(),
+            None,
+        ),
+        VideoBackground::Wallpaper(path) => (
+            ".recording-editor-preview-bg { background: #111111; }".to_string(),
+            Some(path.to_string_lossy().into_owned()),
+        ),
+    };
+    if *last_css.borrow() != css {
+        provider.load_from_data(&css);
+        last_css.replace(css);
+    }
+    match wallpaper {
+        Some(path) if path != *last_wallpaper.borrow() => {
+            if std::path::Path::new(&path).is_file() {
+                picture.set_filename(Some(std::path::Path::new(&path)));
+            }
+            picture.set_visible(std::path::Path::new(&path).is_file());
+            last_wallpaper.replace(path);
+        }
+        Some(_) => {
+            picture.set_visible(true);
+        }
+        None => {
+            picture.set_visible(false);
+            last_wallpaper.replace(String::new());
+        }
+    }
+}
+
 fn draw_preview_overlays(
     state: &Arc<Mutex<VideoEditState>>,
     cr: &gtk4::cairo::Context,
@@ -721,20 +872,8 @@ fn draw_preview_overlays(
     let state = state.lock().unwrap();
     let w = width as f64;
     let h = height as f64;
-    if matches!(state.background, VideoBackground::Plain { .. }) {
-        if let VideoBackground::Plain { r, g, b } = state.background {
-            cr.set_source_rgb(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
-            cr.rectangle(0.0, 0.0, w, h);
-            let _ = cr.fill();
-        }
-    } else if matches!(state.background, VideoBackground::Gradient(_)) {
-        let gradient = gtk4::cairo::LinearGradient::new(0.0, 0.0, w, h);
-        gradient.add_color_stop_rgb(0.0, 0.18, 0.22, 0.42);
-        gradient.add_color_stop_rgb(1.0, 0.42, 0.18, 0.28);
-        let _ = cr.set_source(&gradient);
-        cr.rectangle(0.0, 0.0, w, h);
-        let _ = cr.fill();
-    }
+    // Background now lives behind the video (bg_box/bg_picture); this layer
+    // stays transparent so footage shows through and only cursors paint here.
 
     let source_t = state.source_playhead();
     let view = visible_source_view(&state, source_t, placing);
@@ -867,5 +1006,39 @@ mod tests {
         let css = include_str!("../ui_support_css/01.css");
         assert!(css.contains(".recording-editor-cursor-layer"));
         assert!(css.contains("transform: none"));
+    }
+
+    #[test]
+    fn background_renders_behind_video_not_over_it() {
+        let source = include_str!("preview.rs");
+        assert!(
+            source.contains("recording-editor-preview-bg"),
+            "preview must have a background layer behind the video"
+        );
+        assert!(
+            source.contains("recording-editor-preview-bg-image"),
+            "wallpaper needs a Cover-fit picture behind the video"
+        );
+        assert!(
+            source.contains("fn apply_preview_background"),
+            "preview must drive wallpaper/color from VideoBackground"
+        );
+        assert!(
+            source.contains("VideoBackground::Wallpaper"),
+            "preview must handle wallpaper backgrounds"
+        );
+    }
+
+    #[test]
+    fn padded_video_keeps_base_aspect_without_black_bars() {
+        let source = include_str!("preview.rs");
+        assert!(
+            source.contains("fn apply_preview_clip"),
+            "preview must center a base-aspect rect instead of fixed margins"
+        );
+        assert!(
+            source.contains("cursor_layer.set_margin_start"),
+            "cursor layer must share the video rect so cursor math stays mapped"
+        );
     }
 }

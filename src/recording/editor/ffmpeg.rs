@@ -465,9 +465,15 @@ fn build_composite_convert_args(
     let (out_w, out_h) = state.padded_output_dimensions();
     let pad_x = ((out_w.saturating_sub(base_w)) / 2) & !1;
     let pad_y = ((out_h.saturating_sub(base_h)) / 2) & !1;
-    let bg = match state.background {
+    let wallpaper_path = match &state.background {
+        VideoBackground::Wallpaper(path) if path.is_file() => Some(path.clone()),
+        _ => None,
+    };
+    let bg = match &state.background {
         VideoBackground::Plain { r, g, b } => format!("0x{r:02X}{g:02X}{b:02X}"),
         VideoBackground::Gradient(_) => "0x2C2438".to_string(),
+        VideoBackground::Wallpaper(_) if wallpaper_path.is_some() => "0x111111".to_string(),
+        VideoBackground::Wallpaper(_) => "0x111111".to_string(),
         VideoBackground::None => "0x111111".to_string(),
     };
 
@@ -478,6 +484,8 @@ fn build_composite_convert_args(
         .is_some_and(|sidecar| sidecar.can_render_cursor_overlay())
         && super::cursor_export::write_rgba_track(state, start, end, base_w, base_h, &cursor_path)
             .is_ok();
+    let use_wallpaper = wallpaper_path.is_some() && (out_w != base_w || out_h != base_h);
+    let wallpaper_index = if draw_cursor { 2 } else { 1 };
     let mut filter = format!(
         "[0:v]sendcmd=f={},{}crop@z=w={src_w}:h={src_h}:x=0:y=0,scale={base_w}:{base_h}:force_original_aspect_ratio=decrease,pad={base_w}:{base_h}:(ow-iw)/2:(oh-ih)/2:0x000000",
         escape_filter_path(&cmd_path),
@@ -485,16 +493,38 @@ fn build_composite_convert_args(
         src_w = eff_w.max(2),
         src_h = eff_h.max(2),
     );
-    if draw_cursor {
-        // Blend the RGBA cursor track in the video's own 4:2:0 space. An RGB
-        // working format (what `format=auto` resolves to for an RGBA overlay)
-        // round-trips the frame through RGB, which shifts chroma on every
-        // cropped frame — the purple cast through zooms — and makes the
-        // encoder write 4:4:4 output.
-        filter.push_str("[base];[base][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420");
-    }
-    if out_w != base_w || out_h != base_h {
-        filter.push_str(&format!(",pad={out_w}:{out_h}:{pad_x}:{pad_y}:{bg}"));
+    if use_wallpaper {
+        // Label the prepared video frame so it can be overlaid onto the
+        // wallpaper canvas. Cursor stays on the video, not the background.
+        if draw_cursor {
+            // Blend the RGBA cursor track in the video's own 4:2:0 space. An RGB
+            // working format (what `format=auto` resolves to for an RGBA overlay)
+            // round-trips the frame through RGB, which shifts chroma on every
+            // cropped frame — the purple cast through zooms — and makes the
+            // encoder write 4:4:4 output.
+            filter.push_str(
+                "[base];[base][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420[vbase];",
+            );
+        } else {
+            filter.push_str("[base];");
+        }
+        let video_label = if draw_cursor { "vbase" } else { "base" };
+        filter.push_str(&format!(
+            "[{wallpaper_index}:v]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},setsar=1[bg];[bg][{video_label}]overlay=(W-w)/2:(H-h)/2:format=yuv420"
+        ));
+    } else {
+        if draw_cursor {
+            // Blend the RGBA cursor track in the video's own 4:2:0 space. An RGB
+            // working format (what `format=auto` resolves to for an RGBA overlay)
+            // round-trips the frame through RGB, which shifts chroma on every
+            // cropped frame — the purple cast through zooms — and makes the
+            // encoder write 4:4:4 output.
+            filter
+                .push_str("[base];[base][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420");
+        }
+        if out_w != base_w || out_h != base_h {
+            filter.push_str(&format!(",pad={out_w}:{out_h}:{pad_x}:{pad_y}:{bg}"));
+        }
     }
     let speed = state.speed_for_source(start);
     if (speed - 1.0).abs() > 1e-6 {
@@ -526,6 +556,14 @@ fn build_composite_convert_args(
             format!("{:.0}", super::cursor_export::fps()),
             "-i".into(),
             cursor_path.to_string_lossy().into_owned(),
+        ]);
+    }
+    if let Some(wallpaper) = wallpaper_path.as_ref().filter(|_| use_wallpaper) {
+        args.extend([
+            "-loop".into(),
+            "1".into(),
+            "-i".into(),
+            wallpaper.to_string_lossy().into_owned(),
         ]);
     }
     args.extend(["-filter_complex".into(), filter]);
@@ -1080,5 +1118,80 @@ mod tests {
         assert_eq!(thumbnail_count(1.0), 12);
         assert_eq!(thumbnail_count(60.0), 12);
         assert_eq!(thumbnail_count(3600.0), 12);
+    }
+
+    #[test]
+    fn wallpaper_background_overlays_video_onto_scaled_wallpaper() {
+        let mut s = state();
+        let dir =
+            std::env::temp_dir().join(format!("apexshot-wallpaper-export-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let wallpaper = dir.join("wallpaper-001.jpg");
+        std::fs::write(&wallpaper, b"fake-jpg").unwrap();
+        s.background = VideoBackground::Wallpaper(wallpaper.clone());
+        s.background_padding = 40.0;
+        assert!(s.needs_composite());
+        let (base_w, base_h) = s.canvas_dimensions();
+        let (out_w, out_h) = s.padded_output_dimensions();
+        assert!(out_w > base_w || out_h > base_h);
+        let args = build_single_convert_args(
+            &s,
+            s.trim_start_seconds,
+            s.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        let graph = args
+            .windows(2)
+            .find(|pair| pair[0] == "-filter_complex")
+            .map(|pair| pair[1].as_str())
+            .expect("wallpaper background exports through the composite graph");
+        // Wallpaper is cover-scaled to the padded canvas, then the video is
+        // centered on top of it instead of a solid-color pad.
+        assert!(
+            graph.contains("force_original_aspect_ratio=increase"),
+            "wallpaper must cover-scale to the canvas: {graph}"
+        );
+        assert!(
+            graph.contains("overlay=(W-w)/2:(H-h)/2"),
+            "video must center onto the wallpaper: {graph}"
+        );
+        assert!(
+            args.windows(2).any(|pair| pair == ["-loop", "1"]),
+            "wallpaper image must loop as an ffmpeg input"
+        );
+        assert!(
+            args.iter()
+                .any(|arg| arg == &wallpaper.to_string_lossy().into_owned()),
+            "wallpaper path must be passed to ffmpeg"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_wallpaper_file_falls_back_to_solid_pad() {
+        let mut s = state();
+        s.background = VideoBackground::Wallpaper(PathBuf::from(
+            "/tmp/apexshot-definitely-missing-wallpaper.jpg",
+        ));
+        s.background_padding = 40.0;
+        let args = build_single_convert_args(
+            &s,
+            s.trim_start_seconds,
+            s.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        let graph = args
+            .windows(2)
+            .find(|pair| pair[0] == "-filter_complex")
+            .map(|pair| pair[1].as_str())
+            .expect("missing wallpaper still exports");
+        assert!(
+            !graph.contains("force_original_aspect_ratio=increase"),
+            "missing wallpaper must not build a wallpaper overlay: {graph}"
+        );
+        assert!(
+            !args.windows(2).any(|pair| pair == ["-loop", "1"]),
+            "missing wallpaper must not add a looped input"
+        );
     }
 }

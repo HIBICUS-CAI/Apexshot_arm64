@@ -1,9 +1,9 @@
 use crate::recording::editor::cursor_sprite;
 use crate::recording::editor::model::{
-    nearest_zoom_preset, ClickEffect, CursorMotionStyle, CursorTheme, EditorTool, VideoEditState,
-    ZoomEasing, ZoomMode, CLIP_SPEED_PRESETS, MAX_CLICK_DURATION_MS, MAX_CLICK_SCALE,
-    MAX_CURSOR_SIZE, MAX_CURSOR_SPEED, MIN_CLICK_DURATION_MS, MIN_CLICK_SCALE, MIN_CURSOR_SIZE,
-    MIN_CURSOR_SPEED, ZOOM_SCALE_PRESETS,
+    nearest_zoom_preset, ClickEffect, CursorMotionStyle, CursorTheme, EditorTool, VideoBackground,
+    VideoEditState, ZoomEasing, ZoomMode, CLIP_SPEED_PRESETS, MAX_CLICK_DURATION_MS,
+    MAX_CLICK_SCALE, MAX_CURSOR_SIZE, MAX_CURSOR_SPEED, MIN_CLICK_DURATION_MS, MIN_CLICK_SCALE,
+    MIN_CURSOR_SIZE, MIN_CURSOR_SPEED, ZOOM_SCALE_PRESETS,
 };
 use gtk4::{
     gdk, glib, prelude::*, Align, Box as GtkBox, Button, ColorChooserDialog, DrawingArea,
@@ -37,10 +37,12 @@ pub(super) fn build_tool_sidebar(
     root.set_size_request(TOOL_SIDEBAR_WIDTH, -1);
 
     let cursor_panel = build_cursor_panel(state.clone(), on_change.clone(), pause_playback.clone());
+    let background_panel = build_background_panel(state.clone(), on_change.clone());
     let zoom_panel = build_zoom_panel(state.clone(), on_change.clone(), pause_playback.clone());
     let hide_panel = build_hide_panel(state.clone(), on_change.clone());
     let clip_panel = build_clip_panel(state.clone(), on_change, pause_playback);
     root.append(&cursor_panel.widget);
+    root.append(&background_panel.widget);
     root.append(&zoom_panel.widget);
     root.append(&hide_panel.widget);
     root.append(&clip_panel.widget);
@@ -50,6 +52,7 @@ pub(super) fn build_tool_sidebar(
     let refresh = {
         let state = state.clone();
         let refresh_cursor = cursor_panel.refresh;
+        let refresh_background = background_panel.refresh;
         let refresh_zoom = zoom_panel.refresh;
         let refresh_hide = hide_panel.refresh;
         let refresh_clip = clip_panel.refresh;
@@ -68,17 +71,22 @@ pub(super) fn build_tool_sidebar(
                 last_zoom.set(false);
             }
             let show_cursor = tool == EditorTool::Cursor;
-            let show_zoom =
-                !show_cursor && (zoom || (!clip && !hide && (last_zoom.get() || pointer_data)));
-            let show_hide = !show_cursor && !show_zoom && hide;
+            let show_background = tool == EditorTool::Background;
+            let show_zoom = !show_cursor
+                && !show_background
+                && (zoom || (!clip && !hide && (last_zoom.get() || pointer_data)));
+            let show_hide = !show_cursor && !show_background && !show_zoom && hide;
             cursor_panel.widget.set_visible(show_cursor);
+            background_panel.widget.set_visible(show_background);
             zoom_panel.widget.set_visible(show_zoom);
             hide_panel.widget.set_visible(show_hide);
             clip_panel
                 .widget
-                .set_visible(!show_cursor && !show_zoom && !show_hide);
+                .set_visible(!show_cursor && !show_background && !show_zoom && !show_hide);
             if show_cursor {
                 refresh_cursor();
+            } else if show_background {
+                refresh_background();
             } else if show_zoom {
                 refresh_zoom();
             } else if show_hide {
@@ -96,6 +104,7 @@ pub(super) fn build_tool_sidebar(
 }
 
 include!("tool_sidebar_cursor.rs");
+include!("tool_sidebar_background.rs");
 
 struct ZoomPanel {
     widget: GtkBox,
@@ -684,4 +693,49 @@ fn delete_tool_button(label: &str) -> Button {
     row.append(&text);
     button.set_child(Some(&row));
     button
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn background_panel_opens_like_cursor() {
+        let source = include_str!("tool_sidebar.rs");
+        assert!(
+            source.contains("build_background_panel"),
+            "right sidebar must build a Background panel"
+        );
+        assert!(
+            source.contains("EditorTool::Background"),
+            "right sidebar must show Background when the rail selects it"
+        );
+        let panel = include_str!("tool_sidebar_background.rs");
+        assert!(
+            panel.contains("WALLPAPER"),
+            "Background panel must offer wallpapers"
+        );
+        assert!(
+            panel.contains("VideoBackground::Wallpaper"),
+            "wallpaper picks must store VideoBackground::Wallpaper"
+        );
+        assert!(
+            panel.contains("VideoBackground::Plain"),
+            "Background panel must offer solid colors"
+        );
+        assert!(
+            !panel.contains("VideoBackground::Gradient"),
+            "video Background supports wallpaper + color only, unlike the image editor"
+        );
+        assert!(
+            panel.contains("padding_widget.set_visible(has_fill)"),
+            "padding must hide on None instead of sitting there disabled"
+        );
+        assert!(
+            panel.contains("editor-motion-wallpaper-thumbnail"),
+            "wallpaper tiles must reuse the image editor chrome"
+        );
+        assert!(
+            panel.contains("set_content_width(56)"),
+            "wallpaper tiles must be fixed-size so the grid never stretches the sidebar"
+        );
+    }
 }
