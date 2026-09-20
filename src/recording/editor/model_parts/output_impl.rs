@@ -65,47 +65,9 @@ impl VideoEditState {
         if self.dimension_preset == DimensionPreset::Original {
             "Original"
         } else {
-            let (width, height) = self.padded_output_dimensions();
+            let (width, height) = self.output_dimensions();
             closest_aspect_ratio(width, height)
         }
-    }
-
-    pub fn padded_output_dimensions(&self) -> (u32, u32) {
-        let (base_w, base_h) = self.canvas_dimensions();
-        if self.background.is_none() {
-            return (base_w, base_h);
-        }
-        let layout = crate::capture::editor::composition::BackgroundComposition::new(
-            base_w as f64,
-            base_h as f64,
-        )
-        .with_style(match &self.background {
-            VideoBackground::None => crate::capture::editor::types::BackgroundStyle::None,
-            VideoBackground::Plain { r, g, b } => {
-                crate::capture::editor::types::BackgroundStyle::PlainColor(
-                    crate::capture::editor::types::DrawColor::new(
-                        *r as f64 / 255.0,
-                        *g as f64 / 255.0,
-                        *b as f64 / 255.0,
-                        1.0,
-                    ),
-                )
-            }
-            VideoBackground::Gradient(index) => {
-                crate::capture::editor::types::BackgroundStyle::Gradient(*index)
-            }
-            VideoBackground::Wallpaper(path) => {
-                crate::capture::editor::types::BackgroundStyle::Wallpaper(path.clone())
-            }
-        })
-        .with_padding(self.background_padding)
-        .with_shadow(self.background_shadow)
-        .with_corner_radius(self.background_corner_radius)
-        .compute();
-        (
-            even_dimension(layout.canvas_width.round().max(2.0) as u32),
-            even_dimension(layout.canvas_height.round().max(2.0) as u32),
-        )
     }
 
     pub fn estimated_size_bytes(&self, trim_only: bool) -> u64 {

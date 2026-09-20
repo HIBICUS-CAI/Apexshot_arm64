@@ -1,8 +1,8 @@
 //! Direct Wayland screencopy capture via `zwlr_screencopy_manager_v1`.
 //!
 //! This speaks the `wlr-screencopy` Wayland protocol directly over the
-//! compositor socket — the same path `grim` takes.  No D-Bus, no portal
-//! daemon, no screen-sharing popup.  Latency is ~50 ms.
+//! compositor socket.  No D-Bus, no portal daemon, no screen-sharing popup.
+//! Latency is ~50 ms.
 //!
 //! Supported compositors: Sway, Hyprland, Niri, river, and any other
 //! wlroots-based compositor.  Also works on KDE Plasma ≥ 6.3 which ships

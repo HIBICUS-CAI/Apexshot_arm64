@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 /// Direct 2D control for a Motion transform's camera framing (Ken Burns).
 ///
-/// Pad top-right shows top-right, matching Final Cut / iMovie: the card moves
-/// opposite the camera so the requested region lands in the stage center.
+/// Pad top-right shows top-right: the card moves opposite the camera so the
+/// requested region lands in the stage center.
 /// The pad is deliberately a view/controller only: callers can synchronize it
 /// from sliders without emitting another change, avoiding feedback loops.
 #[derive(Clone)]

@@ -17,8 +17,7 @@ pub const DEFAULT_MOTION_EASING_Y2: f64 = 1.0;
 /// 0 is a critically damped spring and 0.5 passes the target by half the move.
 /// The ceiling keeps the oscillation readable: a 50 % overshoot still settles
 /// in roughly three visible swings inside the transition window. The default
-/// mirrors the neutral spring preset (Figma's Gentle): a quick launch that
-/// eases into the target with only a soft round-off.
+/// is a quick launch that eases into the target with only a soft round-off.
 pub const MIN_MOTION_SPRING_BOUNCE: f64 = 0.0;
 pub const MAX_MOTION_SPRING_BOUNCE: f64 = 0.5;
 pub const DEFAULT_MOTION_SPRING_BOUNCE: f64 = 0.05;

@@ -108,7 +108,7 @@ pub struct VideoEditState {
     pub zoom_hidden: bool,
     /// Classic animation keeps a fixed focus point even when the clip is Auto.
     pub zoom_classic: bool,
-    /// 0 = fit the whole clip, 100 = 8× time-axis zoom (WebCut scaler).
+    /// 0 = fit the whole clip, 100 = 8× time-axis zoom on the editor ruler.
     pub timeline_scale: f64,
     /// Seconds of empty timeline before the clip. Dragging the clip body
     /// later on the ruler increases this; it is exported as leading black.

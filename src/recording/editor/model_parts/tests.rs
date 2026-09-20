@@ -340,17 +340,62 @@ fn timeline_stays_open_past_the_clip() {
 }
 
 #[test]
-fn format_webcut_time_matches_reference() {
-    assert_eq!(format_webcut_time(0.0), "00:00:00.000");
-    assert_eq!(format_webcut_time(84.56), "00:01:24.560");
-    assert_eq!(format_webcut_time(3661.005), "01:01:01.005");
+fn format_timecode_pads_hours_minutes_and_millis() {
+    assert_eq!(format_timecode(0.0), "00:00:00.000");
+    assert_eq!(format_timecode(84.56), "00:01:24.560");
+    assert_eq!(format_timecode(3661.005), "01:01:01.005");
 }
 
 #[test]
 fn closest_aspect_ratio_picks_nearest() {
     assert_eq!(closest_aspect_ratio(1920, 1080), "16:9");
     assert_eq!(closest_aspect_ratio(1080, 1080), "1:1");
-    assert_eq!(closest_aspect_ratio(608, 1080), "9:16");
+    assert_eq!(closest_aspect_ratio(1080, 1920), "9:16");
+    assert_eq!(closest_aspect_ratio(1080, 1440), "3:4");
+    assert_eq!(closest_aspect_ratio(1920, 822), "21:9");
+}
+
+#[test]
+fn aspect_presets_fill_a_1080p_envelope() {
+    for &(label, width, height) in &FRAME_ASPECT_RATIOS {
+        assert_eq!((width % 2, height % 2), (0, 0), "{label} needs even dims");
+        assert!(
+            width.min(height) == 1080 || width.max(height) == 1920,
+            "{label} should hold a 1080 short edge or cap its long edge at 1920"
+        );
+        assert_eq!(
+            closest_aspect_ratio(width, height),
+            label,
+            "{label} should stay its own nearest preset"
+        );
+    }
+}
+
+#[test]
+fn every_aspect_preset_keeps_the_source_inside_its_frame() {
+    let mut state = VideoEditState::new(metadata());
+    state.background = VideoBackground::Plain { r: 22, g: 22, b: 22 };
+    let src_aspect = state.metadata.width as f64 / state.metadata.height as f64;
+    for &(label, width, height) in &FRAME_ASPECT_RATIOS {
+        state.apply_aspect_ratio(width, height);
+        assert_eq!(
+            state.output_dimensions(),
+            (width, height),
+            "{label} exports its frame size"
+        );
+        let (vw, vh) = state.video_rect_dimensions();
+        assert_eq!((vw % 2, vh % 2), (0, 0), "{label} needs even video dims");
+        assert!(
+            vw <= width && vh <= height,
+            "{label} keeps the video inside the frame"
+        );
+        assert!(width > vw || height > vh, "{label} leaves room for the fill");
+        let fit_aspect = vw as f64 / vh as f64;
+        assert!(
+            (fit_aspect - src_aspect).abs() < 0.01,
+            "{label} preserves the source aspect"
+        );
+    }
 }
 
 #[test]
@@ -360,13 +405,16 @@ fn apply_aspect_ratio_sets_custom_box() {
     assert_eq!(state.dimension_preset, DimensionPreset::Custom);
     assert_eq!((state.custom_width, state.custom_height), (1080, 1080));
     assert_eq!(state.canvas_dimensions(), (1080, 1080));
-    assert_eq!(state.target_dimensions(), (1080, 608));
-    assert_eq!(state.padded_output_dimensions(), (1080, 1080));
+    // The picked Frame is the export size; the 16:9 source fits inside it.
+    assert_eq!(state.video_rect_dimensions(), (1080, 608));
+    assert_eq!(state.output_dimensions(), (1080, 1080));
+    assert!(state.has_fixed_frame());
     assert!(state.needs_reencode());
     assert_eq!(state.canvas_label(), "1:1");
     state.reset_aspect_ratio();
     assert_eq!(state.dimension_preset, DimensionPreset::Original);
     assert_eq!(state.canvas_dimensions(), (1920, 1080));
+    assert!(!state.has_fixed_frame());
     assert_eq!(state.canvas_label(), "Original");
     assert!(!state.needs_reencode());
 }
@@ -374,7 +422,8 @@ fn apply_aspect_ratio_sets_custom_box() {
 #[test]
 fn dimension_preset_original_uses_source_dimensions() {
     let state = VideoEditState::new(metadata());
-    assert_eq!(state.target_dimensions(), (1920, 1080));
+    assert_eq!(state.video_rect_dimensions(), (1920, 1080));
+    assert_eq!(state.output_dimensions(), (1920, 1080));
 }
 
 #[test]
@@ -386,7 +435,7 @@ fn dimension_preset_fits_inside_box_preserving_aspect() {
     state.custom_width = 1919;
     state.custom_height = 57;
 
-    let (w, h) = state.target_dimensions();
+    let (w, h) = state.video_rect_dimensions();
     assert_eq!((w, h), (114, 64));
     // Aspect roughly matches 16:9 source.
     let aspect = w as f64 / h as f64;
@@ -395,7 +444,9 @@ fn dimension_preset_fits_inside_box_preserving_aspect() {
 }
 
 #[test]
-fn dimension_preset_does_not_upscale_or_stretch() {
+fn dimension_preset_scales_source_up_into_the_frame() {
+    // An explicit Frame is a chosen output size, so a smaller recording is
+    // scaled up to fill the canvas instead of sitting small in the middle.
     let mut state = VideoEditState::new(VideoMetadata {
         path: PathBuf::from("/tmp/input.mp4"),
         duration_seconds: 5.0,
@@ -405,10 +456,77 @@ fn dimension_preset_does_not_upscale_or_stretch() {
         has_audio: false,
     });
     state.dimension_preset = DimensionPreset::P1080;
-    let (w, h) = state.target_dimensions();
-    assert!(w <= 600 && h <= 744);
-    assert_eq!((w, h), (600, 744));
+    let (w, h) = state.video_rect_dimensions();
+    assert_eq!((w, h), (870, 1080));
+    assert_eq!(state.output_dimensions(), (1920, 1080));
+    // Aspect preserved (portrait source stays portrait inside the landscape frame).
+    assert!(w < h);
+    let aspect = w as f64 / h as f64;
+    let src_aspect = 600.0 / 744.0;
+    assert!((aspect - src_aspect).abs() < 0.01);
 }
+
+#[test]
+fn frame_pick_holds_output_size_and_insets_the_video() {
+    // 4:3 recording in a 16:9 frame with a fill: the frame stays the export
+    // size and the fill covers the letterbox + padding around the video,
+    // instead of the canvas growing past the picked ratio.
+    let mut state = VideoEditState::new(VideoMetadata {
+        path: PathBuf::from("/tmp/input.mp4"),
+        duration_seconds: 5.0,
+        width: 1280,
+        height: 960,
+        file_size_bytes: 1024,
+        has_audio: false,
+    });
+    state.apply_aspect_ratio(1920, 1080);
+    state.background = VideoBackground::Plain { r: 0, g: 0, b: 0 };
+    state.background_padding = 40.0;
+
+    assert_eq!(state.output_dimensions(), (1920, 1080));
+    // 40 slider units against a 1920px reference edge.
+    assert!((state.background_padding_px() - 192.0).abs() < 1e-9);
+    assert_eq!(state.video_rect_dimensions(), (928, 696));
+    let (video_w, video_h) = state.video_rect_dimensions();
+    assert!(1920 - video_w >= 384 && 1080 - video_h >= 384);
+}
+
+#[test]
+fn frame_pick_without_fill_keeps_black_letterbox_size() {
+    let mut state = VideoEditState::new(metadata());
+    state.apply_aspect_ratio(854, 480);
+    assert_eq!(state.background_padding_px(), 0.0);
+    assert_eq!(state.output_dimensions(), (854, 480));
+    // Same aspect as the source, so the video fills the frame exactly (the
+    // fit snaps to the box instead of leaving a hairline letterbox).
+    assert_eq!(state.video_rect_dimensions(), (854, 480));
+}
+
+#[test]
+fn original_with_fill_grows_output_around_source() {
+    // `Original` has no picked ratio to hold, so the fill grows the canvas
+    // around the source (Auto sizing), keeping the old padding behaviour.
+    let mut state = VideoEditState::new(metadata());
+    state.background = VideoBackground::Plain { r: 0, g: 0, b: 0 };
+    state.background_padding = 40.0;
+
+    assert_eq!(state.output_dimensions(), (2304, 1464));
+    assert_eq!(state.video_rect_dimensions(), (1920, 1080));
+}
+
+#[test]
+fn fill_floors_padding_so_the_video_never_glues_to_the_edge() {
+    let mut state = VideoEditState::new(metadata());
+    state.apply_aspect_ratio(1080, 1080);
+    state.background = VideoBackground::Plain { r: 0, g: 0, b: 0 };
+    state.background_padding = 0.0;
+
+    // BACKGROUND_MIN_GAP (8) against the 1080px reference edge.
+    assert!((state.background_padding_px() - 8.0 * 2.7).abs() < 1e-9);
+    let (w, _) = state.video_rect_dimensions();
+    assert!(w < 1080);
+}
+
 
 #[test]
 fn needs_reencode_when_dimensions_or_quality_change() {

@@ -352,11 +352,11 @@ fn motion_card_center(
     transform: MotionTransform,
     zoom_anchor: (f64, f64),
 ) -> (f64, f64) {
-    // Position is the camera framing in the background's coordinate space,
-    // matching Final Cut / iMovie Ken Burns: pad top-right shows top-right.
-    // The card moves opposite the camera so the requested region lands in the
-    // stage center. Pad edges map to background edges at every scale instead
-    // of behaving like a small translation or a zoom-dependent pan.
+    // Position is the camera framing in the background's coordinate space:
+    // pad top-right shows top-right. The card moves opposite the camera so the
+    // requested region lands in the stage center. Pad edges map to background
+    // edges at every scale instead of behaving like a small translation or a
+    // zoom-dependent pan.
     let cx = stage.center_x - transform.pos_x * stage.bounds_w * 0.5;
     let cy = stage.center_y - transform.pos_y * stage.bounds_h * 0.5;
     let (anchor_x, anchor_y) = (zoom_anchor.0.clamp(0.0, 1.0), zoom_anchor.1.clamp(0.0, 1.0));

@@ -1,8 +1,7 @@
 use super::{crop_dialog, footer};
 use crate::recording::editor::model::{
-    even_crop_rect, format_webcut_time, source_to_zoomed_point, view_to_source,
-    zoom_camera_transform, CursorSettings, VideoBackground, VideoEditState, ZoomClip, ZoomMode,
-    WEBCUT_ASPECT_RATIOS,
+    even_crop_rect, format_timecode, source_to_zoomed_point, view_to_source, zoom_camera_transform,
+    CursorSettings, VideoBackground, VideoEditState, ZoomClip, ZoomMode, FRAME_ASPECT_RATIOS,
 };
 use crate::recording::editor::sidecar::CursorMotion;
 use gtk4::{
@@ -139,7 +138,7 @@ fn build_preview_inner(
 
     let initial_ratio = {
         let state = state.lock().unwrap();
-        let (w, h) = state.padded_output_dimensions();
+        let (w, h) = state.output_dimensions();
         canvas_ratio(w, h)
     };
     let stage = AspectFrame::new(0.5, 0.5, initial_ratio, false);
@@ -222,15 +221,14 @@ fn build_preview_inner(
         let last_margins = Rc::new(RefCell::new((i32::MIN, 0, 0, 0)));
         glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
             let playing = media_tick.is_playing();
-            let (dims, base, zoom, pad, playhead, duration, hidden, label, placing, background) = {
+            let (dims, video, zoom, playhead, duration, hidden, label, placing, background) = {
                 let s = state.lock().unwrap();
                 let source_t = s.source_playhead();
                 let (scale, _) = s.eval_zoom(source_t);
                 (
-                    s.padded_output_dimensions(),
-                    s.canvas_dimensions(),
+                    s.output_dimensions(),
+                    s.video_rect_dimensions(),
                     scale,
-                    !s.background.is_none(),
                     source_t,
                     s.metadata.duration_seconds,
                     s.video_hidden,
@@ -249,8 +247,8 @@ fn build_preview_inner(
             picture.set_opacity(if hidden { 0.0 } else { 1.0 });
             clock.set_text(&format!(
                 "{} / {}",
-                format_webcut_time(playhead),
-                format_webcut_time(duration)
+                format_timecode(playhead),
+                format_timecode(duration)
             ));
             aspect_label.set_text(label);
             aspect_icon.set_icon_name(Some(aspect_ratio_icon(label)));
@@ -264,17 +262,16 @@ fn build_preview_inner(
             if (stage.ratio() - next_ratio).abs() > 0.001 {
                 stage.set_ratio(next_ratio);
             }
-            // Centered base-aspect rect first so the zoom transform below
-            // measures the video rect: wallpaper surrounds the video, no
-            // black letterbox bars. Covers the unpadded case too (zero
-            // margins), and keeps cursor math mapped to the video.
+            // Video rect first so the zoom transform below measures the
+            // footage: the background fill surrounds the video with no black
+            // letterbox bars. Covers the unpadded case too (zero margins),
+            // and keeps cursor math mapped to the video.
             apply_preview_clip(
                 &clip,
                 &cursor_layer,
                 &overlay_tick,
-                base,
+                video,
                 dims,
-                pad,
                 &last_margins,
             );
             apply_preview_view(
@@ -292,6 +289,7 @@ fn build_preview_inner(
                 &last_bg_css,
                 &last_wallpaper,
                 &background,
+                duration > 0.0,
             );
             cursor_layer.queue_draw();
             glib::ControlFlow::Continue
@@ -423,7 +421,7 @@ pub(super) fn build_stage_tools(
         state.clone(),
         on_change.clone(),
     );
-    for &(label, width, height) in &WEBCUT_ASPECT_RATIOS {
+    for &(label, width, height) in &FRAME_ASPECT_RATIOS {
         append_stage_aspect_item(
             &list,
             &popover,
@@ -624,7 +622,7 @@ fn wire_aspect_menu(
         estimate_label.clone(),
         None,
     );
-    for &(label, width, height) in &WEBCUT_ASPECT_RATIOS {
+    for &(label, width, height) in &FRAME_ASPECT_RATIOS {
         append_aspect_item(
             list,
             popover,
@@ -688,22 +686,23 @@ fn canvas_ratio(width: u32, height: u32) -> f32 {
     width.max(1) as f32 / height.max(1) as f32
 }
 
-// Center the base-size video rect inside the padded stage for both the
-// video and the cursor layer. The stage already has the padded canvas
-// aspect, so the rect is scaled by the base/out fractions: padding shows on
-// all four sides exactly like export (which centers base in out), instead
-// of a maximized fit that touches the long edges. Cursor math (which
-// assumes the layer maps exactly to the video) stays correct.
+// Center the video rect inside the stage for both the video and the cursor
+// layer. The stage carries the output canvas aspect, and the rect is the
+// fitted footage inside that canvas: a fixed Frame insets the video (padding
+// plus any letterbox), so the background fill shows around it exactly like
+// export instead of black bars. Keeping the cursor layer on the same rect
+// keeps cursor math mapped to the video.
 fn apply_preview_clip(
     clip: &Overlay,
     cursor_layer: &DrawingArea,
     overlay: &Overlay,
-    base: (u32, u32),
+    video: (u32, u32),
     out: (u32, u32),
-    padded: bool,
     last_margins: &RefCell<(i32, i32, i32, i32)>,
 ) {
-    let margins = if !padded {
+    let fx = 1.0 - video.0.max(1) as f64 / out.0.max(1) as f64;
+    let fy = 1.0 - video.1.max(1) as f64 / out.1.max(1) as f64;
+    let margins = if fx <= 0.0005 && fy <= 0.0005 {
         (0, 0, 0, 0)
     } else {
         let ow = overlay.allocated_width().max(0) as f64;
@@ -713,8 +712,6 @@ fn apply_preview_clip(
             // measures the stage.
             (18, 18, 18, 18)
         } else {
-            let fx = 1.0 - base.0.max(1) as f64 / out.0.max(1) as f64;
-            let fy = 1.0 - base.1.max(1) as f64 / out.1.max(1) as f64;
             let mx = ((fx / 2.0 * ow).round().max(0.0)) as i32;
             let my = ((fy / 2.0 * oh).round().max(0.0)) as i32;
             (mx, mx, my, my)
@@ -819,12 +816,20 @@ fn apply_preview_background(
     last_css: &RefCell<String>,
     last_wallpaper: &RefCell<String>,
     background: &VideoBackground,
+    has_video: bool,
 ) {
     // Solid fills go through CSS on the stage box; wallpapers use a Cover-fit
     // Picture so bundled JPGs render without a Cairo decode on this path.
+    // With no fill the canvas stays black, matching the export's unset-fill
+    // scene (and the image editor's black export backdrop); the empty editor
+    // keeps a transparent stage so the drop hint sits on the workspace.
     let (css, wallpaper) = match background {
-        VideoBackground::None => (
+        VideoBackground::None if !has_video => (
             ".recording-editor-preview-bg { background: transparent; }".to_string(),
+            None,
+        ),
+        VideoBackground::None => (
+            ".recording-editor-preview-bg { background: #000000; }".to_string(),
             None,
         ),
         VideoBackground::Plain { r, g, b } => (
@@ -1030,15 +1035,27 @@ mod tests {
     }
 
     #[test]
-    fn padded_video_keeps_base_aspect_without_black_bars() {
+    fn preview_insets_the_video_rect_so_the_fill_replaces_black_bars() {
         let source = include_str!("preview.rs");
         assert!(
             source.contains("fn apply_preview_clip"),
-            "preview must center a base-aspect rect instead of fixed margins"
+            "preview must center the video rect instead of fixed margins"
         );
         assert!(
             source.contains("cursor_layer.set_margin_start"),
             "cursor layer must share the video rect so cursor math stays mapped"
+        );
+        assert!(
+            source.contains("s.video_rect_dimensions()"),
+            "preview must inset the fitted video rect inside the Frame canvas"
+        );
+        assert!(
+            source.contains("s.output_dimensions()"),
+            "stage must carry the export canvas aspect"
+        );
+        assert!(
+            source.contains(".recording-editor-preview-bg { background: #000000; }"),
+            "no fill must still paint the black scene behind the video"
         );
     }
 }

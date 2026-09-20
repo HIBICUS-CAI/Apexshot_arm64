@@ -486,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn quality_tier_maps_to_obs_crf_range() {
+    fn quality_tier_maps_to_crf_range() {
         assert_eq!(crf_for_quality(0), 23);
         assert_eq!(crf_for_quality(1), 20);
         assert_eq!(crf_for_quality(2), 16);

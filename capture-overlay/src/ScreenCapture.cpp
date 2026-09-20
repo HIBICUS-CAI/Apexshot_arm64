@@ -220,7 +220,7 @@ bool captureViaPortal(QString& outPortalPath, QString& outError, bool interactiv
     return true;
 }
 
-/// Flameshot-style: portal URI → QImage in memory. No re-encode to a second PNG.
+/// Portal URI → QImage in memory. No re-encode to a second PNG.
 bool captureViaPortalToImage(QImage& outImage, QString& outError, bool interactive)
 {
     QString portalPath;

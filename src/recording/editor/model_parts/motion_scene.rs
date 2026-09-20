@@ -271,9 +271,12 @@ impl MotionFrame {
         ((value.round() as i32) / 2 * 2).max(2)
     }
 
-    /// Output canvas for this frame. The long edge keeps the established
-    /// 1920px budget; dimensions are rounded to even values because the MP4
-    /// encoder's yuv420p pixel format requires even sizes.
+    /// Output canvas for this frame. Landscape keeps the established 1920px
+    /// long edge; portrait is sized by width so vertical frames export at the
+    /// 1080x1920 social standard (9:16) instead of a narrow letterbox, and a
+    /// ratio taller than 9:16 caps its long edge at the same 1920 budget.
+    /// Dimensions are rounded to even values because the MP4 encoder's
+    /// yuv420p pixel format requires even sizes.
     pub fn output_size(&self) -> (i32, i32) {
         if let Some((w, h)) = self.preset.fixed_dimensions() {
             return (Self::even(f64::from(w)), Self::even(f64::from(h)));
@@ -296,7 +299,14 @@ impl MotionFrame {
             _ => match self.effective_aspect() {
                 None => (1920, 1080),
                 Some(aspect) if aspect >= 1.0 => (1920, Self::even(1920.0 / aspect)),
-                Some(aspect) => (Self::even(1080.0 * aspect), 1080),
+                Some(aspect) => {
+                    let height = 1080.0 / aspect;
+                    if height > 1920.0 {
+                        (Self::even(1920.0 * aspect), 1920)
+                    } else {
+                        (1080, Self::even(height))
+                    }
+                }
             },
         }
     }

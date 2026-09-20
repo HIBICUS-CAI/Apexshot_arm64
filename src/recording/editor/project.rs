@@ -162,8 +162,8 @@ pub enum CursorThemeFile {
     #[serde(alias = "tahoe-inverted")]
     TahoeInverted,
     Dot,
-    #[serde(alias = "minimal")]
-    Figma,
+    #[serde(alias = "figma")]
+    Minimal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -478,7 +478,7 @@ fn cursor_theme_to_file(theme: CursorTheme) -> CursorThemeFile {
         CursorTheme::Tahoe => CursorThemeFile::Tahoe,
         CursorTheme::TahoeInverted => CursorThemeFile::TahoeInverted,
         CursorTheme::Dot => CursorThemeFile::Dot,
-        CursorTheme::Figma => CursorThemeFile::Figma,
+        CursorTheme::Minimal => CursorThemeFile::Minimal,
     }
 }
 
@@ -492,7 +492,7 @@ fn cursor_theme_from_file(theme: CursorThemeFile) -> CursorTheme {
         CursorThemeFile::Tahoe => CursorTheme::Tahoe,
         CursorThemeFile::TahoeInverted => CursorTheme::TahoeInverted,
         CursorThemeFile::Dot => CursorTheme::Dot,
-        CursorThemeFile::Figma => CursorTheme::Figma,
+        CursorThemeFile::Minimal => CursorTheme::Minimal,
     }
 }
 
@@ -839,6 +839,23 @@ mod tests {
             project_path_for_video(Path::new("/tmp/a.mp4")),
             project_path_for_video(Path::new("/tmp/b.mp4"))
         );
+    }
+
+    #[test]
+    fn legacy_figma_cursor_theme_key_still_loads() {
+        // Projects saved before the rename stored "figma" for the Minimal
+        // theme. New saves write "minimal", which older builds already accept
+        // through the alias they carried for that key.
+        let legacy: CursorThemeFile = serde_json::from_str("\"figma\"").unwrap();
+        assert_eq!(legacy, CursorThemeFile::Minimal);
+        assert_eq!(cursor_theme_from_file(legacy), CursorTheme::Minimal);
+        assert_eq!(
+            serde_json::to_string(&CursorThemeFile::Minimal).unwrap(),
+            "\"minimal\""
+        );
+        assert_eq!(CursorTheme::parse("figma"), CursorTheme::Minimal);
+        assert_eq!(CursorTheme::Minimal.as_str(), "minimal");
+        assert_eq!(CursorTheme::Minimal.label(), "Minimal");
     }
 
     #[test]

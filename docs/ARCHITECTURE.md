@@ -142,7 +142,7 @@ Screen capture functionality:
 **Supported annotation tools:** Pen, Line, Arrow (Standard/Fancy/Curved/Double), Rectangle, Circle, Highlighter, Text, Obfuscate (Pixelate/Blur/Blackout), Number callouts, Crop, Focus.
 
 ### 5. PipeWire Engine (`src/pipewire_engine.rs`)
-OBS-style native `libpipewire` client that replaces GStreamer's `pipewiresrc`:
+Native `libpipewire` client that replaces GStreamer's `pipewiresrc`:
 - `PipeWireCapture` — wraps `pw_thread_loop` → `pw_context` → `pw_core` → `pw_stream`
 - Format negotiation via SPA pods (BGRx/BGRA/RGBx/RGBA, DMA-BUF first, SHM fallback)
 - Frame extraction: DMA-BUF mmap or SHM memcpy → RGBA conversion, cursor compositing

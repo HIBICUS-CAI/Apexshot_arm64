@@ -259,9 +259,9 @@ void CaptureOverlay::setCaptureMenuAreaMode(bool ocr, int timerSeconds)
 
 void CaptureOverlay::focusAndRaiseOverlay()
 {
-    // Flameshot-style placement: pin to full screen geometry (including panel
-    // regions), then request fullscreen so the freeze can cover shell chrome
-    // instead of sitting under it and painting a second status bar.
+    // Pin to full screen geometry (including panel regions), then request
+    // fullscreen so the freeze can cover shell chrome instead of sitting
+    // under it and painting a second status bar.
     QRect targetGeom;
     if (m_targetScreen) {
         targetGeom = m_targetScreen->geometry();
@@ -277,7 +277,7 @@ void CaptureOverlay::focusAndRaiseOverlay()
         setGeometry(targetGeom);
     } else {
         // Single virtual-desktop overlay: still prefer true fullscreen when we
-        // have an opaque freeze so we match Flameshot's cover-everything UX.
+        // have an opaque freeze so it covers everything.
         if (!m_background.isNull()) {
             create();
             QRect desktop;

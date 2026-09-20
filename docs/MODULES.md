@@ -217,7 +217,7 @@ whether the user interacts through the Qt overlay (GNOME) or the daemon/CLI
 
 ### PipeWire Engine (`src/pipewire_engine.rs`)
 
-**Purpose:** Native `libpipewire` client providing OBS-style screen capture.
+**Purpose:** Native `libpipewire` client providing screen capture.
 Replaces GStreamer `pipewiresrc` with direct PipeWire API for both single-frame
 screenshots and continuous video recording.
 

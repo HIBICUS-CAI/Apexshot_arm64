@@ -9,7 +9,7 @@ pub enum CursorTheme {
     Tahoe,
     TahoeInverted,
     Dot,
-    Figma,
+    Minimal,
 }
 
 impl CursorTheme {
@@ -22,7 +22,7 @@ impl CursorTheme {
         Self::Tahoe,
         Self::TahoeInverted,
         Self::Dot,
-        Self::Figma,
+        Self::Minimal,
     ];
 
     pub fn parse(value: &str) -> Self {
@@ -34,7 +34,7 @@ impl CursorTheme {
             "tahoe" => Self::Tahoe,
             "tahoe_inverted" | "tahoe-inverted" => Self::TahoeInverted,
             "dot" => Self::Dot,
-            "figma" | "minimal" => Self::Figma,
+            "figma" | "minimal" => Self::Minimal,
             _ => Self::Adwaita,
         }
     }
@@ -49,7 +49,7 @@ impl CursorTheme {
             Self::Tahoe => "tahoe",
             Self::TahoeInverted => "tahoe_inverted",
             Self::Dot => "dot",
-            Self::Figma => "figma",
+            Self::Minimal => "minimal",
         }
     }
 
@@ -63,7 +63,7 @@ impl CursorTheme {
             Self::Tahoe => "Tahoe",
             Self::TahoeInverted => "Tahoe Inverted",
             Self::Dot => "Dot",
-            Self::Figma => "Minimal",
+            Self::Minimal => "Minimal",
         }
     }
 }

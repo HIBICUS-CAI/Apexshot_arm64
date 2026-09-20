@@ -12,7 +12,7 @@ bool captureFullscreenToTempPng(QString& outPath, QSize& outSize, QString& outEr
 bool captureFullscreenToTempPngViaPortal(QString& outPath,
                                          QSize& outSize,
                                          QString& outError);
-/// Flameshot-style freeze: silent full-desktop capture into a QImage.
+/// Silent full-desktop freeze capture straight into a QImage (no temp file).
 bool captureFullscreenToImage(QImage& outImage, QString& outError);
 /// Crop a logical desktop rect from a freeze image and scale to logical size
 /// so CaptureOverlay can paint 1:1 in widget coordinates.

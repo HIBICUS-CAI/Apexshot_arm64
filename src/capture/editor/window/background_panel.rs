@@ -853,4 +853,25 @@ mod tests {
         };
         assert_eq!(square.output_size(), (1920, 1920));
     }
+
+    #[test]
+    fn portrait_frame_output_sizes_by_width() {
+        use crate::recording::editor::model::{MotionFrame, MotionFramePreset};
+        let size = |preset| {
+            MotionFrame {
+                preset,
+                custom_width: 1920,
+                custom_height: 1440,
+            }
+            .output_size()
+        };
+        // Vertical frames hold a 1080 short edge, so 9:16 exports at the
+        // 1080x1920 story standard instead of a 608px wide letterbox.
+        assert_eq!(size(MotionFramePreset::NineSixteen), (1080, 1920));
+        assert_eq!(size(MotionFramePreset::ThreeFour), (1080, 1440));
+        assert_eq!(size(MotionFramePreset::TwoThree), (1080, 1620));
+        assert_eq!(size(MotionFramePreset::FourFive), (1080, 1350));
+        // Taller than 9:16 the long edge caps at the same 1920 budget.
+        assert_eq!(size(MotionFramePreset::TenTwentyOne), (914, 1920));
+    }
 }

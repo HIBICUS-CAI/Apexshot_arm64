@@ -961,7 +961,7 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
     const bool interactiveSelectorMode =
       areaInitMode || crosshairCaptureMode || openRecordingUiMode || windowCaptureMode;
 
-    // 1) Freeze first (Flameshot-style): capture at hotkey time into memory so
+    // 1) Freeze first: capture at hotkey time into memory so
     // the monitor picker / overlay never appear in the freeze frame, and so we
     // avoid waiting on picker unmap before the expensive grab.
     QImage desktopFreezeImage;

@@ -1244,8 +1244,8 @@ mod tests {
 
     #[test]
     fn position_extremes_map_the_camera_to_the_stage_edges() {
-        // Camera framing (Final Cut / iMovie Ken Burns): pad bottom-right shows
-        // bottom-right, so the card itself shifts to the opposite corner.
+        // Camera framing: pad bottom-right shows bottom-right, so the card
+        // itself shifts to the opposite corner.
         let surface = ImageSurface::create(Format::ARgb32, 1600, 900).expect("surface");
         let layout = frame_layout(
             &surface,

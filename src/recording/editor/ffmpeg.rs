@@ -461,20 +461,24 @@ fn build_composite_convert_args(
     let cursor_path = work_dir.join("cursor.rgba");
     let _ = std::fs::write(&cmd_path, build_sendcmd(state, start, end));
 
-    let (base_w, base_h) = state.canvas_dimensions();
-    let (out_w, out_h) = state.padded_output_dimensions();
-    let pad_x = ((out_w.saturating_sub(base_w)) / 2) & !1;
-    let pad_y = ((out_h.saturating_sub(base_h)) / 2) & !1;
+    // The video is the fitted rect inside the output canvas; a fixed Frame
+    // insets it with the background padding, and the fill (or the black
+    // unset-fill scene) covers everything around it.
+    let (video_w, video_h) = state.video_rect_dimensions();
+    let (out_w, out_h) = state.output_dimensions();
+    let pad_x = ((out_w.saturating_sub(video_w)) / 2) & !1;
+    let pad_y = ((out_h.saturating_sub(video_h)) / 2) & !1;
     let wallpaper_path = match &state.background {
         VideoBackground::Wallpaper(path) if path.is_file() => Some(path.clone()),
         _ => None,
     };
     let bg = match &state.background {
         VideoBackground::Plain { r, g, b } => format!("0x{r:02X}{g:02X}{b:02X}"),
+        // Gradient presets are not offered in the video Background panel;
+        // legacy projects get the flat stand-in color.
         VideoBackground::Gradient(_) => "0x2C2438".to_string(),
-        VideoBackground::Wallpaper(_) if wallpaper_path.is_some() => "0x111111".to_string(),
         VideoBackground::Wallpaper(_) => "0x111111".to_string(),
-        VideoBackground::None => "0x111111".to_string(),
+        VideoBackground::None => "0x000000".to_string(),
     };
 
     let (eff_w, eff_h) = state.effective_source_dimensions();
@@ -482,12 +486,19 @@ fn build_composite_convert_args(
         .sidecar
         .as_ref()
         .is_some_and(|sidecar| sidecar.can_render_cursor_overlay())
-        && super::cursor_export::write_rgba_track(state, start, end, base_w, base_h, &cursor_path)
-            .is_ok();
-    let use_wallpaper = wallpaper_path.is_some() && (out_w != base_w || out_h != base_h);
+        && super::cursor_export::write_rgba_track(
+            state,
+            start,
+            end,
+            video_w,
+            video_h,
+            &cursor_path,
+        )
+        .is_ok();
+    let use_wallpaper = wallpaper_path.is_some() && (out_w != video_w || out_h != video_h);
     let wallpaper_index = if draw_cursor { 2 } else { 1 };
     let mut filter = format!(
-        "[0:v]sendcmd=f={},{}crop@z=w={src_w}:h={src_h}:x=0:y=0,scale={base_w}:{base_h}:force_original_aspect_ratio=decrease,pad={base_w}:{base_h}:(ow-iw)/2:(oh-ih)/2:0x000000",
+        "[0:v]sendcmd=f={},{}crop@z=w={src_w}:h={src_h}:x=0:y=0,scale={video_w}:{video_h},setsar=1",
         escape_filter_path(&cmd_path),
         static_crop_prefix(state),
         src_w = eff_w.max(2),
@@ -503,12 +514,12 @@ fn build_composite_convert_args(
             // cropped frame — the purple cast through zooms — and makes the
             // encoder write 4:4:4 output.
             filter.push_str(
-                "[base];[base][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420[vbase];",
+                "[video];[video][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420[vbase];",
             );
         } else {
-            filter.push_str("[base];");
+            filter.push_str("[video];");
         }
-        let video_label = if draw_cursor { "vbase" } else { "base" };
+        let video_label = if draw_cursor { "vbase" } else { "video" };
         filter.push_str(&format!(
             "[{wallpaper_index}:v]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},setsar=1[bg];[bg][{video_label}]overlay=(W-w)/2:(H-h)/2:format=yuv420"
         ));
@@ -519,10 +530,11 @@ fn build_composite_convert_args(
             // round-trips the frame through RGB, which shifts chroma on every
             // cropped frame — the purple cast through zooms — and makes the
             // encoder write 4:4:4 output.
-            filter
-                .push_str("[base];[base][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420");
+            filter.push_str(
+                "[video];[video][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420",
+            );
         }
-        if out_w != base_w || out_h != base_h {
+        if out_w != video_w || out_h != video_h {
             filter.push_str(&format!(",pad={out_w}:{out_h}:{pad_x}:{pad_y}:{bg}"));
         }
     }
@@ -551,7 +563,7 @@ fn build_composite_convert_args(
             "-pix_fmt".into(),
             "rgba".into(),
             "-video_size".into(),
-            format!("{base_w}x{base_h}"),
+            format!("{video_w}x{video_h}"),
             "-framerate".into(),
             format!("{:.0}", super::cursor_export::fps()),
             "-i".into(),
@@ -595,10 +607,6 @@ fn build_sendcmd(state: &VideoEditState, start: f64, end: f64) -> String {
     let (crop_x, crop_y, eff_w, eff_h) = state.crop_or_full();
     let src_w = eff_w.max(2.0) as u32;
     let src_h = eff_h.max(2.0) as u32;
-    let (base_w, base_h) = state.canvas_dimensions();
-    let (out_w, out_h) = state.padded_output_dimensions();
-    let pad_x = ((out_w.saturating_sub(base_w)) / 2) as f64;
-    let pad_y = ((out_h.saturating_sub(base_h)) / 2) as f64;
     let mut lines = String::new();
     for index in 0..frames {
         let local_t = index as f64 / fps;
@@ -610,7 +618,6 @@ fn build_sendcmd(state: &VideoEditState, start: f64, end: f64) -> String {
             "{local_t:.3} crop@z w {w};\n{local_t:.3} crop@z h {h};\n{local_t:.3} crop@z x {x};\n{local_t:.3} crop@z y {y};\n"
         ));
     }
-    let _ = (pad_x, pad_y, base_w, base_h, out_w, out_h);
     lines
 }
 
@@ -1131,9 +1138,9 @@ mod tests {
         s.background = VideoBackground::Wallpaper(wallpaper.clone());
         s.background_padding = 40.0;
         assert!(s.needs_composite());
-        let (base_w, base_h) = s.canvas_dimensions();
-        let (out_w, out_h) = s.padded_output_dimensions();
-        assert!(out_w > base_w || out_h > base_h);
+        let (video_w, video_h) = s.video_rect_dimensions();
+        let (out_w, out_h) = s.output_dimensions();
+        assert!(out_w > video_w || out_h > video_h);
         let args = build_single_convert_args(
             &s,
             s.trim_start_seconds,
@@ -1168,6 +1175,161 @@ mod tests {
     }
 
     #[test]
+    fn frame_pick_pads_the_letterbox_with_the_fill_not_black() {
+        // 4:3 recording, 16:9 frame, black-ish fill: the exported canvas stays
+        // the frame size and the letterbox + padding take the fill color.
+        let mut s = VideoEditState::new(VideoMetadata {
+            path: PathBuf::from("/tmp/input.mp4"),
+            duration_seconds: 10.0,
+            width: 1280,
+            height: 960,
+            file_size_bytes: 100,
+            has_audio: true,
+        });
+        s.trim_start_seconds = 1.25;
+        s.trim_end_seconds = 8.5;
+        s.apply_aspect_ratio(1920, 1080);
+        s.background = VideoBackground::Plain {
+            r: 44,
+            g: 36,
+            b: 56,
+        };
+        s.background_padding = 40.0;
+        assert!(s.needs_composite());
+
+        let (video_w, video_h) = s.video_rect_dimensions();
+        assert_eq!(s.output_dimensions(), (1920, 1080));
+        let args = build_single_convert_args(
+            &s,
+            s.trim_start_seconds,
+            s.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        let graph = args
+            .windows(2)
+            .find(|pair| pair[0] == "-filter_complex")
+            .map(|pair| pair[1].as_str())
+            .expect("a fill exports through the composite graph");
+
+        assert!(
+            graph.contains(&format!("scale={video_w}:{video_h}")),
+            "video layer must be the fitted rect, not the whole canvas: {graph}"
+        );
+        assert!(
+            graph.contains("pad=1920:1080:") && graph.contains(":0x2C2438"),
+            "letterbox must take the fill color instead of black: {graph}"
+        );
+        assert!(
+            !graph.contains("0x000000"),
+            "a chosen fill must never export black bars: {graph}"
+        );
+    }
+
+    #[test]
+    fn frame_pick_with_wallpaper_needs_no_padding_ring() {
+        // The wallpaper is the canvas, so it must be used even with padding 0:
+        // the video no longer covers the frame on its own.
+        let mut s = state();
+        let dir =
+            std::env::temp_dir().join(format!("apexshot-wallpaper-frame-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let wallpaper = dir.join("wallpaper-002.jpg");
+        std::fs::write(&wallpaper, b"fake-jpg").unwrap();
+        s.background = VideoBackground::Wallpaper(wallpaper.clone());
+        s.background_padding = 0.0;
+        s.apply_aspect_ratio(1080, 1080);
+        assert!(s.needs_composite());
+        assert_eq!(s.output_dimensions(), (1080, 1080));
+
+        let args = build_single_convert_args(
+            &s,
+            s.trim_start_seconds,
+            s.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        let graph = args
+            .windows(2)
+            .find(|pair| pair[0] == "-filter_complex")
+            .map(|pair| pair[1].as_str())
+            .expect("wallpaper background exports through the composite graph");
+        assert!(
+            graph.contains("force_original_aspect_ratio=increase"),
+            "wallpaper must cover-scale to the frame: {graph}"
+        );
+        assert!(
+            graph.contains("overlay=(W-w)/2:(H-h)/2"),
+            "the fitted video must center on the wallpaper: {graph}"
+        );
+        assert!(
+            args.windows(2).any(|pair| pair == ["-loop", "1"]),
+            "wallpaper image must loop as an ffmpeg input"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cursor_track_matches_the_video_rect_not_the_canvas() {
+        // With a Frame picked, cursor pixels must map to the fitted video rect;
+        // the RGBA track used to be canvas-sized, which misplaced the cursor
+        // whenever the recording aspect did not match the frame.
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, CursorKind, PointerSample, PointerSidecar,
+        };
+
+        let mut s = VideoEditState::new(VideoMetadata {
+            path: PathBuf::from("/tmp/input.mp4"),
+            duration_seconds: 0.4,
+            width: 64,
+            height: 48,
+            file_size_bytes: 100,
+            has_audio: false,
+        });
+        s.trim_start_seconds = 0.0;
+        s.trim_end_seconds = 0.2;
+        s.apply_aspect_ratio(64, 96);
+        let mut sidecar =
+            PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x: 10.0,
+            y: 10.0,
+            kind: CursorKind::Default,
+        });
+        sidecar.pointer.push(PointerSample {
+            t: 0.2,
+            x: 40.0,
+            y: 20.0,
+            kind: CursorKind::Default,
+        });
+        s.sidecar = Some(sidecar);
+
+        let (video_w, video_h) = s.video_rect_dimensions();
+        assert_eq!((video_w, video_h), (64, 48));
+        assert_ne!(s.output_dimensions(), (video_w, video_h));
+
+        let args = build_single_convert_args(
+            &s,
+            s.trim_start_seconds,
+            s.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-video_size", &format!("{video_w}x{video_h}")]),
+            "cursor track must be rendered at the video rect size: {args:?}"
+        );
+        let graph = args
+            .windows(2)
+            .find(|pair| pair[0] == "-filter_complex")
+            .map(|pair| pair[1].as_str())
+            .expect("a pointer track exports through the composite graph");
+        assert!(
+            graph.contains("overlay=0:0:eof_action=pass:shortest=0:format=yuv420"),
+            "cursor must blend onto the fitted video layer: {graph}"
+        );
+    }
+
+    #[test]
     fn missing_wallpaper_file_falls_back_to_solid_pad() {
         let mut s = state();
         s.background = VideoBackground::Wallpaper(PathBuf::from(
@@ -1193,5 +1355,105 @@ mod tests {
             !args.windows(2).any(|pair| pair == ["-loop", "1"]),
             "missing wallpaper must not add a looped input"
         );
+    }
+
+    /// First pixel of the exported frame, for letterbox color checks.
+    fn corner_pixel(path: &Path) -> (u8, u8, u8) {
+        let output = Command::new("ffmpeg")
+            .args([
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                path.to_str().unwrap(),
+                "-vf",
+                // yuv420p needs even crop sizes, so take a 2x2 block and use
+                // its first pixel.
+                "crop=2:2:0:0",
+                "-frames:v",
+                "1",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "-",
+            ])
+            .output()
+            .expect("ffmpeg pixel dump");
+        assert!(output.status.success(), "pixel dump failed");
+        assert!(output.stdout.len() >= 3, "pixel dump returned no bytes");
+        (output.stdout[0], output.stdout[1], output.stdout[2])
+    }
+
+    #[test]
+    fn framed_export_fills_the_letterbox_end_to_end() {
+        if Command::new("ffmpeg").arg("-version").output().is_err() {
+            return;
+        }
+        // Cargo's sandbox can isolate /tmp, so keep fixtures in target/.
+        let dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("test-fixtures");
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join(format!("apexshot-frame-source-{}.mp4", std::process::id()));
+        let framed = dir.join(format!("apexshot-frame-filled-{}.mp4", std::process::id()));
+        let plain = dir.join(format!("apexshot-frame-black-{}.mp4", std::process::id()));
+
+        // 4:3 source so a 16:9 frame has to letterbox.
+        let created = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x240:rate=30:duration=1",
+                "-pix_fmt",
+                "yuv420p",
+                source.to_str().unwrap(),
+            ])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !created {
+            return;
+        }
+
+        let metadata = probe_metadata(&source).expect("probe the fixture");
+        let mut state = VideoEditState::new(metadata);
+        state.apply_aspect_ratio(640, 360);
+        state.background = VideoBackground::Plain {
+            r: 220,
+            g: 30,
+            b: 40,
+        };
+        export_edited_to(&state, framed.clone()).expect("export with a fill");
+        let filled = probe_metadata(&framed).expect("probe the framed export");
+        assert_eq!((filled.width, filled.height), (640, 360));
+
+        state.background = VideoBackground::None;
+        export_edited_to(&state, plain.clone()).expect("export without a fill");
+        let unfilled = probe_metadata(&plain).expect("probe the unfilled export");
+        assert_eq!((unfilled.width, unfilled.height), (640, 360));
+
+        let (fr, fg, fb) = corner_pixel(&framed);
+        assert!(
+            fr > 180 && fg < 80 && fb < 90,
+            "letterbox must take the fill color, got rgb({fr},{fg},{fb})"
+        );
+        let (br, bg, bb) = corner_pixel(&plain);
+        assert!(
+            br < 40 && bg < 40 && bb < 40,
+            "an unset fill must keep the black scene, got rgb({br},{bg},{bb})"
+        );
+
+        let _ = std::fs::remove_file(&source);
+        let _ = std::fs::remove_file(&framed);
+        let _ = std::fs::remove_file(&plain);
     }
 }
