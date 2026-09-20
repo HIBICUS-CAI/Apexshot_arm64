@@ -486,7 +486,12 @@ fn build_composite_convert_args(
         src_h = eff_h.max(2),
     );
     if draw_cursor {
-        filter.push_str("[base];[base][1:v]overlay=0:0:eof_action=pass:shortest=0:format=auto");
+        // Blend the RGBA cursor track in the video's own 4:2:0 space. An RGB
+        // working format (what `format=auto` resolves to for an RGBA overlay)
+        // round-trips the frame through RGB, which shifts chroma on every
+        // cropped frame — the purple cast through zooms — and makes the
+        // encoder write 4:4:4 output.
+        filter.push_str("[base];[base][1:v]overlay=0:0:eof_action=pass:shortest=0:format=yuv420");
     }
     if out_w != base_w || out_h != base_h {
         filter.push_str(&format!(",pad={out_w}:{out_h}:{pad_x}:{pad_y}:{bg}"));
@@ -894,6 +899,63 @@ mod tests {
             "cursor/zoom export must not cut the video to a shorter overlay track"
         );
         assert!(args.windows(2).any(|pair| pair == ["-c:v", "libx264"]));
+    }
+
+    #[test]
+    fn cursor_overlay_blends_in_yuv420_never_through_rgb() {
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, CursorKind, PointerSample, PointerSidecar,
+        };
+
+        // Small source and window so the RGBA cursor track stays tiny.
+        let mut state = VideoEditState::new(VideoMetadata {
+            path: PathBuf::from("/tmp/input.mp4"),
+            duration_seconds: 0.4,
+            width: 64,
+            height: 48,
+            file_size_bytes: 100,
+            has_audio: false,
+        });
+        state.trim_start_seconds = 0.0;
+        state.trim_end_seconds = 0.2;
+        let mut sidecar =
+            PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x: 10.0,
+            y: 10.0,
+            kind: CursorKind::Default,
+        });
+        sidecar.pointer.push(PointerSample {
+            t: 0.2,
+            x: 40.0,
+            y: 20.0,
+            kind: CursorKind::Default,
+        });
+        state.sidecar = Some(sidecar);
+
+        let args = build_single_convert_args(
+            &state,
+            state.trim_start_seconds,
+            state.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        let graph = args
+            .windows(2)
+            .find(|pair| pair[0] == "-filter_complex")
+            .map(|pair| pair[1].as_str())
+            .expect("a recorded pointer track exports through the composite graph");
+
+        assert!(graph.contains("overlay=0:0:eof_action=pass:shortest=0:format=yuv420"));
+        // RGB working formats round-trip the frame through RGB, which shifts
+        // chroma on cropped frames (a purple cast through zooms) and makes the
+        // encoder write 4:4:4 output.
+        for rgb in ["format=auto", "format=rgb", "format=gbrp"] {
+            assert!(
+                !graph.contains(rgb),
+                "cursor overlay must not blend in {rgb}"
+            );
+        }
     }
 
     #[test]
