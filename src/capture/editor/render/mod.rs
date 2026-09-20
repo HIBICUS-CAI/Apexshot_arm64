@@ -5,18 +5,24 @@ use image::{ImageBuffer, RgbaImage};
 use rayon::prelude::*;
 
 mod arrows;
+mod background_blur;
 mod effects;
 mod liquid_glass;
+mod noise;
 mod text;
 
 pub use arrows::{
     double_arrow_outline_points, draw_arrow, draw_arrow_control_handles,
     draw_arrow_selection_outline, thorn_arrow_outline_points,
 };
+pub use background_blur::{
+    apply_background_blur, blur_background_surface, BACKGROUND_BLUR_MAX_RADIUS,
+};
 pub use effects::{
     apply_blackout_rect, apply_blur_rect, apply_censor_rect, apply_focus_rect, apply_hybrid_blur,
 };
 pub use liquid_glass::{glass_layer, GlassLook, GlassRing};
+pub use noise::{apply_background_noise, paint_background_noise};
 #[allow(unused_imports)]
 pub use text::{
     cursor_position_for_text_point, draw_active_text_input, draw_text, draw_text_edit_border,

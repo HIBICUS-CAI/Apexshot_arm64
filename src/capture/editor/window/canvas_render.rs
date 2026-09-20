@@ -18,10 +18,12 @@ use crate::capture::editor::{
     color::selection_hit_padding_for_scale,
     composition::BackgroundComposition,
     render::{
-        draw_active_text_input, draw_annotation_action, draw_arrow_control_handles,
-        draw_arrow_selection_outline, draw_canvas_checkerboard_background, draw_draft_action,
-        draw_rgba_to_context, draw_selection_handles, draw_selection_outline,
-        draw_text_edit_border, draw_text_edit_handles, rgba_image_to_surface, text_action_bounds,
+        blur_background_surface, draw_active_text_input, draw_annotation_action,
+        draw_arrow_control_handles, draw_arrow_selection_outline,
+        draw_canvas_checkerboard_background, draw_draft_action, draw_rgba_to_context,
+        draw_selection_handles, draw_selection_outline, draw_text_edit_border,
+        draw_text_edit_handles, paint_background_noise, rgba_image_to_surface, text_action_bounds,
+        BACKGROUND_BLUR_MAX_RADIUS,
     },
     selection::{action_bounds_with_padding, action_resize_handles},
     state::{render_shadow_layer, EditorState},
@@ -40,7 +42,11 @@ pub(super) struct CanvasRenderCaches {
     pub working_surface: Rc<RefCell<Option<ImageSurface>>>,
     pub working_revision: Rc<Cell<u64>>,
     pub background_surface: Rc<RefCell<Option<ImageSurface>>>,
-    pub background_signature: Rc<RefCell<Option<(BackgroundStyle, Option<u64>)>>>,
+    /// Style, blurred-screenshot revision, Appearance blur, and which wallpaper
+    /// pixels the surface was built from (thumbnail flag plus size), so a landed
+    /// full-size decode rebuilds instead of leaving the thumbnail stretched.
+    pub background_signature:
+        Rc<RefCell<Option<(BackgroundStyle, Option<u64>, u64, Option<(bool, i32, i32)>)>>>,
     pub shadow_surface: Rc<RefCell<Option<ImageSurface>>>,
     pub shadow_signature: Rc<Cell<Option<(u32, u32, u64, u64, u64)>>>,
 }
@@ -133,6 +139,8 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             background_alignment,
             background_shadow,
             background_corner_radius,
+            background_noise,
+            background_blur,
             border_thickness,
             border_color,
             frame_style,
@@ -165,6 +173,8 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                 st.background_alignment,
                 st.background_shadow,
                 st.background_corner_radius,
+                st.background_noise,
+                st.background_blur,
                 st.border_thickness,
                 st.border_color,
                 st.frame_style,
@@ -303,6 +313,27 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
             // keeps the checkerboard surround and just adds the window.
             if has_background {
                 let current_style = background_style.clone();
+                // Pixels the Motion runtime already decoded for this wallpaper.
+                // Reusing them keeps a multi-megapixel decode off the UI thread;
+                // carrying which pixels they are in the signature means a landed
+                // full-size decode replaces the cached thumbnail instead of
+                // leaving it stretched (and blurred) over the whole canvas.
+                let motion_wallpaper = match &current_style {
+                    BackgroundStyle::Wallpaper(path) => {
+                        let runtime = motion_runtime.borrow();
+                        let is_selected = runtime.background_surface_path.as_deref()
+                            == Some(path.to_string_lossy().as_ref());
+                        is_selected
+                            .then(|| {
+                                runtime
+                                    .background_surface
+                                    .clone()
+                                    .map(|surface| (surface, runtime.background_surface_is_preview))
+                            })
+                            .flatten()
+                    }
+                    _ => None,
+                };
                 let current_background_signature = (
                     current_style.clone(),
                     if matches!(current_style, BackgroundStyle::Blurred(_)) {
@@ -310,7 +341,14 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     } else {
                         None
                     },
+                    background_blur.to_bits(),
+                    motion_wallpaper.as_ref().map(|(surface, is_preview)| {
+                        (*is_preview, surface.width(), surface.height())
+                    }),
                 );
+                // The blur is baked into the cached surface, so the working
+                // resolution only has to satisfy what the canvas shows on screen.
+                let blur_work_edge = (virtual_w * canvas_t.scale).clamp(256.0, 1280.0);
                 let needs_background_surface = !matches!(
                     current_style,
                     BackgroundStyle::None | BackgroundStyle::PlainColor(_)
@@ -327,41 +365,52 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     let mut background_resolved = true;
                     if let BackgroundStyle::Gradient(idx) = &current_style {
                         let surfaces = gradient_surfaces.borrow();
-                        if let Some(surface) = surfaces.get(*idx).and_then(|s| s.as_ref()) {
-                            *bg_cache = Some(surface.clone());
-                        } else {
-                            let file_name =
-                                super::background_panel::BACKGROUND_GRADIENT_PREVIEW_FILES[*idx];
-                            let path =
-                                super::background_panel::background_gradient_asset_path(file_name);
-                            *bg_cache = rgba_image_to_surface(
-                                &super::background_panel::load_background_preview_image(
-                                    &path,
-                                    super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                        let source = match surfaces.get(*idx).and_then(|s| s.as_ref()) {
+                            Some(surface) => Some(surface.clone()),
+                            None => {
+                                let file_name =
+                                    super::background_panel::BACKGROUND_GRADIENT_PREVIEW_FILES
+                                        [*idx];
+                                let path = super::background_panel::background_gradient_asset_path(
+                                    file_name,
+                                );
+                                rgba_image_to_surface(
+                                    &super::background_panel::load_background_preview_image(
+                                        &path,
+                                        super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                                    )
+                                    .unwrap_or_else(|| RgbaImage::new(1, 1)),
                                 )
-                                .unwrap_or_else(|| RgbaImage::new(1, 1)),
-                            );
-                        }
+                            }
+                        };
+                        *bg_cache = source.map(|surface| {
+                            blurred_preview_background(
+                                &surface,
+                                background_blur,
+                                virtual_w,
+                                blur_work_edge,
+                            )
+                        });
                     } else if let BackgroundStyle::Wallpaper(path) = &current_style {
                         // The Appearance inspector decoded this wallpaper for its
-                        // own preview; reuse those pixels. Decoding here would run
-                        // a multi-megapixel JPEG decode on the UI thread.
-                        // Use the shared runtime's pixels immediately, even while
-                        // they are still the 256px thumb. Showing the new fill
-                        // blurry for one frame beats keeping the old wallpaper
-                        // and feeling dead until the full decode lands.
-                        let motion_surface = {
-                            let runtime = motion_runtime.borrow();
-                            let is_selected = runtime.background_surface_path.as_deref()
-                                == Some(path.to_string_lossy().as_ref());
-                            is_selected
-                                .then(|| runtime.background_surface.clone())
-                                .flatten()
-                        };
-                        if let Some(surface) = motion_surface {
-                            *bg_cache = Some(surface);
+                        // own preview; reuse those pixels rather than running a
+                        // multi-megapixel JPEG decode on the UI thread. Its
+                        // thumbnail paints immediately and the signature above
+                        // rebuilds once the full decode lands.
+                        if let Some((surface, _)) = motion_wallpaper.as_ref() {
+                            *bg_cache = Some(blurred_preview_background(
+                                surface,
+                                background_blur,
+                                virtual_w,
+                                blur_work_edge,
+                            ));
                         } else if let Some(surface) = wallpaper_cache.borrow().get(path) {
-                            *bg_cache = Some(surface.clone());
+                            *bg_cache = Some(blurred_preview_background(
+                                surface,
+                                background_blur,
+                                virtual_w,
+                                blur_work_edge,
+                            ));
                         } else {
                             // Still decoding off-thread; it queues a redraw when it
                             // lands. ponytail: never sync-decode on the UI thread.
@@ -388,14 +437,18 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                             (*working_image).clone()
                         };
 
+                        let (nbw, nbh) = blurred_bg.dimensions();
+                        // The style picks the base level; the Appearance slider
+                        // adds to it, in canvas pixels converted to this working
+                        // image.
                         let blur_radius = match blur_idx {
                             0 => 10.0,
                             1 => 35.0,
                             2 => 80.0,
                             _ => 20.0,
-                        };
-
-                        let (nbw, nbh) = blurred_bg.dimensions();
+                        } + background_blur.clamp(0.0, 1.0)
+                            * BACKGROUND_BLUR_MAX_RADIUS
+                            * (nbw as f64 / virtual_w.max(1.0));
                         crate::capture::editor::render::apply_blur_rect(
                             &mut blurred_bg,
                             Rect {
@@ -439,6 +492,20 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
                     );
                     let _ = context.fill();
                 }
+            }
+
+            // Background grain belongs to the fill, so it lands under the card,
+            // its backings, and its shadow: the screenshot stays clean while the
+            // fill reads as film grain, matching the Motion preview and export.
+            if has_background {
+                paint_background_noise(
+                    &context,
+                    canvas_t.offset_x,
+                    canvas_t.offset_y,
+                    virtual_w * canvas_t.scale,
+                    virtual_h * canvas_t.scale,
+                    background_noise,
+                );
             }
 
             if let Some(layout) = background_layout.as_ref() {
@@ -976,6 +1043,23 @@ pub(super) fn install_canvas_draw_func(input: CanvasDrawInputs<'_>) {
     });
 }
 
+/// Blur the background layer for the Appearance slider. The source may be a
+/// surface the Motion runtime also holds, so it is never borrowed in place; if
+/// the blur cannot be produced the unblurred fill is kept rather than dropping
+/// the background entirely.
+fn blurred_preview_background(
+    source: &ImageSurface,
+    amount: f64,
+    canvas_width: f64,
+    work_edge: f64,
+) -> ImageSurface {
+    if amount <= 0.001 {
+        return source.clone();
+    }
+    blur_background_surface(source, amount, canvas_width, work_edge)
+        .unwrap_or_else(|| source.clone())
+}
+
 fn draw_rounded_rect_path(
     context: &gtk4::cairo::Context,
     width: f64,
@@ -1012,6 +1096,28 @@ mod tests {
                 && production.contains("MAX_PREVIEW_SHADOW_DIM")
                 && production.contains("fn draw_rounded_rect_path"),
             "canvas_render.rs must own render caches, set_draw_func, lock-release snapshot, and rounded-rect helper"
+        );
+    }
+
+    #[test]
+    fn static_canvas_grains_the_fill_from_editor_state() {
+        let source = include_str!("canvas_render.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production.contains("st.background_noise")
+                && production.contains("paint_background_noise("),
+            "the static canvas must paint the fill grain from EditorState, like the Motion preview",
+        );
+    }
+
+    #[test]
+    fn static_canvas_blurs_the_fill_from_editor_state() {
+        let source = include_str!("canvas_render.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production.contains("st.background_blur")
+                && production.contains("blur_background_surface("),
+            "the static canvas must blur the fill from EditorState, like the Motion preview",
         );
     }
 

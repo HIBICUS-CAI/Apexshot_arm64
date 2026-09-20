@@ -560,6 +560,57 @@ mod tests {
     }
 
     #[test]
+    fn background_noise_grains_the_motion_backdrop_only() {
+        let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(0.35, 0.35, 0.35);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let render = |noise: f64| {
+            let mut motion = MotionState::default();
+            motion.appearance.background_padding = 0.0;
+            motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
+            motion.appearance.background_color = [0.08, 0.08, 0.08, 1.0];
+            motion.appearance.background_noise = noise;
+            motion.appearance.shadow_opacity = 0.0;
+            motion.scene_shadow.opacity = 0.0;
+            let frame = ImageSurface::create(Format::ARgb32, 128, 96).unwrap();
+            {
+                let context = Context::new(&frame).unwrap();
+                draw_motion_frame(
+                    &context, 128, 96, &card, &motion, None, None, 0.0, false, true, false, 1.0,
+                );
+            }
+            frame.flush();
+            frame
+        };
+        let sample = |surface: &mut ImageSurface, x: usize, y: usize| {
+            surface.data().unwrap()[(y * 128 + x) * 4]
+        };
+
+        // Padding 0 centers the 64px card in the 128x96 frame, so the corners
+        // are fill and the middle is card.
+        let mut flat = render(0.0);
+        let mut grainy = render(1.0);
+        assert_eq!(
+            sample(&mut flat, 4, 4),
+            sample(&mut flat, 6, 4),
+            "without noise the fill is flat"
+        );
+        // A single pixel can land on a faint speckle, so scan the fill band.
+        let grained = (0..16).any(|x| sample(&mut grainy, x, 4) != sample(&mut flat, x, 4));
+        assert!(grained, "the Motion backdrop fill must carry visible grain");
+        assert_eq!(
+            sample(&mut grainy, 64, 48),
+            sample(&mut flat, 64, 48),
+            "the card composites above the grain and stays clean"
+        );
+    }
+
+    #[test]
     fn scene_shadow_placement_splits_above_and_below_the_card() {
         use crate::recording::editor::model::{
             MotionSceneShadowPlacement, MotionSceneShadowPreset,

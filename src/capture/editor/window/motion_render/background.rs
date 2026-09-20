@@ -93,7 +93,16 @@ fn paint_backdrop(
             }
         }
     }
-    paint_background_noise(context, width, height, appearance.background_noise);
+    // Same grain field as the static canvas and the static export, so the
+    // Background tool reads identically in both editors.
+    crate::capture::editor::render::paint_background_noise(
+        context,
+        0.0,
+        0.0,
+        f64::from(width),
+        f64::from(height),
+        appearance.background_noise,
+    );
     context.restore().ok();
 }
 
@@ -252,24 +261,4 @@ fn paint_cover_fit(
     context.source().set_filter(filter);
     context.paint().ok();
     context.restore().ok();
-}
-
-fn paint_background_noise(context: &Context, width: i32, height: i32, amount: f64) {
-    let amount = amount.clamp(0.0, 1.0);
-    if amount <= 0.001 {
-        return;
-    }
-    // Fixed pseudo-noise keeps every frame stable (and therefore exportable)
-    // rather than shimmering as the Motion playhead advances.
-    let step = 4;
-    for y in (0..height.max(0)).step_by(step) {
-        for x in (0..width.max(0)).step_by(step) {
-            let hash =
-                ((x as u32).wrapping_mul(73_856_093)) ^ ((y as u32).wrapping_mul(19_349_663));
-            let light = if hash & 1 == 0 { 1.0 } else { 0.0 };
-            context.set_source_rgba(light, light, light, amount * 0.045);
-            context.rectangle(f64::from(x), f64::from(y), step as f64, step as f64);
-            context.fill().ok();
-        }
-    }
 }

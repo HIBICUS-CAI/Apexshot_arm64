@@ -1,8 +1,8 @@
 use super::super::composition::{BackgroundComposition, CompositionLayout, FloatRect};
 use super::super::pen_weight::{HighlighterMode, PenWeight};
 use super::super::render::{
-    apply_blur_rect, cairo_argb_to_rgba_image, glass_layer, rgba_image_to_surface, GlassLook,
-    GlassRing,
+    apply_background_blur, apply_background_noise, apply_blur_rect, cairo_argb_to_rgba_image,
+    glass_layer, rgba_image_to_surface, GlassLook, GlassRing, BACKGROUND_BLUR_MAX_RADIUS,
 };
 use super::super::types::{
     AnnotationAction, BackgroundStyle, DrawColor, EditorError, FrameStyle, Rect,
@@ -540,7 +540,7 @@ impl EditorState {
                 layout.canvas_height as u32,
             )?,
             BackgroundStyle::Blurred(blur_idx) => {
-                let blur_radius = match blur_idx {
+                let base_radius = match blur_idx {
                     0 => 10.0,
                     1 => 35.0,
                     2 => 80.0,
@@ -569,6 +569,12 @@ impl EditorState {
                     screenshot.clone()
                 };
                 let (bw, bh) = blurred.dimensions();
+                // The Appearance slider adds to the style's own blur level. Its
+                // radius is measured in canvas pixels, so convert it to this
+                // working image before blurring.
+                let slider_radius = self.background_blur.clamp(0.0, 1.0)
+                    * BACKGROUND_BLUR_MAX_RADIUS
+                    * (f64::from(bw) / layout.canvas_width.max(1.0));
                 apply_blur_rect(
                     &mut blurred,
                     Rect {
@@ -577,7 +583,7 @@ impl EditorState {
                         width: bw as i32,
                         height: bh as i32,
                     },
-                    blur_radius,
+                    base_radius + slider_radius,
                     false,
                 );
                 image::imageops::resize(
@@ -589,6 +595,20 @@ impl EditorState {
             }
             BackgroundStyle::None => return Ok(screenshot.clone()),
         };
+
+        // The Appearance blur softens the fill only, and it lands before the
+        // grain so noise stays crisp on top of a blurred background.
+        if matches!(
+            self.background_style,
+            BackgroundStyle::Gradient(_) | BackgroundStyle::Wallpaper(_)
+        ) {
+            apply_background_blur(&mut canvas, self.background_blur, 1.0);
+        }
+
+        // Background grain belongs to the fill, so it lands before the card,
+        // its backings, and its shadow: the same layer order the canvas preview
+        // and the Motion renderer use.
+        canvas = apply_background_noise(canvas, self.background_noise);
 
         // Backing sheets (Stack looks, Retro window) behind the card.
         {

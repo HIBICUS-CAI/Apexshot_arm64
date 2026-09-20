@@ -781,3 +781,139 @@ fn dump_liquid_glass_preview() {
     )
     .expect("save");
 }
+
+#[test]
+fn final_image_background_noise_grains_the_fill_but_not_the_card() {
+    let image = RgbaImage::from_pixel(200, 150, image::Rgba([90, 90, 90, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.08, 0.08, 0.08, 1.0));
+    state.background_padding = 40.0;
+    state.background_insert = 0.0;
+    state.background_shadow = 0.0;
+    state.background_corner_radius = 0.0;
+
+    let flat = state.to_final_image().expect("final image");
+    state.background_noise = 0.8;
+    let grainy = state.to_final_image().expect("final image");
+
+    let fill = image::Rgba([20, 20, 20, 255]);
+    assert_eq!(
+        *flat.get_pixel(2, 2),
+        fill,
+        "without noise the plain fill stays flat"
+    );
+    // A single pixel can land on a faint speckle, so scan the fill band: once
+    // the slider is up, the background must not be uniform any more.
+    let grained = (0..60).any(|x| *grainy.get_pixel(x, 2) != *flat.get_pixel(x, 2));
+    assert!(grained, "the exported fill must carry visible grain");
+
+    // The screenshot composites above the grain: the card stays clean, and the
+    // grain must not shift the canvas size.
+    assert_eq!(flat.dimensions(), grainy.dimensions());
+    let card = (grainy.width() / 2, grainy.height() / 2);
+    assert_eq!(
+        *grainy.get_pixel(card.0, card.1),
+        *flat.get_pixel(card.0, card.1)
+    );
+    assert_eq!(
+        *grainy.get_pixel(card.0, card.1),
+        image::Rgba([90, 90, 90, 255])
+    );
+}
+
+#[test]
+fn final_image_without_a_fill_never_grains_the_transparent_surround() {
+    let image = RgbaImage::from_pixel(40, 30, image::Rgba([90, 90, 90, 255]));
+    let mut state = EditorState::new(image);
+    state.background_style = BackgroundStyle::None;
+    state.background_noise = 1.0;
+
+    let out = state.to_final_image().expect("final image");
+
+    assert_eq!(out.dimensions(), (40, 30));
+    assert_eq!(*out.get_pixel(0, 0), image::Rgba([90, 90, 90, 255]));
+}
+
+#[test]
+fn final_image_background_blur_softens_the_fill_and_keeps_grain_crisp() {
+    // A hard-edged wallpaper makes the blur measurable.
+    let path = std::env::temp_dir().join("apexshot-background-blur-fixture.png");
+    let mut wallpaper = RgbaImage::new(140, 120);
+    for y in 0..120 {
+        for x in 0..140 {
+            let value = if x < 70 { 0 } else { 255 };
+            wallpaper.put_pixel(x, y, image::Rgba([value, value, value, 255]));
+        }
+    }
+    wallpaper.save(&path).expect("fixture");
+
+    let screenshot = RgbaImage::from_pixel(80, 60, image::Rgba([90, 90, 90, 255]));
+    let mut state = EditorState::new(screenshot);
+    state.background_style = BackgroundStyle::Wallpaper(path.clone());
+    state.background_padding = 30.0;
+    state.background_insert = 0.0;
+    state.background_shadow = 0.0;
+    state.background_corner_radius = 0.0;
+
+    // Row 2 sits in the top padding band, so it is fill only.
+    let row = |image: &RgbaImage| -> Vec<u8> {
+        (0..image.width())
+            .map(|x| image.get_pixel(x, 2)[0])
+            .collect()
+    };
+    // Pixels between the two fill values: the width of the softened edge.
+    let ramp = |values: &[u8]| {
+        values
+            .iter()
+            .filter(|value| **value > 20 && **value < 235)
+            .count()
+    };
+    let flat_run = |image: &RgbaImage| -> f64 {
+        let values: Vec<f64> = (0..30)
+            .map(|x| f64::from(image.get_pixel(x, 2)[0]))
+            .collect();
+        values
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .sum::<f64>()
+            / (values.len() - 1) as f64
+    };
+
+    let sharp = state.to_final_image().expect("final image");
+    state.background_blur = 1.0;
+    let blurred = state.to_final_image().expect("final image");
+
+    assert!(
+        ramp(&row(&sharp)) <= 4,
+        "the wallpaper edge stays hard without blur",
+    );
+    assert!(
+        ramp(&row(&blurred)) > 12,
+        "the Appearance blur must soften the fill's edge",
+    );
+
+    // The card composites above the blurred fill and is never softened.
+    let card = (blurred.width() / 2, blurred.height() / 2);
+    assert_eq!(
+        *blurred.get_pixel(card.0, card.1),
+        image::Rgba([90, 90, 90, 255])
+    );
+
+    // Grain is painted after the blur, so the fill keeps per-pixel speckle
+    // instead of being smoothed into the blurred background.
+    let blurred_flat = flat_run(&blurred);
+    state.background_noise = 1.0;
+    let grainy = state.to_final_image().expect("final image");
+    let grainy_flat = flat_run(&grainy);
+
+    assert!(
+        blurred_flat < 2.0,
+        "a blurred fill is smooth on its own, got {blurred_flat}",
+    );
+    assert!(
+        grainy_flat > 4.0,
+        "grain must stay crisp on top of the blur, got {grainy_flat}",
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
