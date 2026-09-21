@@ -167,31 +167,50 @@ pub(super) fn select_encoder(
     Err(RecordError::NoEncoderFound)
 }
 
-#[cfg(test)]
-pub(super) fn video_encoder_props(profile: &EncoderProfile, config: &RecordingConfig) -> String {
+/// Element properties appended to the encoder in the X11 GStreamer pipeline
+/// string. Validated against the GStreamer 1.28 element property surfaces:
+/// this `x264enc` has neither `preset` nor `crf` (constant quality is
+/// `pass=qual` with the CRF in `quantizer`), and `vp9enc`/`vp8enc` take
+/// `deadline` in microseconds (1000000 = libvpx "good"), so the previous
+/// names parsed only in tests and failed at runtime.
+pub(super) fn video_encoder_props(
+    profile: &EncoderProfile,
+    config: &RecordingConfig,
+    output_size: Option<(u32, u32)>,
+) -> String {
     let key_int_max = config.fps.saturating_mul(2).max(1);
 
-    // File-recording presets (quality over streaming latency).
-
     if profile.encoder == "x264enc" {
-        // veryfast, CRF 22, main profile.
-        return format!("preset=veryfast crf=22 profile=main key-int-max={key_int_max}",);
+        // Quality tier, resolution-compensated exactly like the Wayland
+        // backend's libx264 branch: smaller outputs get a lower CRF so capped
+        // recordings stay sharp.
+        let mut crf = config.crf;
+        if let Some((width, height)) = output_size {
+            crf = crf.saturating_sub(super::super::crf_resolution_reduction(width, height));
+        }
+        return format!(
+            "speed-preset=veryfast pass=qual quantizer={crf} key-int-max={key_int_max}"
+        );
     }
 
     if profile.encoder == "vp9enc" {
-        // Local recording: slightly higher quality than typical streaming CQ.
+        // Local recording: file-quality CQ rather than realtime streaming.
         return format!(
-            "deadline=good end-usage=cq cq-level=20 target-bitrate=0 cpu-used=2 row-mt=true threads=8 keyframe-max-dist={key_int_max} lag-in-frames=0",
+            "deadline=1000000 end-usage=cq cq-level=20 target-bitrate=0 cpu-used=2 \
+             row-mt=true threads=8 keyframe-max-dist={key_int_max} lag-in-frames=0",
         );
     }
 
     if profile.encoder == "vp8enc" {
         return format!(
-            "deadline=good end-usage=cq cq-level=10 target-bitrate=0 cpu-used=2 threads=8 keyframe-max-dist={key_int_max} lag-in-frames=0",
+            "deadline=1000000 end-usage=cq cq-level=10 target-bitrate=0 cpu-used=2 \
+             threads=8 keyframe-max-dist={key_int_max} lag-in-frames=0",
         );
     }
 
     if profile.encoder == "openh264enc" {
+        // CRF is not supported; a solid CBR-ish bitrate, matching the
+        // Wayland backend's libopenh264 8M.
         return "bitrate=8000000 complexity=medium".to_string();
     }
 
