@@ -29,7 +29,7 @@ mod hotkey_listener;
 mod recording_handlers;
 mod scroll;
 
-pub(crate) use audio::{audio_meter_level, find_physical_input_device};
+pub(crate) use audio::audio_meter_level;
 pub use audio::{
     begin_recording_audio_exclusive, end_recording_audio_exclusive, recording_audio_is_exclusive,
 };

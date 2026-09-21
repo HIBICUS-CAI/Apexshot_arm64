@@ -509,9 +509,10 @@ the daemon, the GTK4 overlay, and native PipeWire handle everything.
 **How it works:**
 1. The daemon runs in the background with a system tray icon and global hotkeys.
 2. Triggering a recording action (`apexshot record screen`, tray click, or hotkey)
-   opens the Rust GTK4 overlay for recording configuration.
-3. The overlay provides the same controls as the GNOME path: mic/speaker toggles,
-   format picker (MP4/WebM), countdown, and video quality settings.
+   opens the Rust GTK4 quick-capture menu.
+3. The menu picks what to capture and the mic/speaker toggles; format
+   (MP4/WebM), countdown, resolution and quality come from Settings →
+   Recording, shared with the GNOME path.
 4. Once confirmed, recording begins. On wlroots compositors (Hyprland/Sway),
    `wf-recorder` is preferred when installed for native `wlr-screencopy`
    capture. On other Wayland compositors, native PipeWire capture

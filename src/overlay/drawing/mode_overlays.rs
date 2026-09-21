@@ -1,6 +1,5 @@
 use super::super::background::BackgroundFrame;
 use super::super::layout::*;
-use super::super::recording::state::OverlayIntent;
 use crate::i18n::t;
 use std::f64::consts::PI;
 
@@ -49,109 +48,61 @@ pub(super) fn draw_countdown_bubble(
     _sel_w: f64,
     _sel_h: f64,
     screen_width: f64,
-    screen_height: f64,
+    _screen_height: f64,
     countdown_value: i32,
     hovered_cancel: bool,
-    intent: OverlayIntent,
 ) {
     let _ = context.save();
 
-    if intent != OverlayIntent::Record {
-        // Capture-delay countdown: C++-matching pill badge at top-center.
-        let pill_w = 112.0;
-        let pill_h = 44.0;
-        let pill_x = (screen_width - pill_w) / 2.0;
-        let pill_y = 28.0;
+    // Capture-delay countdown: C++-matching pill badge at top-center.
+    let pill_w = 112.0;
+    let pill_h = 44.0;
+    let pill_x = (screen_width - pill_w) / 2.0;
+    let pill_y = 28.0;
 
-        // Draw pill background
-        if hovered_cancel {
-            context.set_source_rgba(0.78, 0.24, 0.16, 0.95);
-        } else {
-            context.set_source_rgba(0.91, 0.33, 0.13, 0.92);
-        }
-        super::rounded_rect_path(context, pill_x, pill_y, pill_w, pill_h, pill_h / 2.0);
-        let _ = context.fill();
-
-        // Draw clock icon on the left
-        let icon_cx = pill_x + 22.0;
-        let icon_cy = pill_y + pill_h / 2.0;
-        let icon_r = 11.0;
-        context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
-        context.set_line_width(2.2);
-        context.set_line_cap(gtk4::cairo::LineCap::Round);
-        context.arc(icon_cx, icon_cy, icon_r, 0.0, PI * 2.0);
-        let _ = context.stroke();
-        // Clock hands
-        context.move_to(icon_cx, icon_cy);
-        context.line_to(icon_cx, icon_cy - 5.5);
-        context.move_to(icon_cx, icon_cy);
-        context.line_to(icon_cx + 5.0, icon_cy + 2.0);
-        let _ = context.stroke();
-
-        // Draw countdown number
-        context.select_font_face(
-            crate::typography::UI_FONT_FAMILY,
-            gtk4::cairo::FontSlant::Normal,
-            gtk4::cairo::FontWeight::Bold,
-        );
-        context.set_font_size(if hovered_cancel { 13.0 } else { 22.0 });
-        context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
-        let text = if hovered_cancel {
-            t("Cancel")
-        } else {
-            countdown_value.to_string()
-        };
-        if let Ok(extents) = context.text_extents(&text) {
-            let text_x =
-                pill_x + 40.0 + (pill_w - 44.0 - extents.width()) / 2.0 - extents.x_bearing();
-            let text_y = pill_y + (pill_h - extents.height()) / 2.0 - extents.y_bearing();
-            context.move_to(text_x, text_y);
-            let _ = context.show_text(&text);
-        }
+    // Draw pill background
+    if hovered_cancel {
+        context.set_source_rgba(0.78, 0.24, 0.16, 0.95);
     } else {
-        // Recording countdown: centered circle (3-2-1), matching C++.
-        let bubble_size = 184.0;
-        let bubble_x = (screen_width - bubble_size) / 2.0;
-        let bubble_y = (screen_height - bubble_size) / 2.0;
+        context.set_source_rgba(0.91, 0.33, 0.13, 0.92);
+    }
+    super::rounded_rect_path(context, pill_x, pill_y, pill_w, pill_h, pill_h / 2.0);
+    let _ = context.fill();
 
-        if hovered_cancel {
-            context.set_source_rgba(132.0 / 255.0, 38.0 / 255.0, 24.0 / 255.0, 242.0 / 255.0);
-        } else {
-            context.set_source_rgba(0.0, 0.0, 0.0, 240.0 / 255.0);
-        }
-        context.arc(
-            bubble_x + bubble_size / 2.0,
-            bubble_y + bubble_size / 2.0,
-            bubble_size / 2.0,
-            0.0,
-            PI * 2.0,
-        );
-        let _ = context.fill();
+    // Draw clock icon on the left
+    let icon_cx = pill_x + 22.0;
+    let icon_cy = pill_y + pill_h / 2.0;
+    let icon_r = 11.0;
+    context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+    context.set_line_width(2.2);
+    context.set_line_cap(gtk4::cairo::LineCap::Round);
+    context.arc(icon_cx, icon_cy, icon_r, 0.0, PI * 2.0);
+    let _ = context.stroke();
+    // Clock hands
+    context.move_to(icon_cx, icon_cy);
+    context.line_to(icon_cx, icon_cy - 5.5);
+    context.move_to(icon_cx, icon_cy);
+    context.line_to(icon_cx + 5.0, icon_cy + 2.0);
+    let _ = context.stroke();
 
-        // Draw countdown number or "Cancel"
-        context.select_font_face(
-            crate::typography::UI_FONT_FAMILY,
-            gtk4::cairo::FontSlant::Normal,
-            gtk4::cairo::FontWeight::Bold,
-        );
-        context.set_font_size(if hovered_cancel { 34.0 } else { 72.0 });
-        if hovered_cancel {
-            context.set_source_rgba(1.0, 0.89, 0.84, 1.0);
-        } else {
-            context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
-        }
-
-        let text = if hovered_cancel {
-            t("Cancel")
-        } else {
-            countdown_value.to_string()
-        };
-        if let Ok(extents) = context.text_extents(&text) {
-            let text_x = bubble_x + (bubble_size - extents.width()) / 2.0 - extents.x_bearing();
-            let text_y = bubble_y + (bubble_size + extents.height()) / 2.0 - extents.y_bearing();
-            context.move_to(text_x, text_y);
-            let _ = context.show_text(&text);
-        }
+    // Draw countdown number
+    context.select_font_face(
+        crate::typography::UI_FONT_FAMILY,
+        gtk4::cairo::FontSlant::Normal,
+        gtk4::cairo::FontWeight::Bold,
+    );
+    context.set_font_size(if hovered_cancel { 13.0 } else { 22.0 });
+    context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+    let text = if hovered_cancel {
+        t("Cancel")
+    } else {
+        countdown_value.to_string()
+    };
+    if let Ok(extents) = context.text_extents(&text) {
+        let text_x = pill_x + 40.0 + (pill_w - 44.0 - extents.width()) / 2.0 - extents.x_bearing();
+        let text_y = pill_y + (pill_h - extents.height()) / 2.0 - extents.y_bearing();
+        context.move_to(text_x, text_y);
+        let _ = context.show_text(&text);
     }
 
     let _ = context.restore();

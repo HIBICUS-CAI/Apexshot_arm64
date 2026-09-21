@@ -126,9 +126,6 @@ fn open_quick_capture_via_gtk_layer_shell_wlroots() -> Result<AreaCapturePathRes
                 Ok(crate::overlay::OverlaySelection::Area(None)) => {
                     Ok(AreaCapturePathResult::Cancelled)
                 }
-                Ok(crate::overlay::OverlaySelection::Recording(request)) => {
-                    Ok(AreaCapturePathResult::RecordingRequested(request))
-                }
                 Err(SelectionError::OcrRequested(area)) => {
                     let capture =
                         crop_background(&full_capture, area.x, area.y, area.width, area.height)?;
@@ -176,9 +173,6 @@ fn capture_area_file_via_gtk_layer_shell_wlroots() -> Result<AreaCapturePathResu
             save_capture_to_temp_png(&capture).map(AreaCapturePathResult::Captured)
         }
         Ok(crate::overlay::OverlaySelection::Area(None)) => Err(SelectionError::Cancelled),
-        Ok(crate::overlay::OverlaySelection::Recording(request)) => {
-            Ok(AreaCapturePathResult::RecordingRequested(request))
-        }
         Err(SelectionError::WindowCaptureRequested) => {
             // Prefer the shared C++/GNOME window-capture path (in-overlay picker
             // on GNOME; ScreenCast only as a last resort for non-GNOME Wayland).
@@ -253,7 +247,6 @@ fn capture_crosshair_file_via_gtk_layer_shell_wlroots() -> Result<PathBuf, Selec
     )? {
         OverlaySelection::Area(Some(area)) => area,
         OverlaySelection::Area(None) => return Err(SelectionError::Cancelled),
-        OverlaySelection::Recording(_) => return Err(SelectionError::Cancelled),
     };
     // Crop from the frozen background — the overlay was just visible and may
     // not have been fully unmapped by the compositor yet.

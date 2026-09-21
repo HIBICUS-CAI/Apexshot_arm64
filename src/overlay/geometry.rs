@@ -357,25 +357,6 @@ pub(crate) fn map_selection_to_image(
     }
 }
 
-/// Aspect ratio values matching `layout::ASPECT_RATIO_OPTIONS` order.
-/// Index 0 is freeform (`0.0`).
-pub(crate) fn aspect_ratio_for_index(index: usize) -> f64 {
-    const RATIOS: &[f64] = &[
-        0.0,
-        1.0,
-        5.0 / 4.0,
-        4.0 / 3.0,
-        7.0 / 5.0,
-        3.0 / 2.0,
-        16.0 / 10.0,
-        16.0 / 9.0,
-        2.35,
-        2.0 / 3.0,
-        9.0 / 16.0,
-    ];
-    RATIOS.get(index).copied().unwrap_or(0.0)
-}
-
 /// Float comparison for aspect ratios (mirrors C++ `ratiosEqual`).
 pub(crate) fn ratios_equal(a: f64, b: f64) -> bool {
     if a <= 0.0 && b <= 0.0 {
@@ -415,9 +396,7 @@ pub(crate) fn capture_aspect_index_for_ratio(ratio: f64) -> i32 {
 }
 
 pub(crate) fn active_aspect_ratio(st: &SelectorState) -> f64 {
-    if st.recording.panel_open {
-        aspect_ratio_for_index(st.recording.record_aspect_ratio_index)
-    } else if st.top_bar_snap_to_ratios {
+    if st.top_bar_snap_to_ratios {
         st.top_bar_aspect_ratio.max(0.0)
     } else {
         0.0
@@ -480,7 +459,6 @@ pub(crate) fn apply_aspect_to_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::overlay::layout::ASPECT_RATIO_OPTIONS;
     use crate::overlay::state::SelectorState;
 
     fn completed_selection(left: f64, top: f64, right: f64, bottom: f64) -> SelectorState {
@@ -492,12 +470,6 @@ mod tests {
             completed: true,
             ..Default::default()
         }
-    }
-
-    #[test]
-    fn aspect_ratio_index_zero_is_freeform() {
-        assert_eq!(aspect_ratio_for_index(0), 0.0);
-        assert_eq!(ASPECT_RATIO_OPTIONS[0], "Freeform");
     }
 
     #[test]
@@ -549,19 +521,6 @@ mod tests {
         let rect = current_selection_rect(&st);
         assert!(rect.width() + 1e-6 >= MIN_SELECTION_WIDTH);
         assert!(rect.height() + 1e-6 >= MIN_SELECTION_HEIGHT);
-    }
-
-    #[test]
-    fn active_aspect_ratio_prefers_recording_index_when_panel_open() {
-        let mut st = SelectorState {
-            top_bar_aspect_ratio: 1.0, // 1:1 pill
-            ..Default::default()
-        };
-        st.recording.record_aspect_ratio_index = 7; // 16:9
-        st.recording.panel_open = false;
-        assert!((active_aspect_ratio(&st) - 1.0).abs() < 1e-9);
-        st.recording.panel_open = true;
-        assert!((active_aspect_ratio(&st) - 16.0 / 9.0).abs() < 1e-9);
     }
 
     #[test]

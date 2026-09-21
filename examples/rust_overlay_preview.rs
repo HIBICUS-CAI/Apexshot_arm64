@@ -7,8 +7,7 @@ fn main() {
                 area.x, area.y, area.width, area.height
             );
         }
-        Ok(apexshot::OverlaySelection::Area(None))
-        | Ok(apexshot::OverlaySelection::Recording(_)) => {
+        Ok(apexshot::OverlaySelection::Area(None)) => {
             eprintln!("Selection cancelled")
         }
         Err(err) => {

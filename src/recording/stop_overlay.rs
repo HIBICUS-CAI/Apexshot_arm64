@@ -28,8 +28,9 @@ use x11rb::{
 
 use crate::overlay::drawing::{draw_frosted_panel, rounded_rect_path};
 use crate::overlay::layout::{RectF, ACTION_CARD_GAP, FEATURE_PANEL_MARGIN, FEATURE_PANEL_TOP_GAP};
-use crate::overlay::recording::layout::REC_ACTION_HEIGHT;
 
+/// Shared action-tile height (was owned by the retired recording panel).
+const REC_ACTION_HEIGHT: f64 = 50.0;
 const BAR_PAD: f64 = 8.0;
 const BAR_HEIGHT: f64 = REC_ACTION_HEIGHT + BAR_PAD * 2.0;
 const STOP_CELL_W_WITH_TIMER: f64 = 120.0;

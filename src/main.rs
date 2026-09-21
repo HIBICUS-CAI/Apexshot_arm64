@@ -556,7 +556,6 @@ fn run_daemon_with_gtk_on_main_thread() {
                     .ok()
                     .and_then(|selection| match selection {
                         apexshot::OverlaySelection::Area(area) => area,
-                        apexshot::OverlaySelection::Recording(_) => None,
                     })
                     .map(|a| apexshot::SelectionArea {
                         x: a.x,

@@ -3,10 +3,9 @@ use super::background::{
 };
 use super::capture_menu::CaptureMenuResult;
 use super::monitor_picker::MonitorChoice;
-use super::state::{OverlayMode, RecordingState, SelectorState};
+use super::state::{OverlayIntent, OverlayMode, SelectorState};
 use super::window::setup_window;
 use crate::backend::CaptureData;
-use crate::capture_overlay::RecordingRequest;
 use gtk4::{prelude::*, Application};
 use image::RgbaImage;
 use std::sync::{Arc, Mutex};
@@ -42,7 +41,6 @@ impl SelectionArea {
 #[derive(Debug, Clone)]
 pub enum OverlaySelection {
     Area(Option<SelectionArea>),
-    Recording(RecordingRequest),
 }
 
 /// Result of area selection
@@ -75,9 +73,6 @@ impl AreaSelector {
     /// Create a new area selector
     pub fn new() -> Self {
         let mut state = SelectorState::default();
-
-        let app_config = crate::config::load_config();
-        state.recording = RecordingState::from_app_config(&app_config);
 
         // Populate windows from compositor if available
         if let Some(compositor) = crate::compositor::detect_compositor() {
@@ -114,9 +109,9 @@ impl AreaSelector {
         // ordinary GTK selector, so it must not reveal the old left rail.
         state.capture_menu_area_mode = true;
         state.intent = if menu.ocr {
-            crate::overlay::recording::state::OverlayIntent::Ocr
+            OverlayIntent::Ocr
         } else {
-            crate::overlay::recording::state::OverlayIntent::Area
+            OverlayIntent::Area
         };
         state.timer_delay_active = menu.timer_seconds > 0;
         state.capture_delay_seconds = i32::from(menu.timer_seconds);
@@ -187,7 +182,7 @@ impl AreaSelector {
             Ok(Ok(OverlaySelection::Area(area))) => {
                 // Check if OCR was requested on this selection
                 let st = state.lock().unwrap();
-                if st.intent == crate::overlay::recording::state::OverlayIntent::Ocr {
+                if st.intent == OverlayIntent::Ocr {
                     if let Some(a) = area {
                         return Err(SelectionError::OcrRequested(a));
                     }

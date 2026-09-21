@@ -1,6 +1,14 @@
 use super::geometry::SelectionRectF;
-pub(crate) use super::recording::state::{OverlayIntent, RecordingState};
 use crate::compositor::WindowInfo;
+
+/// Mirrors the C++ CaptureIntent enum — distinguishes what the user
+/// wants to do with the selected area when they confirm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum OverlayIntent {
+    #[default]
+    Area,
+    Ocr,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResizeHandle {
@@ -91,8 +99,6 @@ pub(crate) struct SelectorState {
     pub(crate) scroll_popup_open: bool,
     pub(crate) hovered_scroll_popup_close: bool,
     pub(crate) hovered_scroll_download: bool,
-    // ── Recording panel state (separated) ──
-    pub(crate) recording: RecordingState,
     // ── Capture intent (mirrors C++ CaptureIntent) ──
     pub(crate) intent: OverlayIntent,
     // ── Window snapping state ──
@@ -146,7 +152,6 @@ impl Default for SelectorState {
             scroll_popup_open: false,
             hovered_scroll_popup_close: false,
             hovered_scroll_download: false,
-            recording: RecordingState::default(),
             intent: OverlayIntent::default(),
             windows: Vec::new(),
             hovered_window: None,

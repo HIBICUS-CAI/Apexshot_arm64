@@ -2,15 +2,11 @@ use super::background::{paint_surface_clipped, paint_surface_fullscreen, Backgro
 use super::geometry::current_selection_rect;
 use super::icons::{draw_toolbar_icon, ToolbarIcon};
 use super::layout::*;
-use super::recording::state::OverlayIntent;
 use super::state::{OverlayMode, SelectorState};
-use crate::i18n::t;
 use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 
 mod mode_overlays;
-mod recording_ui;
-mod settings_ui;
 
 pub(crate) fn draw_resize_markers(
     context: &gtk4::cairo::Context,
@@ -168,113 +164,6 @@ pub(super) fn draw_text_centered(
         context.move_to(x, y);
         let _ = context.show_text(text);
     }
-}
-
-pub(super) fn draw_aspect_ratio_menu(
-    context: &gtk4::cairo::Context,
-    anchor_rect: RectF,
-    hovered_item: i32,
-    selected_index: usize,
-    screen_width: f64,
-    screen_height: f64,
-    _background: Option<&BackgroundFrame>,
-) -> Vec<RectF> {
-    let item_h = 34.0;
-    let menu_w = 196.0;
-    let menu_h = (ASPECT_RATIO_OPTIONS.len() as f64 * item_h) + 10.0;
-    let menu_x = (anchor_rect.x + anchor_rect.width / 2.0 - menu_w / 2.0)
-        .clamp(10.0, screen_width - menu_w - 10.0);
-    let menu_y = (anchor_rect.y + anchor_rect.height + 8.0).clamp(
-        10.0,
-        screen_height - menu_h - 10.0 - crate::overlay::layout::DOCK_LIFT,
-    );
-
-    // Quick-capture menu language: solid dark fill, white rim, drop shadow.
-    rounded_rect_path(context, menu_x, menu_y + 3.0, menu_w, menu_h, 12.0);
-    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
-    let _ = context.fill();
-    rounded_rect_path(context, menu_x, menu_y, menu_w, menu_h, 12.0);
-    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
-    let _ = context.fill_preserve();
-    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
-    context.set_line_width(1.2);
-    let _ = context.stroke();
-
-    let mut item_rects = Vec::with_capacity(ASPECT_RATIO_OPTIONS.len());
-    for (i, _label) in ASPECT_RATIO_OPTIONS.iter().enumerate() {
-        let item_rect = RectF {
-            x: menu_x + 5.0,
-            y: menu_y + 5.0 + i as f64 * item_h,
-            width: menu_w - 10.0,
-            height: item_h,
-        };
-        let indicator_x = item_rect.x + 8.0;
-
-        if i as i32 == hovered_item {
-            rounded_rect_path(
-                context,
-                item_rect.x,
-                item_rect.y,
-                item_rect.width,
-                item_rect.height,
-                7.0,
-            );
-            context.set_source_rgba(1.0, 1.0, 1.0, 24.0 / 255.0);
-            let _ = context.fill_preserve();
-            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 170.0 / 255.0);
-            context.set_line_width(1.0);
-            let _ = context.stroke();
-        }
-
-        let selected = i == selected_index;
-        if selected {
-            rounded_rect_path(
-                context,
-                item_rect.x + 1.0,
-                item_rect.y + 1.0,
-                item_rect.width - 2.0,
-                item_rect.height - 2.0,
-                7.0,
-            );
-            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
-            let _ = context.fill();
-            context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
-            context.set_line_width(1.5);
-            let cy = item_rect.y + item_rect.height / 2.0;
-            context.move_to(indicator_x + 3.5, cy);
-            context.line_to(indicator_x + 6.5, cy + 3.0);
-            context.line_to(indicator_x + 12.5, cy - 4.0);
-            context.stroke().ok();
-        }
-
-        context.select_font_face(
-            crate::typography::UI_FONT_FAMILY,
-            gtk4::cairo::FontSlant::Normal,
-            if selected {
-                gtk4::cairo::FontWeight::Bold
-            } else {
-                gtk4::cairo::FontWeight::Normal
-            },
-        );
-        context.set_font_size(13.3);
-        let label = t(ASPECT_RATIO_OPTIONS[i]);
-        if let Ok(extents) = context.text_extents(&label) {
-            let label_x = item_rect.x + 30.0 - extents.x_bearing();
-            let label_y =
-                item_rect.y + item_rect.height / 2.0 - extents.height() / 2.0 - extents.y_bearing();
-            let label_color = if selected {
-                (1.0, 1.0, 1.0, 1.0)
-            } else {
-                (242.0 / 255.0, 242.0 / 255.0, 244.0 / 255.0, 1.0)
-            };
-            context.set_source_rgba(label_color.0, label_color.1, label_color.2, label_color.3);
-            context.move_to(label_x, label_y);
-            let _ = context.show_text(&label);
-        }
-
-        item_rects.push(item_rect);
-    }
-    item_rects
 }
 
 /// Screen-fixed top-center instruction bar ("Draw an area" + aspect pills +
@@ -672,43 +561,6 @@ pub(crate) fn draw_overlay(
         // Corner markers at screen edges
         draw_resize_markers(context, 0.0, 0.0, screen_width, screen_height);
 
-        if st.recording.panel_open {
-            recording_ui::draw_recording_panel(
-                context,
-                0.0,
-                0.0,
-                screen_width,
-                screen_height,
-                screen_width,
-                screen_height,
-                background,
-                st.recording.hover_record_tile,
-                st.recording.selected_record_type,
-                st.recording.crop_menu_open,
-                st.recording.record_aspect_ratio_index,
-                st.recording.hovered_crop_menu_item,
-                st.recording.settings_menu_open,
-                st.recording.settings_tab,
-                st.recording.hovered_settings_item,
-                st.recording.hovered_settings_dropdown_item,
-                st.recording.settings_dropdown_open,
-                st.recording.video_max_res,
-                st.recording.video_fps,
-                st.recording.mic_toggle,
-                st.recording.speaker_toggle,
-                st.recording.mic_level,
-                st.recording.speaker_level,
-                st.recording.record_mono,
-                st.recording.noise_suppression,
-                st.recording.open_editor,
-                st.recording.rec_controls,
-                st.recording.hidpi,
-                st.recording.do_not_disturb,
-                st.recording.remember_selection,
-                st.recording.dim_screen,
-                st.recording.show_countdown,
-            );
-        }
         // No legacy left tool rail: quick capture owns mode selection up
         // front; the top-center bar (drawn last below) owns aspects.
     } else if st.is_dragging || st.completed {
@@ -752,81 +604,10 @@ pub(crate) fn draw_overlay(
         draw_resize_markers(context, x, y, sel_w, sel_h);
 
         // ── Step 3: toolbar + resize markers on top ──
-        if st.recording.panel_open {
-            recording_ui::draw_recording_panel(
-                context,
-                x,
-                y,
-                sel_w,
-                sel_h,
-                screen_width,
-                screen_height,
-                background,
-                st.recording.hover_record_tile,
-                st.recording.selected_record_type,
-                st.recording.crop_menu_open,
-                st.recording.record_aspect_ratio_index,
-                st.recording.hovered_crop_menu_item,
-                st.recording.settings_menu_open,
-                st.recording.settings_tab,
-                st.recording.hovered_settings_item,
-                st.recording.hovered_settings_dropdown_item,
-                st.recording.settings_dropdown_open,
-                st.recording.video_max_res,
-                st.recording.video_fps,
-                st.recording.mic_toggle,
-                st.recording.speaker_toggle,
-                st.recording.mic_level,
-                st.recording.speaker_level,
-                st.recording.record_mono,
-                st.recording.noise_suppression,
-                st.recording.open_editor,
-                st.recording.rec_controls,
-                st.recording.hidpi,
-                st.recording.do_not_disturb,
-                st.recording.remember_selection,
-                st.recording.dim_screen,
-                st.recording.show_countdown,
-            );
-            // Volume popup menus (positioned top-centre of selection like other menus)
-            {
-                let vol = crate::overlay::layout::compute_volume_popup_layout(
-                    x,
-                    y,
-                    sel_w,
-                    sel_h,
-                    screen_width,
-                    screen_height,
-                );
-                if st.recording.mic_volume_popup_open {
-                    recording_ui::draw_volume_popup(
-                        context,
-                        vol.panel.x,
-                        vol.panel.y,
-                        screen_width,
-                        screen_height,
-                        st.recording.mic_volume,
-                        ToolbarIcon::Mic,
-                        st.recording.volume_slider_dragging,
-                    );
-                }
-                if st.recording.speaker_volume_popup_open {
-                    recording_ui::draw_volume_popup(
-                        context,
-                        vol.panel.x,
-                        vol.panel.y,
-                        screen_width,
-                        screen_height,
-                        st.recording.speaker_volume,
-                        ToolbarIcon::Speaker,
-                        st.recording.volume_slider_dragging,
-                    );
-                }
-            }
-        }
+
         // No legacy left tool rail here either (see above).
 
-        // Popups rendered on top of everything (both recording and area modes)
+        // Popups rendered on top of everything
         if st.window_picker_open {
             mode_overlays::draw_window_picker(
                 context,
@@ -846,18 +627,11 @@ pub(crate) fn draw_overlay(
     // selection remains movable/resizable underneath.
     if st.countdown_active {
         let r = current_selection_rect(&st);
-        let (bx, by, bw, bh) = if st.intent != OverlayIntent::Record {
-            let pill_w = 112.0;
-            let pill_h = 44.0;
-            let pill_x = (screen_width - pill_w) / 2.0;
-            let pill_y = 28.0;
-            (pill_x, pill_y, pill_w, pill_h)
-        } else {
-            let bubble_size = 184.0;
-            let bubble_x = (screen_width - bubble_size) / 2.0;
-            let bubble_y = (screen_height - bubble_size) / 2.0;
-            (bubble_x, bubble_y, bubble_size, bubble_size)
-        };
+        let pill_w = 112.0;
+        let pill_h = 44.0;
+        let pill_x = (screen_width - pill_w) / 2.0;
+        let pill_y = 28.0;
+        let (bx, by, bw, bh) = (pill_x, pill_y, pill_w, pill_h);
         st.countdown_bubble_x = bx;
         st.countdown_bubble_y = by;
         st.countdown_bubble_w = bw;
@@ -872,7 +646,6 @@ pub(crate) fn draw_overlay(
             screen_height,
             st.countdown_value,
             st.hovered_countdown_cancel,
-            st.intent,
         );
     }
 
@@ -899,7 +672,7 @@ pub(crate) fn draw_overlay(
     // ── Top-center instruction bar ("Draw an area") ─────────────────────────
     // Screen-fixed; painted last so it floats above dim/selection chrome in
     // fullscreen, area, and pre-selection idle states alike. Hidden while
-    // recording, picking windows, counting down, or scroll-capturing (see
+    // picking windows, counting down, or scroll-capturing (see
     // hit_testing::top_bar_visible). The frozen-background crop path excludes
     // it from the saved image, so overlap with the drag is safe.
     draw_top_instruction_bar(context, &st, screen_width);
