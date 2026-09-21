@@ -52,8 +52,7 @@ public:
 
     enum class RecordType {
         None,
-        Video,
-        Gif
+        Video
     };
 
     explicit CaptureOverlay(const QPixmap& background = QPixmap(),
@@ -123,13 +122,7 @@ public:
     bool recordMono() const { return m_recordMono; }
     bool recordOpenEditor() const { return m_openEditor; }
 
-    // GIF tab settings — accessors
-    int recordGifFps() const { return m_gifFps; }
-    double recordGifQuality() const { return m_gifQuality; }
-    int recordGifSizeIdx() const { return m_gifSizeIdx; }
-    bool recordOptimizeGif() const { return m_optimizeGif; }
-
-    // GIF tab settings — setters for initial config load
+    // Recording setters for initial config load
     void setInitialRecControls(bool v) { m_recControls = v; }
     void setInitialDisplayRecTime(bool v) { m_displayRecTime = v; }
     void setInitialHidpi(bool v) { m_hidpi = v; }
@@ -171,10 +164,6 @@ public:
     void setInitialVideoFps(int v) { m_videoFps = v; }
     void setInitialRecordMono(bool v) { m_recordMono = v; }
     void setInitialOpenEditor(bool v) { m_openEditor = v; }
-    void setInitialGifFps(int v) { m_gifFps = v; }
-    void setInitialGifQuality(double v) { m_gifQuality = v; }
-    void setInitialGifSizeIdx(int v) { m_gifSizeIdx = v; }
-    void setInitialGifOptimize(bool v) { m_optimizeGif = v; }
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -202,7 +191,7 @@ private:
         None,
         Controls, Size, Crop,
         Mic, Speaker,
-        RecordVideo, RecordGif
+        RecordVideo
     };
 
     enum class ToolbarActionCard {
@@ -251,6 +240,28 @@ private:
     QRectF windowPickerToolbarItemRect(int index) const;
     int hitTestWindowPickerToolbar(const QPoint& pos) const;
     int hitTestWindowPickerCard(const QPoint& pos) const;
+
+    // ── Top-center instruction bar ("Draw an area" frame) ───────────────────
+    // Screen-fixed bar; never attached to the selection so dragging near/over
+    // it is safe. Final capture crops the pre-overlay freeze (or re-captures
+    // after hide()+settle), so this chrome never appears in the screenshot.
+    enum class TopBarButton {
+        None,
+        Crop,
+        Cancel
+    };
+    void drawTopInstructionBar(QPainter& p, double screenW, double screenH);
+    void drawTopBarCropMenu(QPainter& p, double screenW, double screenH);
+    bool topBarVisible() const;
+    int hitTestTopBarAspect(const QPoint& pos) const; // 0..3, -1 = none
+    TopBarButton hitTestTopBarButton(const QPoint& pos) const;
+    bool pointInTopBar(const QPoint& pos) const;
+    void handleTopBarAspectClick(int pillIndex);
+    void handleTopBarButtonClick(TopBarButton button);
+    void handleTopBarCropMenuClick(const QPoint& pos);
+    void applyTopBarAspectToSelection();
+    double topBarAspectRatio() const { return m_topBarAspectRatio; }
+    bool topBarSnapEnabled() const { return m_topBarSnapToRatios; }
 
     // Hit testing / cursor
     void updateCursor(const QPoint& pos);
@@ -381,7 +392,7 @@ private:
     // Recording panel state
     bool m_recordingPanelOpen;
     bool m_settingsOpen; // new: true when Settings/Sliders icon clicked
-    int  m_settingsTab;  // new: 0=General, 1=Video, 2=GIF
+    int  m_settingsTab;  // 0=General, 1=Video
     // Dropdown popup state
     int m_dropdownOpen;      // -1 = none, else index in m_settingsClickableRects
     QRectF m_dropdownAnchor; // rect of the button that opened the dropdown
@@ -406,23 +417,12 @@ private:
     bool m_dimScreen;          // "Dim screen while recording"
     bool m_showCountdown;      // "Show countdown"
 
-    bool   m_gifFpsDragging;       // true while dragging GIF FPS slider
-    bool   m_gifQualityDragging;   // true while dragging GIF quality slider
-    QRectF m_gifFpsTrackRect;      // cached GIF FPS slider track rect for drag calc
-    QRectF m_gifQualityTrackRect;  // cached GIF quality slider track rect for drag calc
-
     // Video settings
     int  m_videoFormat;      // index
     int  m_videoMaxRes;      // index
     int  m_videoFps;         // index
     bool m_recordMono;
     bool m_openEditor;
-
-    // GIF settings
-    int    m_gifFps;         // value (typically 5-60)
-    double m_gifQuality;     // 0.0 to 1.0
-    bool   m_optimizeGif;
-    int    m_gifSizeIdx;     // index
 
     bool m_recMic;
     bool m_recSpeaker;
@@ -462,6 +462,16 @@ private:
     QList<QRectF> m_recTileRects; // Matches RecordPanelTile order (skip None)
     QList<QRectF> m_settingsClickableRects; // checkbox & tab rects for hit testing
     QList<QRectF> m_cropMenuItemRects;
+
+    // Top-center instruction bar state (pill 0..3, -1 = none)
+    int  m_hoveredTopBarAspect;
+    TopBarButton m_hoveredTopBarButton;
+    double m_topBarAspectRatio; // 0.0 = Free, else W/H
+    bool m_topBarSnapToRatios;
+    bool m_topBarCropMenuOpen;
+    int  m_hoveredTopBarCropItem; // -1 = none, else menu row index
+    QRectF m_topBarCropMenuPanelRect;
+    QList<QRectF> m_topBarCropMenuItemRects;
 
     // Toolbar hover state
     int  m_hoveredTool;             // -1 = none

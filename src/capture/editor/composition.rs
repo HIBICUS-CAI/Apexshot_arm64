@@ -1,4 +1,4 @@
-use super::types::{BackgroundAlignment, BackgroundStyle, CropAspectRatio};
+use super::types::{BackgroundAlignment, BackgroundStyle, CropAspectRatio, FrameStyle};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatRect {
@@ -53,6 +53,8 @@ pub struct BackgroundComposition {
     alignment: BackgroundAlignment,
     corner_radius: f64,
     aspect_ratio: CropAspectRatio,
+    frame_style: FrameStyle,
+    frame_border_thickness: f64,
 }
 
 impl BackgroundComposition {
@@ -61,12 +63,14 @@ impl BackgroundComposition {
             screenshot_w,
             screenshot_h,
             style: BackgroundStyle::None,
-            padding: 24.0,
+            padding: 0.0,
             shadow: 15.0,
             insert: 0.0,
             alignment: BackgroundAlignment::Center,
             corner_radius: 18.0,
             aspect_ratio: CropAspectRatio::Original,
+            frame_style: FrameStyle::Default,
+            frame_border_thickness: 0.0,
         }
     }
 
@@ -105,12 +109,93 @@ impl BackgroundComposition {
         self
     }
 
+    pub fn with_frame_style(mut self, frame_style: FrameStyle) -> Self {
+        self.frame_style = frame_style;
+        self
+    }
+
+    pub fn with_frame_border_thickness(mut self, thickness: f64) -> Self {
+        self.frame_border_thickness = thickness;
+        self
+    }
+
+    /// Canvas-px overhang of the frame (outside border, accent strokes, and
+    /// backing sheets) beyond each side of the drawn image.
+    fn frame_overhangs(
+        &self,
+        draw_width: f64,
+        draw_height: f64,
+        unit: f64,
+    ) -> (f64, f64, f64, f64) {
+        let spec = self.frame_style.spec();
+        // Inset borders paint inside the image edge, so they overhang nothing.
+        let mut uniform = if spec.inset_border {
+            0.0
+        } else {
+            self.frame_border_thickness.max(0.0) * unit
+        };
+        for outer in [spec.outer1, spec.outer2].into_iter().flatten() {
+            uniform += (outer.gap + outer.thickness) * unit;
+        }
+        let (mut left, mut top, mut right, mut bottom) = (uniform, uniform, uniform, uniform);
+        for backing in [spec.backing1, spec.backing2].into_iter().flatten() {
+            let theta = backing.rotation_deg.to_radians();
+            let (sin, cos) = theta.sin_cos();
+            // Fixed canvas px offsets: identical peek at any image size.
+            let (corners, px, py) = if backing.center_pivot {
+                // Diagonal fan about the sheet center (Stack).
+                let hw = draw_width / 2.0;
+                let hh = draw_height / 2.0;
+                (
+                    [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)],
+                    hw + backing.offset_x,
+                    hh + backing.offset_y,
+                )
+            } else {
+                // Sheets pivot at their bottom-right corner (hidden behind
+                // the card); corners relative to that pivot (Stack2).
+                (
+                    [
+                        (-draw_width, -draw_height),
+                        (0.0, -draw_height),
+                        (0.0, 0.0),
+                        (-draw_width, 0.0),
+                    ],
+                    draw_width + backing.offset_x,
+                    draw_height + backing.offset_y,
+                )
+            };
+            let (mut min_x, mut min_y) = (f64::INFINITY, f64::INFINITY);
+            let (mut max_x, mut max_y) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+            for (cx, cy) in corners {
+                let qx = px + cx * cos - cy * sin;
+                let qy = py + cx * sin + cy * cos;
+                min_x = min_x.min(qx);
+                min_y = min_y.min(qy);
+                max_x = max_x.max(qx);
+                max_y = max_y.max(qy);
+            }
+            // Bbox is relative to the image top-left (image spans 0..draw).
+            left = left.max(-min_x);
+            top = top.max(-min_y);
+            right = right.max(max_x - draw_width);
+            bottom = bottom.max(max_y - draw_height);
+        }
+        (left.max(0.0), top.max(0.0), right.max(0.0), bottom.max(0.0))
+    }
+
     pub fn compute(&self) -> CompositionLayout {
         let screenshot_w = self.screenshot_w.max(1.0);
         let screenshot_h = self.screenshot_h.max(1.0);
         let ref_size = screenshot_w.max(screenshot_h);
         let scale_factor = ref_size / 400.0;
-        let padding_px = self.padding * scale_factor;
+        // A fill is always given breathing room: with a Frame aspect forcing
+        // a wider/taller canvas, padding 0 would glue the image to the fill
+        // on the short axis. Stored padding is untouched (see the const).
+        let padding_px = super::types::effective_background_padding(
+            self.padding,
+            self.style != BackgroundStyle::None,
+        ) * scale_factor;
 
         let mut canvas_width = screenshot_w;
         let mut canvas_height = screenshot_h;
@@ -153,14 +238,14 @@ impl BackgroundComposition {
             BackgroundAlignment::BottomRight => (available_w, available_h),
         };
 
-        let image_rect = FloatRect {
+        let mut image_rect = FloatRect {
             x: image_x,
             y: image_y,
             width: draw_width,
             height: draw_height,
         };
 
-        let shadow = if self.style != BackgroundStyle::None && self.shadow > 0.0 {
+        let mut shadow = if self.style != BackgroundStyle::None && self.shadow > 0.0 {
             let shadow_strength = (self.shadow / 100.0).clamp(0.0, 1.0);
             let size_scale = (ref_size / 1200.0).sqrt().clamp(0.85, 1.8);
             let offset_x = 0.0;
@@ -184,6 +269,50 @@ impl BackgroundComposition {
         } else {
             None
         };
+
+        // Contain the frame (outside border, accent strokes, backing sheets)
+        // inside the canvas and center the whole framed stack per alignment,
+        // so Stack-style sheets never spill past the edge and the margins stay
+        // even around the stack instead of shoving the card down-right. This
+        // also applies with no background so Retro-style windows stay visible
+        // on a transparent canvas. With no frame this reduces to the exact
+        // previous layout.
+        {
+            let unit = scale_factor * draw_scale;
+            let (over_left, over_top, over_right, over_bottom) =
+                self.frame_overhangs(draw_width, draw_height, unit);
+            let content_width = draw_width + over_left + over_right;
+            let content_height = draw_height + over_top + over_bottom;
+            if content_width > canvas_width {
+                canvas_width = content_width;
+            }
+            if content_height > canvas_height {
+                canvas_height = content_height;
+            }
+            let avail_w = (canvas_width - content_width).max(0.0);
+            let avail_h = (canvas_height - content_height).max(0.0);
+            let (content_x, content_y) = match self.alignment {
+                BackgroundAlignment::TopLeft => (0.0, 0.0),
+                BackgroundAlignment::TopCenter => (avail_w / 2.0, 0.0),
+                BackgroundAlignment::TopRight => (avail_w, 0.0),
+                BackgroundAlignment::CenterLeft => (0.0, avail_h / 2.0),
+                BackgroundAlignment::Center => (avail_w / 2.0, avail_h / 2.0),
+                BackgroundAlignment::CenterRight => (avail_w, avail_h / 2.0),
+                BackgroundAlignment::BottomLeft => (0.0, avail_h),
+                BackgroundAlignment::BottomCenter => (avail_w / 2.0, avail_h),
+                BackgroundAlignment::BottomRight => (avail_w, avail_h),
+            };
+            let new_image_x = content_x + over_left;
+            let new_image_y = content_y + over_top;
+            let shift_x = new_image_x - image_rect.x;
+            let shift_y = new_image_y - image_rect.y;
+            image_rect.x = new_image_x;
+            image_rect.y = new_image_y;
+            if let Some(shadow) = shadow.as_mut() {
+                shadow.rect.x += shift_x;
+                shadow.rect.y += shift_y;
+            }
+        }
 
         let _ = self.corner_radius;
 
@@ -240,6 +369,66 @@ mod tests {
         let shadow = layout.shadow_rect.unwrap();
         assert!(shadow.width() > layout.image_rect.width());
         assert!(shadow.height() > layout.image_rect.height());
+    }
+
+    #[test]
+    fn composition_grows_wallpaper_to_contain_stack2_sheets() {
+        use crate::capture::editor::types::FrameStyle;
+        // Small padding on purpose: the Stack2 sheets reach past it, so the
+        // canvas must grow instead of letting sheets spill past the wallpaper.
+        let plain = BackgroundComposition::new(200.0, 120.0)
+            .with_style(BackgroundStyle::PlainColor(DrawColor::new(
+                1.0, 1.0, 1.0, 1.0,
+            )))
+            .with_padding(10.0)
+            .with_shadow(0.0)
+            .with_insert(0.0)
+            .with_alignment(BackgroundAlignment::Center)
+            .with_corner_radius(0.0)
+            .with_aspect_ratio(CropAspectRatio::Original)
+            .compute();
+        let stacked = BackgroundComposition::new(200.0, 120.0)
+            .with_style(BackgroundStyle::PlainColor(DrawColor::new(
+                1.0, 1.0, 1.0, 1.0,
+            )))
+            .with_padding(10.0)
+            .with_shadow(0.0)
+            .with_insert(0.0)
+            .with_alignment(BackgroundAlignment::Center)
+            .with_corner_radius(0.0)
+            .with_aspect_ratio(CropAspectRatio::Original)
+            .with_frame_style(FrameStyle::Stack2)
+            .with_frame_border_thickness(0.0)
+            .compute();
+        assert!(
+            stacked.canvas_width >= plain.canvas_width
+                && stacked.canvas_height > plain.canvas_height,
+            "expected grown canvas, plain {:?} vs stacked {:?}",
+            (plain.canvas_width, plain.canvas_height),
+            (stacked.canvas_width, stacked.canvas_height)
+        );
+        // Farthest sheet (BR-pivot rotated bbox) stays inside the wallpaper.
+        let spec = FrameStyle::Stack2.spec();
+        let backing = spec.backing1.expect("far sheet");
+        let theta = backing.rotation_deg.to_radians();
+        let (sin, cos) = theta.sin_cos();
+        let w = stacked.image_rect.width;
+        let h = stacked.image_rect.height;
+        let px = stacked.image_rect.x + w + backing.offset_x;
+        let py = stacked.image_rect.y + h + backing.offset_y;
+        let (mut x0, mut y0) = (f64::INFINITY, f64::INFINITY);
+        let (mut x1, mut y1) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for (cx, cy) in [(-w, -h), (0.0, -h), (0.0, 0.0), (-w, 0.0)] {
+            let qx = px + cx * cos - cy * sin;
+            let qy = py + cx * sin + cy * cos;
+            x0 = x0.min(qx);
+            y0 = y0.min(qy);
+            x1 = x1.max(qx);
+            y1 = y1.max(qy);
+        }
+        assert!(x0 >= -0.5 && y0 >= -0.5);
+        assert!(x1 <= stacked.canvas_width + 0.5);
+        assert!(y1 <= stacked.canvas_height + 0.5);
     }
 
     #[test]

@@ -2,12 +2,17 @@
 
 use super::ClickEffect;
 use crate::overlay::geometry::{
-    apply_aspect_to_selection, aspect_ratio_for_index, current_selection_rect,
+    apply_aspect_to_selection, aspect_ratio_for_index, capture_aspect_index_for_ratio,
+    current_selection_rect,
 };
-use crate::overlay::hit_testing::{capture_crop_menu_contains, capture_crop_menu_hit_item};
+use crate::overlay::hit_testing::{
+    point_in_top_bar, top_bar_button_at, top_bar_crop_item_at, top_bar_crop_menu_contains,
+};
 use crate::overlay::layout::{
     compute_scroll_popup_layout, compute_volume_popup_layout, compute_window_picker_layout,
-    volume_from_pill_y,
+    volume_from_pill_y, DEFAULT_SELECTION_HEIGHT, DEFAULT_SELECTION_WIDTH, MIN_SELECTION_HEIGHT,
+    MIN_SELECTION_WIDTH, TOP_BAR_CROP_BUTTON, TOP_BAR_CROP_LABELS, TOP_BAR_CROP_RATIOS,
+    TOP_BAR_CROP_ROW_RESET, TOP_BAR_CROP_ROW_SNAP,
 };
 use crate::overlay::recording::hit_testing::{
     recording_crop_menu_contains, recording_crop_menu_hit_item, settings_dropdown_hit_item,
@@ -35,42 +40,28 @@ pub(super) fn handle_menu_click(
         return Some(ClickEffect::Redraw);
     }
 
-    if st.capture_crop_menu_open {
-        if let Some(item) = capture_crop_menu_hit_item(
-            rect.left,
-            rect.top,
-            rect.width(),
-            rect.height(),
-            screen_width as f64,
-            screen_height as f64,
-            x,
-            y,
-        ) {
-            st.capture_aspect_ratio_index = item;
-            apply_aspect_to_selection(
-                st,
-                aspect_ratio_for_index(item),
-                screen_width as f64,
-                screen_height as f64,
-            );
-            st.capture_crop_menu_open = false;
-            st.hovered_capture_crop_menu_item = -1;
+    // Top-bar crop dropdown: Reset restores the default centered selection,
+    // Snap toggles ratio enforcement (menu stays open), ratio rows snap once.
+    if st.top_bar_crop_menu_open {
+        let sw = screen_width as f64;
+        let sh = screen_height as f64;
+        if let Some(item) = top_bar_crop_item_at(st, sw, x, y) {
+            handle_top_bar_crop_item(st, item, sw, sh);
             return Some(ClickEffect::Redraw);
         }
-        if capture_crop_menu_contains(
-            rect.left,
-            rect.top,
-            rect.width(),
-            rect.height(),
-            screen_width as f64,
-            screen_height as f64,
-            x,
-            y,
-        ) {
+        // The crop button toggles via the toolbar owner below.
+        if top_bar_button_at(st, sw, x, y) == Some(TOP_BAR_CROP_BUTTON) {
+            return None;
+        }
+        if point_in_top_bar(st, sw, x, y) || top_bar_crop_menu_contains(st, sw, x, y) {
             return Some(ClickEffect::None);
         }
-        st.capture_crop_menu_open = false;
-        st.hovered_capture_crop_menu_item = -1;
+        // Dismiss on outside click. The menu closes at press time; if the
+        // pointer keeps moving, drag-begin starts a fresh selection (the
+        // Qt overlay instead swallows the dismissing press — equivalent
+        // outcome, one gesture sooner here due to GTK's press/drag split).
+        st.top_bar_crop_menu_open = false;
+        st.hovered_top_bar_crop_item = -1;
         return Some(ClickEffect::Redraw);
     }
 
@@ -201,6 +192,41 @@ pub(super) fn handle_menu_click(
     None
 }
 
+fn handle_top_bar_crop_item(st: &mut SelectorState, item: usize, sw: f64, sh: f64) {
+    if item == TOP_BAR_CROP_ROW_RESET {
+        let width = DEFAULT_SELECTION_WIDTH
+            .min(sw)
+            .max(MIN_SELECTION_WIDTH.min(sw));
+        let height = DEFAULT_SELECTION_HEIGHT
+            .min(sh)
+            .max(MIN_SELECTION_HEIGHT.min(sh));
+        st.start_x = ((sw - width) / 2.0).max(0.0);
+        st.start_y = ((sh - height) / 2.0).max(0.0);
+        st.current_x = st.start_x + width;
+        st.current_y = st.start_y + height;
+        st.completed = true;
+        st.is_dragging = false;
+        st.fullscreen_mode = false;
+        st.top_bar_aspect_ratio = 0.0;
+        st.capture_aspect_ratio_index = 0;
+        st.top_bar_crop_menu_open = false;
+        st.hovered_top_bar_crop_item = -1;
+        return;
+    }
+    if item == TOP_BAR_CROP_ROW_SNAP {
+        st.top_bar_snap_to_ratios = !st.top_bar_snap_to_ratios;
+        return;
+    }
+    if let Some(ratio) = TOP_BAR_CROP_RATIOS.get(item) {
+        debug_assert!(item < TOP_BAR_CROP_LABELS.len());
+        st.top_bar_aspect_ratio = *ratio;
+        st.capture_aspect_ratio_index = capture_aspect_index_for_ratio(*ratio).max(0) as usize;
+        st.top_bar_crop_menu_open = false;
+        st.hovered_top_bar_crop_item = -1;
+        apply_aspect_to_selection(st, *ratio, sw, sh);
+    }
+}
+
 fn handle_settings_menu_click(
     st: &mut SelectorState,
     rect: crate::overlay::geometry::SelectionRectF,
@@ -225,7 +251,6 @@ fn handle_settings_menu_click(
             match (st.recording.settings_tab, drop_idx) {
                 (SettingsTab::Video, 3) => st.recording.video_max_res = option_index,
                 (SettingsTab::Video, 4) => st.recording.video_fps = option_index,
-                (SettingsTab::Gif, 6) => st.recording.gif_size_idx = option_index,
                 _ => {}
             }
             st.recording.hovered_settings_item = -1;
@@ -246,11 +271,10 @@ fn handle_settings_menu_click(
         y,
         st.recording.settings_tab,
     ) {
-        if item < 3 {
+        if item < 2 {
             st.recording.settings_tab = match item {
                 0 => SettingsTab::General,
-                1 => SettingsTab::Video,
-                _ => SettingsTab::Gif,
+                _ => SettingsTab::Video,
             };
             st.recording.settings_dropdown_open = None;
             st.recording.hovered_settings_dropdown_item = -1;
@@ -273,28 +297,6 @@ fn handle_settings_menu_click(
                 2 => st.recording.record_mono = !st.recording.record_mono,
                 3 => st.recording.noise_suppression = !st.recording.noise_suppression,
                 4 => st.recording.open_editor = !st.recording.open_editor,
-                _ => {}
-            }
-        } else if matches!(st.recording.settings_tab, SettingsTab::Gif) {
-            let menu_x =
-                (rect.left + (rect.width() - 440.0) / 2.0).clamp(10.0, screen_width as f64 - 450.0);
-            match item - 3 {
-                0 => {
-                    let slider_x = menu_x + 200.0;
-                    let slider_w = 208.0;
-                    let click_x = x.clamp(slider_x, slider_x + slider_w);
-                    st.recording.gif_fps = 5.0 + (click_x - slider_x) / slider_w * 55.0;
-                    st.recording.gif_slider_dragging = Some(0);
-                }
-                1 => {
-                    let slider_x = menu_x + 160.0;
-                    let slider_w = 248.0;
-                    let click_x = x.clamp(slider_x, slider_x + slider_w);
-                    st.recording.gif_quality = ((click_x - slider_x) / slider_w).clamp(0.0, 1.0);
-                    st.recording.gif_slider_dragging = Some(1);
-                }
-                2 => st.recording.optimize_gif = !st.recording.optimize_gif,
-                3 => st.recording.settings_dropdown_open = Some(6),
                 _ => {}
             }
         }
@@ -349,7 +351,7 @@ mod tests {
             .next()
             .expect("production menu owner");
         for surface in [
-            "capture_crop_menu_open",
+            "top_bar_crop_menu_open",
             "crop_menu_open",
             "settings_menu_open",
             "scroll_popup_open",

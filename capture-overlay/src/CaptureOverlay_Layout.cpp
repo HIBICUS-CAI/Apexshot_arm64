@@ -84,6 +84,50 @@ ToolbarLayout computeToolbarLayout(double selX, double selY,
     return layout;
 }
 
+TopBarLayout computeTopBarLayout(double screenW)
+{
+    TopBarLayout layout;
+    // Fixed widths tuned to match the reference frame:
+    // "Draw an area" label + 4 aspect pills + 4 action buttons.
+    constexpr double kPadX = 14.0;
+    constexpr double kLabelW = 108.0;
+    constexpr double kSepGap = 12.0;
+    constexpr double kSepW = 1.0;
+    constexpr double kPillGap = 6.0;
+    constexpr double kBtnGap = 6.0;
+    constexpr double kPillW[4] = {52.0, 52.0, 48.0, 44.0};
+    double pillsW = kPillW[0] + kPillW[1] + kPillW[2] + kPillW[3] + kPillGap * 3;
+    double btnsW = TOP_BAR_BTN_SIZE * 2 + kBtnGap;
+    double totalW = kPadX * 2 + kLabelW + kSepGap * 2 + kSepW
+        + kSepGap * 2 + kSepW + pillsW + btnsW;
+    // Clamp gracefully on narrow screens.
+    if (totalW > screenW - FEATURE_PANEL_MARGIN * 2) {
+        return layout;
+    }
+    double barX = std::max(FEATURE_PANEL_MARGIN, (screenW - totalW) / 2.0);
+    double barY = TOP_BAR_Y;
+    layout.bar = QRectF(barX, barY, totalW, TOP_BAR_H);
+    double cx = barX + kPadX;
+    layout.labelRect = QRectF(cx, barY, kLabelW, TOP_BAR_H);
+    cx += kLabelW + kSepGap;
+    cx += kSepW + kSepGap; // first separator (painted, not hit-tested)
+    double pillY = barY + (TOP_BAR_H - TOP_BAR_ASPECT_H) / 2.0;
+    for (int i = 0; i < 4; ++i) {
+        layout.aspectPills[i] = QRectF(cx, pillY, kPillW[i], TOP_BAR_ASPECT_H);
+        cx += kPillW[i] + kPillGap;
+    }
+    cx -= kPillGap;
+    cx += kSepGap;
+    cx += kSepW + kSepGap; // second separator
+    double btnY = barY + (TOP_BAR_H - TOP_BAR_BTN_SIZE) / 2.0;
+    for (int i = 0; i < 2; ++i) {
+        layout.buttons[i] = QRectF(cx, btnY, TOP_BAR_BTN_SIZE, TOP_BAR_BTN_SIZE);
+        cx += TOP_BAR_BTN_SIZE + kBtnGap;
+    }
+    layout.valid = true;
+    return layout;
+}
+
 RecordingDeckLayout computeRecordingDeckLayout(double selX, double selY,
                                                double selW, double selH,
                                                double screenW, double screenH)

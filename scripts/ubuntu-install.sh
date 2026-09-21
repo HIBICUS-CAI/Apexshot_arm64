@@ -20,6 +20,13 @@ TELEMETRY_CHANNEL="install"
 TELEMETRY_URL="${APEXSHOT_TELEMETRY_URL:-https://apexshot.org/api/download-telemetry}"
 INSTALL_ID=""
 
+# apt/dpkg must never prompt: installs run inside `run_spinner`, which
+# backgrounds them, so debconf/whiptail prompts (e.g. the gdm3 vs lightdm
+# display-manager question on Mint) get stdin=/dev/null, paint on screen,
+# and hang forever with a dead-looking dialog. Noninteractive answers such
+# prompts with their defaults instead (matches Docker/Tailscale installers).
+export DEBIAN_FRONTEND=noninteractive
+
 SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
 SCRIPT_DIR=""
 if [[ -n "$SCRIPT_SOURCE" ]]; then
@@ -894,7 +901,7 @@ summary() {
     echo -e "    Tray icon + hotkeys handle day-to-day capture (daemon starts with your session)"
     echo -e "    apexshot capture area      # CLI area capture"
     echo -e "\n  ${BOLD}Update later with:${RESET}"
-    echo -e "    ${DIM}curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/ubuntu-update.sh | bash${RESET}"
+    echo -e "    ${DIM}curl -fsSL https://apexshot.org/update/ubuntu | bash${RESET}"
     echo -e "  ${DIM}Re-run this installer with --force to re-download the package.${RESET}"
     echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${RESET}\n"
 }

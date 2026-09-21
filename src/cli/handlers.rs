@@ -5,15 +5,14 @@ use apexshot::{
     capture::{save_capture, ImageFormat, SaveConfig},
     capture_overlay::{
         capture_area_via_cpp, capture_crosshair_via_cpp, capture_screen_via_cpp,
-        is_launch_blocked_error, open_recording_ui_via_cpp, quick_capture_via_cpp,
-        run_capture_overlay, AreaCapturePathResult, AreaCaptureResult,
+        is_launch_blocked_error, quick_capture_via_cpp, AreaCaptureResult,
     },
     hotkeys::ensure_desktop_entry_pub,
     ocr::{extract_text_from_capture, extract_text_from_path, ContentSource, OcrConfig, OcrOutput},
     preview_launch::{launch_preview_on_display, show_preview_direct_on_display},
     recording::{
-        run_overlay_recording_request, run_recording_with_controls, start_recording,
-        RecordingConfig, RecordingControlsParams, StopAction,
+        run_recording_with_controls, start_recording, RecordError, RecordingConfig,
+        RecordingControlsParams, StopAction,
     },
 };
 use std::path::PathBuf;
@@ -35,9 +34,11 @@ pub(crate) fn capture_daemon_action(capture_type: &str) -> Option<&'static str> 
 /// fall back to an in-process path when the daemon is unavailable.
 pub(crate) fn record_daemon_action(record_type: &str) -> Option<&'static str> {
     match record_type {
-        "ui" => Some("open_recording_ui"),
+        // NOTE: discontinued entries ("area", "ui") intentionally map to
+        // nothing so the CLI always takes the local path, which prints the
+        // discontinued error plus the usage menu. Routing them to the daemon
+        // would succeed silently with the message lost in the daemon journal.
         "screen" => Some("record_screen"),
-        "area" => Some("record_area"),
         // Must match `DaemonIpc::trigger` action names in daemon/mod.rs.
         "stop" => Some("recording_stop_save"),
         _ => None,
@@ -278,6 +279,7 @@ pub(crate) fn run_capture(args: &[String]) {
                 "Error: window capture is temporarily discontinued.\n\
                  Use 'apexshot capture area' or 'apexshot capture screen' instead."
             );
+            crate::print_usage();
             std::process::exit(1);
         }
         _ if WaylandBackend::is_supported() => {
@@ -294,6 +296,7 @@ pub(crate) fn run_capture(args: &[String]) {
                         "Error: window capture is temporarily discontinued.\n\
                          Use 'capture area' or 'capture screen' instead."
                     );
+                    crate::print_usage();
                     std::process::exit(1);
                 }
                 _ => {
@@ -618,7 +621,6 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
 
     let record_type = args[2].as_str();
     let mut output_path: Option<PathBuf> = None;
-    let mut is_gif = false;
     let mut overlay_stop = false;
 
     let mut i = 3;
@@ -633,8 +635,12 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
                 i += 2;
             }
             "--gif" => {
-                is_gif = true;
-                i += 1;
+                eprintln!(
+                    "Error: GIF recording is discontinued.\n\
+                     Recordings are saved as MP4. Use 'apexshot record screen' instead."
+                );
+                crate::print_usage();
+                std::process::exit(1);
             }
             "--overlay-stop" => {
                 overlay_stop = true;
@@ -647,69 +653,38 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
         }
     }
 
-    let mut config = RecordingConfig::default();
+    let app_config = load_config().sanitized();
+    let mut config = RecordingConfig::from_app_config(&app_config, "mp4");
 
     // Configure output path
     if let Some(p) = output_path {
         config.output_path = p;
-        if is_gif
-            && config
-                .output_path
-                .extension()
-                .map(|e| e != "gif")
-                .unwrap_or(true)
-        {
-            config.output_path.set_extension("gif");
-        }
-    } else if is_gif {
-        config.output_path.set_extension("gif");
     }
 
-    // Handle area selection if needed
     if record_type == "area" {
-        // If on X11, launch overlay
-        if std::env::var("WAYLAND_DISPLAY").is_err() && X11Backend::is_supported() {
-            println!("Select an area to record by dragging the mouse. Press ESC to cancel.");
-
-            let selection =
-                run_capture_overlay(None).map_err(|e| format!("Selection failed: {}", e))?;
-            if let apexshot::OverlaySelection::Area(Some(area)) = selection {
-                config.x = Some(area.x);
-                config.y = Some(area.y);
-                config.width = Some(area.width as u32);
-                config.height = Some(area.height as u32);
-            } else {
-                println!("Selection cancelled.");
-                return Ok(());
-            }
-        } else {
-            // Wayland area = portal selection (handled in start_recording)
-            println!("Wayland detected: 'area' recording triggers system screen/window selection.");
-        }
+        eprintln!(
+            "Error: area recording is discontinued.\n\
+             Use 'apexshot record screen' instead."
+        );
+        crate::print_usage();
+        std::process::exit(1);
     } else if record_type == "ui" {
-        match open_recording_ui_via_cpp()
-            .map_err(|e| format!("Failed to open recording UI: {e}"))?
-        {
-            AreaCapturePathResult::RecordingRequested(request) => {
-                let _ = run_overlay_recording_request(request)?;
-                return Ok(());
-            }
-            AreaCapturePathResult::RecordingConfigUpdated | AreaCapturePathResult::Cancelled => {
-                return Ok(());
-            }
-            other => {
-                return Err(format!("Unexpected recording UI result: {other:?}").into());
-            }
-        }
+        eprintln!(
+            "Error: recording UI is discontinued.\n\
+             Use 'apexshot record screen' instead."
+        );
+        crate::print_usage();
+        std::process::exit(1);
     } else if record_type != "screen" {
         eprintln!(
             "Error: recording type '{record_type}' not supported \
-             (use 'screen', 'area', 'ui', or control: stop|pause|resume|toggle-pause|restart|discard)"
+             (use 'screen', or control: stop|pause|resume|toggle-pause|restart|discard)"
         );
+        crate::print_usage();
         std::process::exit(1);
     }
 
-    let final_path = if overlay_stop {
+    let _final_path = if overlay_stop {
         let params = RecordingControlsParams {
             capture_x: 0,
             capture_y: 0,
@@ -719,16 +694,23 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
             show_timer: true,
             use_shell_mask: false,
             dim_screen: false,
-            countdown_enabled: false,
+            countdown_enabled: app_config.rec_countdown,
             countdown_seconds: 3,
             session_id: None,
         };
 
-        let controls_outcome = run_recording_with_controls(config, params)
-            .await
-            .map_err(|e| {
+        let controls_outcome = match run_recording_with_controls(config, params).await {
+            Err(e)
+                if e.downcast_ref::<RecordError>()
+                    .is_some_and(|e| matches!(e, RecordError::Cancelled)) =>
+            {
+                eprintln!("Recording cancelled.");
+                return Ok(());
+            }
+            other => other.map_err(|e| {
                 Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
-            })?;
+            })?,
+        };
 
         match controls_outcome {
             (path, StopAction::Discard) => {
@@ -741,20 +723,25 @@ pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error
             }
         }
     } else {
-        start_recording(config)
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?
-    };
-
-    // Post-processing
-    if let Some(ext) = final_path.extension() {
-        if ext == "gif" {
-            // For GIFs, we default to copying to clipboard (feature requested)
-            if let Err(e) = apexshot::recording::copy_to_clipboard(&final_path) {
-                eprintln!("Warning: Failed to copy GIF to clipboard: {}", e);
+        if app_config.rec_countdown {
+            let proceed = apexshot::recording::run_standalone_countdown()
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+                })?;
+            if !proceed {
+                eprintln!("Recording cancelled.");
+                return Ok(());
             }
         }
-    }
+        match start_recording(config).await {
+            Err(RecordError::Cancelled) => {
+                eprintln!("Recording cancelled.");
+                return Ok(());
+            }
+            other => other.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?,
+        }
+    };
 
     Ok(())
 }

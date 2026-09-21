@@ -74,11 +74,6 @@ pub struct RecordingRequest {
     pub open_editor: bool,
     #[serde(default)]
     pub noise_suppression: bool,
-    // GIF tab settings
-    pub gif_fps: u8,
-    pub gif_quality: f64,
-    pub gif_size_idx: u8,
-    pub optimize_gif: bool,
     pub fullscreen: bool,
 }
 
@@ -106,10 +101,6 @@ impl Default for RecordingRequest {
             record_mono: false,
             open_editor: true,
             noise_suppression: false,
-            gif_fps: 50,
-            gif_quality: 0.75,
-            gif_size_idx: 0,
-            optimize_gif: true,
             fullscreen: false,
         }
     }
@@ -119,7 +110,6 @@ impl Default for RecordingRequest {
 #[serde(rename_all = "lowercase")]
 pub enum RecordingType {
     Video,
-    Gif,
 }
 
 #[derive(Debug)]

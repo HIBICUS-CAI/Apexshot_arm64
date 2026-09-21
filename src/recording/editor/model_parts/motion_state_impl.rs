@@ -95,19 +95,42 @@ impl MotionState {
         } else {
             DEFAULT_MOTION_ZOOM
         };
+        // A new clip inherits the curve the user is currently working with;
+        // with no selection it starts from the recovered defaults.
+        let timing = self
+            .selected
+            .and_then(|index| self.segments.get(index))
+            .map(|segment| segment.timing)
+            .unwrap_or_default();
+        // Keep the zoom anchor fixed across a flush chain: a new clip inherits
+        // the anchor of the move it chains from (else the selected clip's
+        // anchor, else center). Resetting to center here would hard-cut the
+        // zoom focus at every boundary of a Position-driven edge tour.
+        let (anchor_x, anchor_y) = self
+            .segments
+            .iter()
+            .find(|segment| !segment.is_disabled && (segment.end - start).abs() <= 1e-9)
+            .map(|segment| (segment.zoom_anchor_x, segment.zoom_anchor_y))
+            .or_else(|| {
+                self.selected
+                    .and_then(|index| self.segments.get(index))
+                    .map(|segment| (segment.zoom_anchor_x, segment.zoom_anchor_y))
+            })
+            .unwrap_or((0.5, 0.5));
         self.segments.push(MotionSegment {
             start,
             end,
             zoom_mode: MotionZoomMode::Manual,
             intensity: 1.0,
-            zoom_anchor_x: 0.5,
-            zoom_anchor_y: 0.5,
+            zoom_anchor_x: anchor_x,
+            zoom_anchor_y: anchor_y,
             is_disabled: false,
             from: MotionTransform::default(),
             to: MotionTransform {
                 scale: target_scale,
                 ..MotionTransform::default()
             },
+            timing,
         });
         self.segments.sort_by(|a, b| a.start.total_cmp(&b.start));
         self.reconcile_effect_segments();
@@ -130,7 +153,7 @@ impl MotionState {
 
     /// Find the nearest meaningful timeline edge for an effect segment. The
     /// visual timeline deliberately stays uncluttered; this supplies the
-    /// Shotbase-style magnetic behavior behind it.
+    /// magnetic behavior behind it.
     pub fn snap_effect_time(&self, time: f64, tolerance: f64, excluding: Option<usize>) -> f64 {
         self.snap_time(time, tolerance, excluding, None)
     }
@@ -255,16 +278,27 @@ impl MotionState {
         self.reconcile_effect_segments();
     }
 
-    /// Shotbase stores one transition duration for the whole Motion effects
-    /// track. The inspector's millisecond slider writes through to the global
-    /// timing; there is no per-segment ease.
+    /// Writes the transition duration into the selected clip's timing, so a
+    /// slider nudge no longer rewrites every move on the track.
     pub fn set_selected_transition_ms(&mut self, transition_ms: u32) {
         let transition_ms = transition_ms.clamp(MIN_ZOOM_EASE_MS, MAX_ZOOM_EASE_MS);
-        self.transform_timing.transition_duration = transition_ms as f64 / 1000.0;
+        if let Some(segment) = self.selected_segment_mut() {
+            segment.timing.transition_duration = transition_ms as f64 / 1000.0;
+        }
+    }
+
+    /// The timing of the clip the inspector is editing; falls back to the
+    /// defaults when nothing is selected.
+    pub fn selected_transform_timing(&self) -> MotionEffectTransformTiming {
+        self.selected_segment()
+            .map(|segment| segment.timing)
+            .unwrap_or_default()
     }
 
     pub fn set_transform_timing(&mut self, timing: MotionEffectTransformTiming) {
-        self.transform_timing = timing.clamped();
+        if let Some(segment) = self.selected_segment_mut() {
+            segment.timing = timing.clamped();
+        }
     }
     pub fn set_selected_end_pitch(&mut self, pitch: f64) {
         if let Some(segment) = self.selected_segment_mut() {
@@ -312,7 +346,7 @@ impl MotionState {
     }
 
     /// The scalar used by ApexShot's current still-image renderer. It is a
-    /// compatibility projection of Shotbase's separate blur strengths.
+    /// compatibility projection of the separate blur strengths.
     pub fn effective_motion_blur(&self) -> f64 {
         if self.motion_blur_settings.enabled {
             self.motion_blur_settings.zoom_strength.clamp(0.0, 1.0)
@@ -482,12 +516,19 @@ impl MotionState {
 
     pub fn sample(&self, time: f64) -> MotionTransform {
         let time = time.clamp(0.0, self.duration.max(0.0));
+        // No camera moves: stay perfectly flat so the Motion still matches
+        // the Static canvas. Applying `perspective_intensity` here would force
+        // the mesh path (and a shadow lift) for an identity pose whose
+        // projection is exactly 1:1 — a visible warp/softening with no clip.
+        if self.segments.iter().all(|segment| segment.is_disabled) {
+            return MotionTransform::default();
+        }
         let transform = if let Some(segment) = self
             .segments
             .iter()
             .find(|segment| time >= segment.start && time <= segment.end)
         {
-            segment.sample(time, self.transform_timing)
+            segment.sample(time)
         } else if let Some((index, previous)) = self
             .segments
             .iter()
@@ -496,16 +537,16 @@ impl MotionState {
             .find(|(_, segment)| time > segment.end && !segment.is_disabled)
         {
             // The camera always eases back to the initial framing in a gap.
-            // The gap's length sets the release speed, capped by the track's
-            // transition timing; the following move starts from identity when
-            // the gap ends. Flush moves never enter this branch: they chain
-            // directly through `reconcile_effect_segments`.
+            // The gap's length sets the release speed, capped by the clip's
+            // own transition duration; the following move starts from identity
+            // when the gap ends. Flush moves never enter this branch: they
+            // chain directly through `reconcile_effect_segments`.
             let release_end = self.segments[index + 1..]
                 .iter()
                 .find(|segment| !segment.is_disabled)
                 .map(|segment| segment.start)
                 .unwrap_or(self.duration);
-            previous.release_after(time, self.transform_timing, release_end - previous.end)
+            previous.release_after(time, release_end - previous.end)
         } else {
             MotionTransform::default()
         };
@@ -516,7 +557,7 @@ impl MotionState {
     }
 
     /// Source-artboard zoom focus for the active camera move. The anchor is
-    /// deliberately sampled alongside the transform because Shotbase keeps it
+    /// deliberately sampled alongside the transform because it lives
     /// on `MotionEffectSegment`, not in the global compositor configuration.
     pub fn zoom_anchor_at(&self, time: f64) -> (f64, f64) {
         let time = time.clamp(0.0, self.duration.max(0.0));

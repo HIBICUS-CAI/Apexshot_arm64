@@ -41,10 +41,10 @@ const DOT_DEFAULT: &[u8] = include_bytes!("../../../assets/cursors/dot/default.p
 const DOT_HAND: &[u8] = include_bytes!("../../../assets/cursors/dot/hand.png");
 const DOT_TEXT: &[u8] = include_bytes!("../../../assets/cursors/dot/text.png");
 const DOT_CROSSHAIR: &[u8] = include_bytes!("../../../assets/cursors/dot/crosshair.png");
-const FIGMA_DEFAULT: &[u8] = include_bytes!("../../../assets/cursors/figma/default.png");
-const FIGMA_HAND: &[u8] = include_bytes!("../../../assets/cursors/figma/hand.png");
-const FIGMA_TEXT: &[u8] = include_bytes!("../../../assets/cursors/figma/text.png");
-const FIGMA_CROSSHAIR: &[u8] = include_bytes!("../../../assets/cursors/figma/crosshair.png");
+const MINIMAL_DEFAULT: &[u8] = include_bytes!("../../../assets/cursors/minimal/default.png");
+const MINIMAL_HAND: &[u8] = include_bytes!("../../../assets/cursors/minimal/hand.png");
+const MINIMAL_TEXT: &[u8] = include_bytes!("../../../assets/cursors/minimal/text.png");
+const MINIMAL_CROSSHAIR: &[u8] = include_bytes!("../../../assets/cursors/minimal/crosshair.png");
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SpriteKind {
@@ -93,10 +93,10 @@ pub fn hotspot(theme: CursorTheme, kind: &str) -> (f64, f64) {
         (CursorTheme::Dot, SpriteKind::Hand) => (24.0, 24.0),
         (CursorTheme::Dot, SpriteKind::Text) => (24.0, 24.0),
         (CursorTheme::Dot, SpriteKind::Crosshair) => (24.0, 24.0),
-        (CursorTheme::Figma, SpriteKind::Default) => (7.0, 3.0),
-        (CursorTheme::Figma, SpriteKind::Hand) => (7.0, 3.0),
-        (CursorTheme::Figma, SpriteKind::Text) => (7.0, 3.0),
-        (CursorTheme::Figma, SpriteKind::Crosshair) => (7.0, 3.0),
+        (CursorTheme::Minimal, SpriteKind::Default) => (7.0, 3.0),
+        (CursorTheme::Minimal, SpriteKind::Hand) => (7.0, 3.0),
+        (CursorTheme::Minimal, SpriteKind::Text) => (7.0, 3.0),
+        (CursorTheme::Minimal, SpriteKind::Crosshair) => (7.0, 3.0),
     }
 }
 
@@ -573,21 +573,21 @@ fn bitmap(theme: CursorTheme, kind: &str) -> &'static RgbaImage {
             static IMG: OnceLock<RgbaImage> = OnceLock::new();
             IMG.get_or_init(|| decode(DOT_CROSSHAIR))
         }
-        (CursorTheme::Figma, SpriteKind::Default) => {
+        (CursorTheme::Minimal, SpriteKind::Default) => {
             static IMG: OnceLock<RgbaImage> = OnceLock::new();
-            IMG.get_or_init(|| decode(FIGMA_DEFAULT))
+            IMG.get_or_init(|| decode(MINIMAL_DEFAULT))
         }
-        (CursorTheme::Figma, SpriteKind::Hand) => {
+        (CursorTheme::Minimal, SpriteKind::Hand) => {
             static IMG: OnceLock<RgbaImage> = OnceLock::new();
-            IMG.get_or_init(|| decode(FIGMA_HAND))
+            IMG.get_or_init(|| decode(MINIMAL_HAND))
         }
-        (CursorTheme::Figma, SpriteKind::Text) => {
+        (CursorTheme::Minimal, SpriteKind::Text) => {
             static IMG: OnceLock<RgbaImage> = OnceLock::new();
-            IMG.get_or_init(|| decode(FIGMA_TEXT))
+            IMG.get_or_init(|| decode(MINIMAL_TEXT))
         }
-        (CursorTheme::Figma, SpriteKind::Crosshair) => {
+        (CursorTheme::Minimal, SpriteKind::Crosshair) => {
             static IMG: OnceLock<RgbaImage> = OnceLock::new();
-            IMG.get_or_init(|| decode(FIGMA_CROSSHAIR))
+            IMG.get_or_init(|| decode(MINIMAL_CROSSHAIR))
         }
     }
 }

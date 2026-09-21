@@ -50,7 +50,6 @@ pub(super) struct CanvasShellParts {
 pub(super) fn build_canvas_shell(
     img_width: i32,
     img_height: i32,
-    background_sidebar: &GtkBox,
     eyedropper_loupe_size: i32,
 ) -> CanvasShellParts {
     let drawing_area = DrawingArea::new();
@@ -92,9 +91,6 @@ pub(super) fn build_canvas_shell(
     canvas_workspace.set_hexpand(true);
     canvas_workspace.set_vexpand(true);
     canvas_workspace.add_css_class("editor-canvas-workspace");
-    canvas_scroller.set_hexpand(true);
-    background_sidebar.set_halign(gtk4::Align::Start);
-    canvas_workspace.append(background_sidebar);
     canvas_workspace.append(&canvas_scroller);
 
     let root = GtkBox::new(Orientation::Vertical, 0);
@@ -120,6 +116,7 @@ pub(super) fn sample_editor_color_at_point(
     sample_rendered_color_at_point(&rendered, image_point)
 }
 
+#[allow(dead_code)]
 pub(super) fn crop_canvas_overflow(
     crop_rect: Option<Rect>,
     image_width: f64,

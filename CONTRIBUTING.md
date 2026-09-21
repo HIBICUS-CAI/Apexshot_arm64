@@ -30,8 +30,8 @@ Thank you for your interest in contributing to ApexShot! This document provides 
 - **GTK4** + **gtk4-layer-shell** development headers (the latter built
   from source — see the GitHub Actions workflow for the exact recipe).
 - **GStreamer 1.0** with `plugins-base`, `plugins-good`, `plugins-bad`,
-  `libav`, `pipewire`, `pulseaudio` runtime plugins (used for X11 recording
-  fallback and v4l2 webcam fallback).
+  `libav`, `pipewire`, `pulseaudio` runtime plugins (used for the X11 recording
+  fallback).
 - **Qt5** (`qtbase5-dev`, `libqt5x11extras5-dev`).
 - **PipeWire**, **Tesseract**, **xkbcommon**, **libxtst**, **libwayland**,
   **libdbus-1**, **pkg-config**.
@@ -71,7 +71,7 @@ right starting point for a change.
 | Capture backends (X11 / Wayland)      | `src/backend/`                                      | Tier list: wlr-screencopy → grim → portal Screenshot → portal ScreenCast (incl. `restore_token` cache). |
 | Image editor + annotations            | `src/capture/editor/`                               | GTK4 + Cairo. Pen/highlighter rendering, color palette, selection, crop. |
 | Preview overlay                       | `src/capture/preview_overlay.rs`                    | Quick-access card after capture (drag, edit, copy, save). |
-| Recording pipeline                    | `src/recording/`                                    | Native PipeWire (`pipewire_engine.rs`) + ffmpeg on Wayland; GStreamer ximagesrc on X11. GIF / video encoding, audio source discovery (`pactl`). |
+| Recording pipeline                    | `src/recording/`                                    | Native PipeWire (`pipewire_engine.rs`) + ffmpeg on Wayland; GStreamer ximagesrc on X11. Video encoding, audio source discovery (`pactl`). |
 | OCR + QR                              | `src/ocr/`, `src/qr/`                               | Tesseract LSTM with multi-PSM voting, deskew, QR-first detection. |
 | Settings UI                           | `src/settings/`                                     | GTK4 preferences window, shortcut editor, recording options. |
 | Onboarding wizard                     | `src/onboarding/`                                   | First-run setup, GNOME extension installer (`wget` + `curl`). |
@@ -283,7 +283,7 @@ elsewhere when they touch a related code path. As of today:
 | Display server              | Wayland                      | X11                        | XWayland edge cases   |
 | Compositor                  | GNOME Shell 47–50, Hyprland  | Sway / wlroots-like        | KDE Plasma, Niri, river |
 | Distro                      | Ubuntu 24.04 / 25.10, Arch Linux | Debian / Pop!_OS through Ubuntu-compatible packaging; Fedora screenshots (KDE validated) | openSUSE, NixOS; full Fedora GNOME matrix |
-| Recording codecs            | VP9, H.264, GIF (Ubuntu/Arch and similar) | VP8, H.265, Theora | **Fedora: recording unsupported** |
+| Recording codecs            | VP9, H.264 (Ubuntu/Arch and similar) | VP8, H.265, Theora | **Fedora: recording unsupported** |
 | Capture portal flow         | xdg-desktop-portal-gnome, Hyprland/wlroots native capture | xdg-desktop-portal-gtk, xdg-desktop-portal-kde (screenshots) | — |
 
 **Fedora product limit:** ApexShot does **not** support video recording on
@@ -435,7 +435,7 @@ ordered roughly by how much value a single PR can deliver.
 - Internationalisation of the GTK UI strings.
 - Custom theming for the editor / preview overlay.
 - Plugin / scripting hooks for third-party effects.
-- Additional codecs beyond the default VP9 / H.264 / GIF set.
+- Additional codecs beyond the default VP9 / H.264 set.
 
 ## Communication
 

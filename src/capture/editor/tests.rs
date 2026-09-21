@@ -36,9 +36,6 @@ mod effects;
 #[path = "tests/export.rs"]
 mod export;
 
-#[path = "tests/crop.rs"]
-mod crop;
-
 #[path = "tests/drag_draw.rs"]
 mod drag_draw;
 

@@ -2252,6 +2252,9 @@ msgstr "Título"
 msgid "Drag on the preview to place the title"
 msgstr "Arrastra en la vista previa para colocar el título"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Haz clic o arrastra sobre la imagen para colocar el ancla de zoom; doble clic para recentrar"
+
 msgid "Anchor X"
 msgstr "Ancla X"
 msgid "Anchor Y"
@@ -2368,3 +2371,98 @@ msgstr "Base"
 
 msgid "Undo"
 msgstr "Deshacer"
+
+msgid "Bounce"
+msgstr "Rebote"
+
+msgid "Custom"
+msgstr "Personalizado"
+
+msgid "Gentle"
+msgstr "Suave"
+
+msgid "Bouncy"
+msgstr "Saltarín"
+
+msgid "Spring"
+msgstr "Resorte"
+
+msgid "Theme"
+msgstr "Tema"
+
+msgid "Light"
+msgstr "Claro"
+
+msgid "Dark"
+msgstr "Oscuro"
+
+msgid "System"
+msgstr "Sistema"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Equilibrado"
+
+msgid "Frame height in pixels"
+msgstr "Altura del marco en píxeles"
+
+msgid "Frame width in pixels"
+msgstr "Anchura del marco en píxeles"
+
+msgid "Freehand"
+msgstr "Trazo libre"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 con micrófono y audio del sistema si el escritorio lo permite"
+
+msgid "More frame sizes"
+msgstr "Más tamaños de marco"
+
+msgid "Number of the selected marker"
+msgstr "Número del marcador seleccionado"
+
+msgid "Number the next marker starts at"
+msgstr "Número en el que comienza el siguiente marcador"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Calidad de grabación"
+
+msgid "Text-aware"
+msgstr "Ajustado al texto"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"
+
+msgid "Background color"
+msgstr "Color de fondo"
+
+msgid "COLOR"
+msgstr "COLOR"
+
+msgid "Choose background color"
+msgstr "Elegir color de fondo"
+
+msgid "WALLPAPER"
+msgstr "FONDO DE PANTALLA"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr ""
+"El fondo de pantalla o el color rellenan el lienzo detrás del vídeo en la vista previa y la exportación"

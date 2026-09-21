@@ -1581,7 +1581,7 @@ msgid "Notifications"
 msgstr "Notifications"
 
 msgid "Number"
-msgstr "Nombre"
+msgstr "Numéro"
 
 msgid "Number Options"
 msgstr "Options de numérotation"
@@ -2255,6 +2255,9 @@ msgstr "Titre"
 msgid "Drag on the preview to place the title"
 msgstr "Glissez sur l’aperçu pour placer le titre"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Cliquez ou glissez sur l’image pour placer l’ancre de zoom ; double-cliquez pour recentrer"
+
 msgid "Anchor X"
 msgstr "Ancre X"
 msgid "Anchor Y"
@@ -2372,3 +2375,98 @@ msgstr "Sous-couche"
 
 msgid "Undo"
 msgstr "Annuler"
+
+msgid "Bounce"
+msgstr "Rebond"
+
+msgid "Custom"
+msgstr "Personnalisé"
+
+msgid "Gentle"
+msgstr "Doux"
+
+msgid "Bouncy"
+msgstr "Rebondissant"
+
+msgid "Spring"
+msgstr "Ressort"
+
+msgid "Theme"
+msgstr "Thème"
+
+msgid "Light"
+msgstr "Clair"
+
+msgid "Dark"
+msgstr "Sombre"
+
+msgid "System"
+msgstr "Système"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Équilibré"
+
+msgid "Frame height in pixels"
+msgstr "Hauteur du cadre en pixels"
+
+msgid "Frame width in pixels"
+msgstr "Largeur du cadre en pixels"
+
+msgid "Freehand"
+msgstr "Tracé libre"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 avec micro et audio système si le bureau le permet"
+
+msgid "More frame sizes"
+msgstr "Plus de tailles de cadre"
+
+msgid "Number of the selected marker"
+msgstr "Numéro du marqueur sélectionné"
+
+msgid "Number the next marker starts at"
+msgstr "Numéro de départ du prochain marqueur"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Qualité d’enregistrement"
+
+msgid "Text-aware"
+msgstr "Aligné sur le texte"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"
+
+msgid "Background color"
+msgstr "Couleur d'arrière-plan"
+
+msgid "COLOR"
+msgstr "COULEUR"
+
+msgid "Choose background color"
+msgstr "Choisir la couleur d'arrière-plan"
+
+msgid "WALLPAPER"
+msgstr "FOND D'ÉCRAN"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr ""
+"Le fond d'écran ou la couleur remplit la zone derrière la vidéo dans l'aperçu et l'exportation"

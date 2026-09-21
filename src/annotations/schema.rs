@@ -52,7 +52,7 @@ impl Default for BackgroundSettings {
     fn default() -> Self {
         Self {
             style: BackgroundStyle::None,
-            padding: 24.0,
+            padding: 0.0,
             shadow: 15.0,
             insert: 0.0,
             auto_balance: false,
@@ -101,6 +101,12 @@ pub enum CropAspectRatio {
     TwentyOneNine,
     ThreeTwo,
     NineSixteen,
+    FiveFour,
+    FourFive,
+    ThreeFour,
+    TwoThree,
+    TenTwentyOne,
+    ThreeOne,
 }
 
 /// Serializable color (f64 -> u8 for JSON compactness)

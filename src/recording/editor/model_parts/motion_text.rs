@@ -9,7 +9,7 @@ pub enum MotionTextAnimation {
 }
 
 impl MotionTextAnimation {
-    /// Cases recovered from Shotbase `TextEffectPreset` metadata.
+    /// Cases recovered from the `TextEffectPreset` metadata.
     pub const ALL: [Self; 6] = [
         Self::None,
         Self::Typewriter,
@@ -31,7 +31,7 @@ impl MotionTextAnimation {
     }
 }
 
-/// Shotbase stores this as the text effect `scope` field.
+/// This is stored as the text effect `scope` field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MotionTextScope {
     Character,
@@ -40,7 +40,7 @@ pub enum MotionTextScope {
 }
 
 impl MotionTextScope {
-    /// Cases recovered from Shotbase's `TextEffectScope` metadata.
+    /// Cases recovered from the `TextEffectScope` metadata.
     pub const ALL: [Self; 3] = [Self::Character, Self::Word, Self::Line];
 
     pub fn label(self) -> &'static str {
@@ -61,7 +61,7 @@ pub struct MotionTextStyle {
 }
 
 /// Where a Motion text annotation is authored. These are the two coordinate
-/// spaces named by Shotbase's `MotionTextSegment.annotationCoordinateSpace`.
+/// spaces named by `MotionTextSegment.annotationCoordinateSpace`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MotionTextCoordinateSpace {
     /// Coordinates are normalized to the moving image card.

@@ -592,11 +592,11 @@ install_from_source() {
     local desktop
     desktop=$(current_desktop_id)
 
-    # wlroots compositors need wf-recorder for video/GIF recording.
+    # wlroots compositors need wf-recorder for video recording.
     if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || [[ "$desktop" == *hyprland* ]] || \
        [[ -n "${SWAYSOCK:-}" ]] || [[ "$desktop" == *sway* || "$desktop" == *river* || "$desktop" == *dwl* || "$desktop" == *wayfire* || "$desktop" == *labwc* || "$desktop" == *niri* ]]; then
         deps+=(wf-recorder)
-        info "wlroots compositor detected — adding wf-recorder for video/GIF recording"
+        info "wlroots compositor detected — adding wf-recorder for video recording"
     fi
 
     local portal_backend
@@ -890,7 +890,7 @@ summary() {
     echo -e "    Tray icon + hotkeys handle day-to-day capture (daemon starts with your session)"
     echo -e "    apexshot capture area      # CLI area capture"
     echo -e "\n  ${BOLD}Update later with:${RESET}"
-    echo -e "    ${DIM}curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/arch-update.sh | bash${RESET}"
+    echo -e "    ${DIM}curl -fsSL https://apexshot.org/update/arch | bash${RESET}"
     echo -e "  ${DIM}Re-run this installer with --force to re-download the package.${RESET}"
     echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${RESET}\n"
 }

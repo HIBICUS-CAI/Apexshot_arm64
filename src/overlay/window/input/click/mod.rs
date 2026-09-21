@@ -17,6 +17,8 @@ enum ClickEffect {
     OpenScrollExtension,
     SendSelection,
     SendRecording(OverlaySelection),
+    /// Top-bar X button: cancel the selection and close the overlay.
+    Cancel,
     SetMicVolume(f64),
     SetSpeakerVolume(f64),
 }

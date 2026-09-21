@@ -17,6 +17,7 @@ pub struct RecordingSettingsWidgets {
     pub rec_countdown: CheckButton,
     pub rec_video_max_res: SettingsSelect,
     pub rec_video_fps: SettingsSelect,
+    pub rec_video_quality: SettingsSelect,
     pub rec_video_mono: CheckButton,
 }
 
@@ -181,7 +182,15 @@ pub fn build_recording_section(config: &AppConfig) -> RecordingSettingsWidgets {
 
     let video_frame = build_frame();
     let rec_video_max_res = SettingsSelect::new(
-        [("0", t("Original")), ("1", t("1080p")), ("2", t("720p"))],
+        [
+            ("0", t("Original")),
+            ("6", t("2160p")),
+            ("3", t("1440p")),
+            ("1", t("1080p")),
+            ("4", t("900p")),
+            ("2", t("720p")),
+            ("5", t("480p")),
+        ],
         &config.rec_video_max_res.to_string(),
     );
     let resolution_row = GtkBox::new(Orientation::Horizontal, 12);
@@ -211,6 +220,19 @@ pub fn build_recording_section(config: &AppConfig) -> RecordingSettingsWidgets {
     frame_rate_row.append(rec_video_fps.widget());
     video_frame.append(&build_row!(&frame_rate_row, true));
 
+    let rec_video_quality = SettingsSelect::new(
+        [("0", t("Balanced")), ("1", t("High")), ("2", t("Ultra"))],
+        &config.rec_video_quality.to_string(),
+    );
+    let quality_row = GtkBox::new(Orientation::Horizontal, 12);
+    quality_row.set_hexpand(true);
+    let quality_label = Label::new(Some(&t("Recording quality")));
+    quality_label.set_xalign(0.0);
+    quality_label.set_hexpand(true);
+    quality_row.append(&quality_label);
+    quality_row.append(rec_video_quality.widget());
+    video_frame.append(&build_row!(&quality_row, false));
+
     let (mono_row, rec_video_mono) = build_toggle(
         "Record audio in mono",
         "Combine recorded audio channels into a single channel.",
@@ -232,6 +254,7 @@ pub fn build_recording_section(config: &AppConfig) -> RecordingSettingsWidgets {
         rec_countdown,
         rec_video_max_res,
         rec_video_fps,
+        rec_video_quality,
         rec_video_mono,
     }
 }

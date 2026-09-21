@@ -269,18 +269,23 @@ pub fn source_to_zoomed_point(
     )
 }
 
-/// Fit `src` inside `box` without upscaling or stretching (aspect preserved).
-pub fn fit_dimensions(src_w: u32, src_h: u32, box_w: u32, box_h: u32) -> (u32, u32) {
-    let src_w = src_w.max(1);
-    let src_h = src_h.max(1);
-    let box_w = box_w.max(MIN_DIMENSION);
-    let box_h = box_h.max(MIN_DIMENSION);
-    // Cap the box at the source so we never upscale past the original.
-    let max_w = box_w.min(src_w);
-    let max_h = box_h.min(src_h);
-    let scale = (max_w as f64 / src_w as f64).min(max_h as f64 / src_h as f64);
-    let width = even_dimension(((src_w as f64 * scale).round() as u32).max(2));
-    let height = even_dimension(((src_h as f64 * scale).round() as u32).max(2));
+/// Fit `src` inside `box` (aspect preserved, centered) for the Frame canvas.
+/// Unlike a thumbnail fit this scales up: an explicit Frame is a chosen
+/// output size, so a 720p recording in a 1080p frame still fills the canvas.
+/// Even dimensions keep the MP4 encoder's yuv420p happy.
+pub fn contain_fit(src_w: u32, src_h: u32, box_w: u32, box_h: u32) -> (u32, u32) {
+    let src_w = src_w.max(1) as f64;
+    let src_h = src_h.max(1) as f64;
+    let box_w = box_w.max(MIN_DIMENSION) as f64;
+    let box_h = box_h.max(MIN_DIMENSION) as f64;
+    let scale = (box_w / src_w).min(box_h / src_h);
+    let width = even_dimension(((src_w * scale).round() as u32).max(2));
+    let height = even_dimension(((src_h * scale).round() as u32).max(2));
+    // Matching aspects only miss the box by the even-dimension rounding; snap
+    // so a recording that fills its Frame leaves no hairline letterbox.
+    if box_w - f64::from(width) <= 2.0 && box_h - f64::from(height) <= 2.0 {
+        return (box_w as u32, box_h as u32);
+    }
     (width.max(2), height.max(2))
 }
 
@@ -289,7 +294,7 @@ pub fn card_depth(hw: f64, hh: f64, perspective: f64) -> f64 {
     // the card's half diagonal as the film-size reference so the same value
     // has comparable yaw and pitch on wide, square, and portrait captures.
     // This is ApexShot's aspect-invariant focal heuristic. The corresponding
-    // Shotbase CIPerspectiveTransform parameter construction is not inferred
+    // CIPerspectiveTransform parameter construction is not inferred
     // from this value.
     let half_diagonal = hw.hypot(hh).max(1.0);
     half_diagonal * (2.44 - perspective.clamp(0.0, 1.0) * 1.30).max(1.15)
@@ -403,7 +408,7 @@ pub fn estimate_size_bytes(state: &VideoEditState, trim_only: bool) -> u64 {
     }
 
     let quality_factor = 0.55 + (state.quality.min(100) as f64 / 100.0) * 0.9;
-    let (target_width, target_height) = state.padded_output_dimensions();
+    let (target_width, target_height) = state.output_dimensions();
     let original_pixels = (state.metadata.width as f64 * state.metadata.height as f64).max(1.0);
     let target_pixels = target_width as f64 * target_height as f64;
     let dimension_factor = (target_pixels / original_pixels).max(0.0);
@@ -427,16 +432,22 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
-pub const WEBCUT_ASPECT_RATIOS: [(&str, u32, u32); 6] = [
-    ("21:9", 1792, 768),
+/// Frame picker sizes. Every ratio fits a 1920x1080 envelope with the short
+/// edge at 1080 where the ratio allows, so portrait picks export 1080x1920
+/// (the vertical standard Tella and Screen Studio use) instead of a 608px
+/// wide letterbox, and 21:9 caps its long edge at 1920 like scope ratios do.
+/// Even values keep the MP4 encoder's yuv420p happy.
+pub const FRAME_ASPECT_RATIOS: [(&str, u32, u32); 6] = [
+    ("21:9", 1920, 822),
     ("16:9", 1920, 1080),
     ("4:3", 1440, 1080),
-    ("9:16", 608, 1080),
-    ("3:4", 810, 1080),
+    ("9:16", 1080, 1920),
+    ("3:4", 1080, 1440),
     ("1:1", 1080, 1080),
 ];
 
-pub fn format_webcut_time(seconds: f64) -> String {
+/// Playhead and duration labels, formatted as HH:MM:SS.mmm.
+pub fn format_timecode(seconds: f64) -> String {
     let total_ms = (seconds.max(0.0) * 1000.0).round() as u64;
     let ms = total_ms % 1000;
     let total_sec = total_ms / 1000;
@@ -448,7 +459,7 @@ pub fn format_webcut_time(seconds: f64) -> String {
 
 pub fn closest_aspect_ratio(width: u32, height: u32) -> &'static str {
     let aspect = width as f64 / height.max(1) as f64;
-    WEBCUT_ASPECT_RATIOS
+    FRAME_ASPECT_RATIOS
         .iter()
         .min_by(|(_, aw, ah), (_, bw, bh)| {
             let da = ((*aw as f64 / *ah as f64) - aspect).abs();

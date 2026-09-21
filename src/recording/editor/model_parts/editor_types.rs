@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 pub const MIN_TRIM_DURATION_SECONDS: f64 = 0.25;
 pub(super) const MIN_DIMENSION: u32 = 64;
 pub const DEFAULT_ZOOM_DURATION_SECONDS: f64 = 1.8;
@@ -73,15 +75,16 @@ pub enum AudioMode {
     Muted,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VideoBackground {
     None,
     Plain { r: u8, g: u8, b: u8 },
     Gradient(usize),
+    Wallpaper(PathBuf),
 }
 
 impl VideoBackground {
-    pub fn is_none(self) -> bool {
+    pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 }
@@ -97,5 +100,6 @@ pub enum ZoomMode {
 pub enum EditorTool {
     #[default]
     Cursor,
+    Background,
     Timeline,
 }

@@ -2,6 +2,7 @@ use image::RgbaImage;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::capture::editor::render::rgba_image_to_surface;
@@ -34,6 +35,38 @@ pub(in crate::capture::editor::window) enum MotionHoverTrack {
     Text,
 }
 
+/// A finished background-thread composite. The preview paint blits this;
+/// the UI thread never composites (see motion_mode/preview.rs).
+pub(in crate::capture::editor::window) struct PreviewFrame {
+    pub(in crate::capture::editor::window) width: i32,
+    pub(in crate::capture::editor::window) height: i32,
+    pub(in crate::capture::editor::window) time: f64,
+    pub(in crate::capture::editor::window) live_preview: bool,
+    pub(in crate::capture::editor::window) content_gen: u64,
+    pub(in crate::capture::editor::window) surface: gtk4::cairo::ImageSurface,
+}
+
+/// Raw surface pixels. Cairo surfaces are not `Send`, so this is what
+/// crosses the thread boundary; each side rebuilds its own surface.
+pub(in crate::capture::editor::window) struct PreviewPixels {
+    pub(in crate::capture::editor::window) width: i32,
+    pub(in crate::capture::editor::window) height: i32,
+    pub(in crate::capture::editor::window) stride: i32,
+    pub(in crate::capture::editor::window) bytes: Vec<u8>,
+}
+
+/// A finished frame posted by the background compositor, as pixels for the
+/// UI thread to upload.
+pub(in crate::capture::editor::window) struct PreviewResult {
+    pub(in crate::capture::editor::window) width: i32,
+    pub(in crate::capture::editor::window) height: i32,
+    pub(in crate::capture::editor::window) time: f64,
+    pub(in crate::capture::editor::window) live_preview: bool,
+    pub(in crate::capture::editor::window) content_gen: u64,
+    pub(in crate::capture::editor::window) stride: i32,
+    pub(in crate::capture::editor::window) bytes: Vec<u8>,
+}
+
 pub(in crate::capture::editor::window) struct MotionRuntime {
     pub(in crate::capture::editor::window) snapshot: Option<RgbaImage>,
     pub(in crate::capture::editor::window) card: Option<gtk4::cairo::ImageSurface>,
@@ -44,6 +77,14 @@ pub(in crate::capture::editor::window) struct MotionRuntime {
     /// Pixel scale from `card` to `card_preview` (1.0 when no preview texture).
     pub(in crate::capture::editor::window) card_scale: f64,
     pub(in crate::capture::editor::window) background_surface: Option<gtk4::cairo::ImageSurface>,
+    /// Path whose pixels `background_surface` holds, so the static canvas can
+    /// reuse the inspector's decode instead of decoding the same file again on
+    /// the UI thread.
+    pub(in crate::capture::editor::window) background_surface_path: Option<String>,
+    /// True while `background_surface` only holds the cached thumbnail shown
+    /// until the full-size decode lands. The static canvas keeps its previous
+    /// surface while this is set instead of stretching a 256px thumb.
+    pub(in crate::capture::editor::window) background_surface_is_preview: bool,
     pub(in crate::capture::editor::window) watermark_surface: Option<gtk4::cairo::ImageSurface>,
     pub(in crate::capture::editor::window) backdrop_cache: Option<MotionBackdropCache>,
     pub(in crate::capture::editor::window) motion: MotionState,
@@ -67,6 +108,19 @@ pub(in crate::capture::editor::window) struct MotionRuntime {
     /// Which track row the pointer is over, so an empty row can show its add
     /// affordance. UI-only.
     pub(in crate::capture::editor::window) hover_track: Option<MotionHoverTrack>,
+    /// Content generation: bumped on every model mutation a playhead move
+    /// alone would not reveal, so a cached preview frame cannot go stale.
+    pub(in crate::capture::editor::window) preview_content_gen: u64,
+    /// Latest finished background composite. Painted by the preview widget.
+    pub(in crate::capture::editor::window) preview_frame: Option<PreviewFrame>,
+    /// A composite is in flight; draws set `preview_dirty` instead of
+    /// spawning more work.
+    pub(in crate::capture::editor::window) preview_busy: bool,
+    /// A newer frame was requested while a composite was in flight.
+    pub(in crate::capture::editor::window) preview_dirty: bool,
+    pub(in crate::capture::editor::window) preview_tx: Option<mpsc::Sender<Option<PreviewResult>>>,
+    pub(in crate::capture::editor::window) preview_rx:
+        Option<mpsc::Receiver<Option<PreviewResult>>>,
 }
 
 impl MotionRuntime {
@@ -77,6 +131,8 @@ impl MotionRuntime {
             card_preview: None,
             card_scale: 1.0,
             background_surface: None,
+            background_surface_path: None,
+            background_surface_is_preview: false,
             watermark_surface: None,
             backdrop_cache: None,
             motion: MotionState::default(),
@@ -90,6 +146,12 @@ impl MotionRuntime {
             source_selected: false,
             hover_time: None,
             hover_track: None,
+            preview_content_gen: 0,
+            preview_frame: None,
+            preview_busy: false,
+            preview_dirty: false,
+            preview_tx: None,
+            preview_rx: None,
         }
     }
 
@@ -98,6 +160,7 @@ impl MotionRuntime {
     /// the first update inside the coalesce window pushes the checkpoint and
     /// the rest reuse it.
     pub(in crate::capture::editor::window) fn begin_motion_edit(&mut self) {
+        self.preview_content_gen = self.preview_content_gen.wrapping_add(1);
         let new_burst = self
             .last_edit
             .is_none_or(|at| at.elapsed() > MOTION_EDIT_COALESCE);
@@ -118,6 +181,27 @@ impl MotionRuntime {
         self.redo_stack.clear();
     }
 
+    /// Record the pixels behind the current Wallpaper/Image fill. The static
+    /// canvas reads this instead of decoding the same file on the UI thread;
+    /// `is_preview` marks the cached thumbnail shown until the full-size decode
+    /// lands, which the canvas must not stretch over a whole canvas.
+    pub(in crate::capture::editor::window) fn set_background_surface(
+        &mut self,
+        path: Option<String>,
+        surface: Option<gtk4::cairo::ImageSurface>,
+        is_preview: bool,
+    ) {
+        self.background_surface = surface;
+        self.background_surface_path = path;
+        self.background_surface_is_preview = is_preview;
+        self.backdrop_cache = None;
+        // A new fill must paint on the next Motion draw instead of showing
+        // the previous worker frame while the new composite renders.
+        // Clearing here forces the inline first-frame path, so Motion updates
+        // immediately like Static instead of looking stuck.
+        self.preview_frame = None;
+    }
+
     pub(in crate::capture::editor::window) fn undo_motion(&mut self) -> bool {
         // A drag that ended without changing anything still leaves a
         // checkpoint behind; skip those so Undo always makes progress.
@@ -130,6 +214,7 @@ impl MotionRuntime {
         self.redo_stack
             .push(std::mem::replace(&mut self.motion, previous));
         self.last_edit = None;
+        self.preview_content_gen = self.preview_content_gen.wrapping_add(1);
         self.refresh_motion_surfaces();
         true
     }
@@ -141,6 +226,7 @@ impl MotionRuntime {
         self.undo_stack
             .push(std::mem::replace(&mut self.motion, next));
         self.last_edit = None;
+        self.preview_content_gen = self.preview_content_gen.wrapping_add(1);
         self.refresh_motion_surfaces();
         true
     }
@@ -159,7 +245,7 @@ impl MotionRuntime {
 
     /// Restored appearance or watermark state may name a different image;
     /// rebuild the decoded surfaces exactly like entering Motion does.
-    fn refresh_motion_surfaces(&mut self) {
+    pub(in crate::capture::editor::window) fn refresh_motion_surfaces(&mut self) {
         self.backdrop_cache = None;
         let scene_path = match self.motion.appearance.background_fill_type {
             MotionBackgroundFillType::Wallpaper => {
@@ -170,38 +256,48 @@ impl MotionRuntime {
             }
             _ => None,
         };
-        self.background_surface =
-            scene_path.and_then(super::super::motion_render::load_motion_background_surface);
-        self.watermark_surface = self
-            .motion
-            .watermark
-            .image_file_name
-            .as_deref()
-            .and_then(super::super::motion_render::load_motion_background_surface);
+        let surface = scene_path.and_then(|path| {
+            super::super::motion_render::load_motion_background_preview_surface(
+                path,
+                super::super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+            )
+        });
+        self.set_background_surface(scene_path.map(str::to_owned), surface, false);
+        self.watermark_surface =
+            self.motion
+                .watermark
+                .image_file_name
+                .as_deref()
+                .and_then(|path| {
+                    super::super::motion_render::load_motion_background_preview_surface(
+                        path,
+                        super::super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    )
+                });
     }
 }
 
 #[derive(Clone)]
 pub(in crate::capture::editor::window) struct MotionSession {
-    pub(super) runtime: Rc<RefCell<MotionRuntime>>,
+    pub(in crate::capture::editor::window) runtime: Rc<RefCell<MotionRuntime>>,
     pub(super) prefers_dark: bool,
 }
 
 impl MotionSession {
-    pub(in crate::capture::editor::window) fn new(prefers_dark: bool) -> Self {
+    pub(in crate::capture::editor::window) fn new(
+        prefers_dark: bool,
+        background_padding: f64,
+    ) -> Self {
         let runtime = Rc::new(RefCell::new(MotionRuntime::new()));
-        // Motion opens with a bundled wallpaper already selected so the first
-        // static → motion switch composes against a real scene instead of the
-        // black default. Setting it before the appearance panel is built keeps
-        // its picker in sync; a different fill chosen later persists for the
-        // session, like any other appearance edit.
-        if let Some(wallpaper) =
-            crate::capture::editor::window::background_panel::default_motion_wallpaper()
-        {
-            let mut runtime = runtime.borrow_mut();
-            runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Wallpaper;
-            runtime.motion.appearance.wallpaper_image_name = Some(wallpaper);
-        }
+        // Per-image padding (0px for a fresh image) seeds the shared runtime;
+        // the Motion model's 96px card framing stays a video-editor default
+        // and the global prefs padding is never applied here.
+        runtime.borrow_mut().motion.appearance.background_padding = background_padding;
+        // Single shared background: never inject a default wallpaper here.
+        // Motion must look like Static on entry — a fresh image with no
+        // background stays on None (checkerboard in preview) instead of
+        // gaining a wallpaper Static never had. Users pick a fill explicitly;
+        // `capture_snapshot` preserves a Static background when one exists.
         Self {
             runtime,
             prefers_dark,
@@ -217,7 +313,14 @@ impl MotionSession {
     }
 
     pub(in crate::capture::editor::window) fn capture_snapshot(&self, state: &EditorState) {
-        let snapshot = state.to_final_image().ok();
+        // Single shared tool: Static and Motion edit the same MotionRuntime
+        // directly (same Appearance builder), and the Static tick mirrors it
+        // into EditorState. Re-importing Static here would clobber Motion's
+        // own Frame/appearance through lossy converters (Custom/social presets
+        // collapse to the nearest static crop and never round-trip), so entry
+        // must NOT reseed. Only refresh the background-free card (screenshot +
+        // annotations, never the fill) and its surfaces.
+        let snapshot = state.to_motion_card_image().ok();
         let mut runtime = self.runtime.borrow_mut();
         runtime.card = snapshot.as_ref().and_then(rgba_image_to_surface);
         runtime.card_preview = None;
@@ -238,8 +341,12 @@ impl MotionSession {
         runtime.source_selected = false;
         runtime.hover_time = None;
         runtime.hover_track = None;
+        runtime.preview_content_gen = runtime.preview_content_gen.wrapping_add(1);
+        runtime.preview_frame = None;
+        runtime.preview_busy = false;
+        runtime.preview_dirty = false;
         runtime.reset_motion_history();
-        // Shotbase enters Motion with an empty effects track; clips appear
+        // Motion starts with an empty effects track; clips appear
         // when the user clicks or drags the timeline.
     }
 
@@ -266,8 +373,10 @@ impl MotionSession {
         runtime.card = None;
         runtime.card_preview = None;
         runtime.card_scale = 1.0;
-        runtime.background_surface = None;
-        runtime.watermark_surface = None;
+        // Appearance-owned surfaces survive the switch: the Static canvas
+        // reuses the decoded wallpaper/watermark after leaving Motion, and
+        // re-entering refreshes them anyway. Clearing them here left Static
+        // with no pixels behind a fill chosen in Motion.
         runtime.backdrop_cache = None;
         runtime.playing = false;
         runtime.live_preview = false;
@@ -281,6 +390,10 @@ impl MotionSession {
         runtime.source_selected = false;
         runtime.hover_time = None;
         runtime.hover_track = None;
+        runtime.preview_content_gen = runtime.preview_content_gen.wrapping_add(1);
+        runtime.preview_frame = None;
+        runtime.preview_busy = false;
+        runtime.preview_dirty = false;
         runtime.reset_motion_history();
     }
 }
@@ -316,7 +429,7 @@ mod tests {
     #[test]
     fn edits_within_the_coalesce_window_share_one_undo_step() {
         let mut runtime = runtime_with_clip();
-        let initial_timing = runtime.motion.transform_timing;
+        let initial_timing = runtime.motion.selected_transform_timing();
 
         runtime.begin_motion_edit();
         runtime.motion.set_selected_transition_ms(120);
@@ -326,11 +439,14 @@ mod tests {
         runtime.motion.set_selected_transition_ms(240);
 
         runtime.undo_motion();
-        assert_eq!(runtime.motion.transform_timing, initial_timing);
+        assert_eq!(runtime.motion.selected_transform_timing(), initial_timing);
 
         runtime.redo_motion();
         assert_eq!(
-            runtime.motion.transform_timing.transition_duration,
+            runtime
+                .motion
+                .selected_transform_timing()
+                .transition_duration,
             240.0 / 1000.0
         );
     }

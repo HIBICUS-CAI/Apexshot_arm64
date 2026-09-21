@@ -208,7 +208,6 @@ void printRecordingJson(const QRect& sel, const char* mode, const char* recordTy
                          bool showCursor, bool rememberSelection,
                          bool dimScreen, bool countdown,
                          int videoFormat, int videoMaxRes, int videoFps, bool recordMono, bool openEditor,
-                         int gifFps, double gifQuality, int gifSizeIdx, bool optimizeGif,
                          bool fullscreen)
 {
     std::printf("{\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d,"
@@ -224,9 +223,7 @@ void printRecordingJson(const QRect& sel, const char* mode, const char* recordTy
                 "\"remember_selection\":%s,\"dim_screen\":%s,"
                 "\"countdown\":%s,"
                 "\"video_format\":%d,\"video_max_res\":%d,\"video_fps\":%d,"
-                "\"record_mono\":%s,\"open_editor\":%s,"
-                "\"gif_fps\":%d,\"gif_quality\":%.4f,"
-                "\"gif_size_idx\":%d,\"optimize_gif\":%s,\"fullscreen\":%s}\n",
+                "\"record_mono\":%s,\"open_editor\":%s,\"fullscreen\":%s}\n",
                 sel.x(), sel.y(), sel.width(), sel.height(),
                 mode,
                 recordType,
@@ -256,10 +253,6 @@ void printRecordingJson(const QRect& sel, const char* mode, const char* recordTy
                 videoFps,
                 recordMono ? "true" : "false",
                 openEditor ? "true" : "false",
-                gifFps,
-                gifQuality,
-                gifSizeIdx,
-                optimizeGif ? "true" : "false",
                 fullscreen ? "true" : "false");
     std::fflush(stdout);
 }
@@ -608,10 +601,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
     int initialVideoFps = 2;
     bool initialRecordMono = false;
     bool initialOpenEditor = true;
-    int initialGifFps = 50;
-    double initialGifQuality = 0.75;
-    int initialGifSizeIdx = 0;
-    bool initialGifOptimize = true;
     bool openRecordingUiMode = false;
     const QString sessionSocketPath = overlaySocketPath();
     QLocalServer sessionServer;
@@ -770,22 +759,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
             initialOpenEditor = true;
         } else if (std::strcmp(argv[i], "--no-open-editor") == 0) {
             initialOpenEditor = false;
-        } else if (QString(argv[i]).startsWith("--gif-fps=")) {
-            bool ok = false;
-            int v = QString(argv[i]).mid(10).toInt(&ok);
-            if (ok && v >= 5 && v <= 60) initialGifFps = v;
-        } else if (QString(argv[i]).startsWith("--gif-quality=")) {
-            bool ok = false;
-            double v = QString(argv[i]).mid(14).toDouble(&ok);
-            if (ok && v >= 0.0 && v <= 1.0) initialGifQuality = v;
-        } else if (QString(argv[i]).startsWith("--gif-size=")) {
-            bool ok = false;
-            int v = QString(argv[i]).mid(11).toInt(&ok);
-            if (ok && v >= 0 && v <= 3) initialGifSizeIdx = v;
-        } else if (std::strcmp(argv[i], "--gif-optimize") == 0) {
-            initialGifOptimize = true;
-        } else if (std::strcmp(argv[i], "--no-gif-optimize") == 0) {
-            initialGifOptimize = false;
         }
     }
 
@@ -927,10 +900,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
                                    initialVideoFps,
                                    initialRecordMono,
                                    initialOpenEditor,
-                                   initialGifFps,
-                                   initialGifQuality,
-                                   initialGifSizeIdx,
-                                   initialGifOptimize,
                                    false);
                 return 0;
             }
@@ -992,7 +961,7 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
     const bool interactiveSelectorMode =
       areaInitMode || crosshairCaptureMode || openRecordingUiMode || windowCaptureMode;
 
-    // 1) Freeze first (Flameshot-style): capture at hotkey time into memory so
+    // 1) Freeze first: capture at hotkey time into memory so
     // the monitor picker / overlay never appear in the freeze frame, and so we
     // avoid waiting on picker unmap before the expensive grab.
     QImage desktopFreezeImage;
@@ -1052,10 +1021,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
         overlay->setShowZoomPreview(showZoomPreview);
         overlay->setFreezeSelectionBackground(freezeSelectionBackground);
         overlay->setInitialCaptureDelaySeconds(initialCaptureDelaySeconds);
-        overlay->setInitialGifFps(initialGifFps);
-        overlay->setInitialGifQuality(initialGifQuality);
-        overlay->setInitialGifSizeIdx(initialGifSizeIdx);
-        overlay->setInitialGifOptimize(initialGifOptimize);
         overlay->setInitialRecControls(initialRecControls);
         overlay->setInitialDisplayRecTime(initialDisplayRecTime);
         overlay->setInitialHidpi(initialHidpi);
@@ -1229,9 +1194,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
             const QRect sel = overlay->selection();
             const QRect selGlobal = overlay->desktopSelection();
             const char* recordType = "video";
-            if (overlay->recordType() == CaptureOverlay::RecordType::Gif) {
-                recordType = "gif";
-            }
             printRecordingJson(selGlobal, "record-config", recordType,
                                overlay->recordControlsEnabled(),
                                overlay->recordMicEnabled(),
@@ -1259,10 +1221,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
                                overlay->recordVideoFps(),
                                overlay->recordMono(),
                                overlay->recordOpenEditor(),
-                               overlay->recordGifFps(),
-                               overlay->recordGifQuality(),
-                               overlay->recordGifSizeIdx(),
-                               overlay->recordOptimizeGif(),
                                overlay->recordFullscreen());
             return kExitRecordConfigUpdated;
         }
@@ -1332,9 +1290,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
     // Handle recording request
     if (overlay->recordRequested()) {
         const char* recordType = "video";
-        if (overlay->recordType() == CaptureOverlay::RecordType::Gif) {
-            recordType = "gif";
-        }
         const QRect selGlobal = overlay->desktopSelection();
         printRecordingJson(selGlobal, "record", recordType,
                            overlay->recordControlsEnabled(),
@@ -1363,10 +1318,6 @@ int runCaptureJob(QApplication& app, int argc, char* argv[])
                            overlay->recordVideoFps(),
                            overlay->recordMono(),
                            overlay->recordOpenEditor(),
-                           overlay->recordGifFps(),
-                           overlay->recordGifQuality(),
-                           overlay->recordGifSizeIdx(),
-                           overlay->recordOptimizeGif(),
                            overlay->recordFullscreen());
         return 0;
     }

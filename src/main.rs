@@ -5,7 +5,7 @@
 //!   cargo run -- capture area
 //!   cargo run -- capture window
 //!   cargo run -- record screen
-//!   cargo run -- record area
+//!   cargo run -- record screen
 //!   cargo run -- ocr <image>
 #![allow(
     clippy::too_many_arguments,
@@ -656,7 +656,6 @@ pub(crate) fn print_usage() {
     println!("  cargo run -- hotkeys install");
     println!("  cargo run -- capture screen");
     println!("  cargo run -- record screen");
-    println!("  cargo run -- record area --gif");
     println!("  cargo run -- native-host install --extension-id <extension_id>");
     println!("  cargo run -- install --extension-id <extension_id>");
 }
@@ -759,9 +758,11 @@ mod tests {
 
     #[test]
     fn record_types_map_to_expected_daemon_actions() {
-        assert_eq!(record_daemon_action("ui"), Some("open_recording_ui"));
+        // Discontinued entries map to nothing so the CLI takes the local
+        // path: visible error + usage menu instead of a silent daemon stub.
+        assert_eq!(record_daemon_action("ui"), None);
         assert_eq!(record_daemon_action("screen"), Some("record_screen"));
-        assert_eq!(record_daemon_action("area"), Some("record_area"));
+        assert_eq!(record_daemon_action("area"), None);
         // Control actions must use the daemon Trigger names (not legacy aliases).
         assert_eq!(record_daemon_action("stop"), Some("recording_stop_save"));
         assert_eq!(record_daemon_action("unknown"), None);

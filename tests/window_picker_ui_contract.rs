@@ -19,10 +19,23 @@ fn window_tool_removed_from_toolbars() {
         "C++ toolbar click handler must not keep a Window tool branch"
     );
 
-    assert!(
-        rust_icons.contains("ToolbarIcon::Scroll") && !rust_icons.contains("ToolbarIcon::Window,"),
-        "Rust TOOLBAR_ICONS must not include Window"
-    );
+    // The rail icons (Area/Fullscreen/Scroll/Timer/Ocr/Recording) were retired
+    // with the legacy left toolbar, so the Window tool must not survive in any
+    // form — neither as an enum variant nor as a list entry.
+    for retired in [
+        "Window",
+        "Area",
+        "Fullscreen",
+        "Scroll",
+        "Timer",
+        "Ocr",
+        "Recording",
+    ] {
+        assert!(
+            !rust_icons.contains(&format!("ToolbarIcon::{retired}")),
+            "retired rail tool {retired} must not remain in the Rust icon set"
+        );
+    }
     assert!(
         !rust_toolbar.contains("ToolbarIcon::Window"),
         "Rust overlay click handler must not handle a Window toolbar tool"

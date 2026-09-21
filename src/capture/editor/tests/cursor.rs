@@ -100,38 +100,3 @@ fn cursor_name_for_view_point_matches_text_and_crosshair_modes() {
         "default"
     );
 }
-
-#[test]
-fn cursor_name_for_view_point_uses_crop_drag_and_resize_states() {
-    let mut state = EditorState::new(RgbaImage::new(80, 80));
-    let transform = ViewTransform::fit(80.0, 80.0, 80.0, 80.0);
-    state.set_tool(Tool::Crop);
-    state.crop_selection = Some(Rect {
-        x: 20,
-        y: 16,
-        width: 24,
-        height: 18,
-    });
-
-    assert_eq!(
-        cursor_name_for_view_point(&state, transform, Point { x: 32.0, y: 16.0 }),
-        "ns-resize"
-    );
-    assert_eq!(
-        cursor_name_for_view_point(&state, transform, Point { x: 28.0, y: 22.0 }),
-        "grab"
-    );
-
-    state.select_drag_anchor = Some(Point { x: 32.0, y: 16.0 });
-    state.select_resize_handle = Some(SelectHandle::Right);
-    assert_eq!(
-        cursor_name_for_view_point(&state, transform, Point { x: 36.0, y: 22.0 }),
-        "ew-resize"
-    );
-
-    state.select_resize_handle = None;
-    assert_eq!(
-        cursor_name_for_view_point(&state, transform, Point { x: 30.0, y: 24.0 }),
-        "grabbing"
-    );
-}

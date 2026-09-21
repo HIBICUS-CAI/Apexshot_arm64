@@ -2,8 +2,8 @@
 
 use super::state::SettingsTab;
 use crate::overlay::layout::{
-    RectF, ACTION_CARD_GAP, FEATURE_PANEL_HEIGHT, FEATURE_PANEL_ITEM_WIDTH, FEATURE_PANEL_MARGIN,
-    FEATURE_PANEL_TOP_GAP, TOOL_RAIL_GAP,
+    RectF, ACTION_CARD_GAP, DOCK_LIFT, FEATURE_PANEL_HEIGHT, FEATURE_PANEL_ITEM_WIDTH,
+    FEATURE_PANEL_MARGIN, FEATURE_PANEL_TOP_GAP, TOOL_RAIL_GAP,
 };
 
 pub(crate) const REC_TOP_CLUSTER_WIDTH: f64 = 292.0;
@@ -27,7 +27,6 @@ pub(crate) enum RecordPanelTile {
     Speaker,
 
     RecordVideo,
-    RecordGif,
 }
 
 pub(crate) fn compute_recording_deck_layout(
@@ -43,7 +42,7 @@ pub(crate) fn compute_recording_deck_layout(
     let rail_x = (selection_x - TOOL_RAIL_GAP - FEATURE_PANEL_ITEM_WIDTH).max(FEATURE_PANEL_MARGIN);
     let rail_y = (center_y - rail_height / 2.0).clamp(
         FEATURE_PANEL_MARGIN,
-        (screen_height - rail_height - FEATURE_PANEL_MARGIN).max(FEATURE_PANEL_MARGIN),
+        (screen_height - rail_height - FEATURE_PANEL_MARGIN - DOCK_LIFT).max(FEATURE_PANEL_MARGIN),
     );
     let top_x = (selection_x + (selection_width - REC_TOP_CLUSTER_WIDTH) / 2.0).clamp(
         FEATURE_PANEL_MARGIN,
@@ -51,7 +50,8 @@ pub(crate) fn compute_recording_deck_layout(
     );
     let top_y = (selection_y - FEATURE_PANEL_TOP_GAP - REC_TOP_CLUSTER_HEIGHT).clamp(
         FEATURE_PANEL_MARGIN,
-        (screen_height - REC_TOP_CLUSTER_HEIGHT - FEATURE_PANEL_MARGIN).max(FEATURE_PANEL_MARGIN),
+        (screen_height - REC_TOP_CLUSTER_HEIGHT - FEATURE_PANEL_MARGIN - DOCK_LIFT)
+            .max(FEATURE_PANEL_MARGIN),
     );
     let action_width = REC_ACTION_WIDTH * 2.0 + ACTION_CARD_GAP;
     let action_x = (selection_x + (selection_width - action_width) / 2.0).clamp(
@@ -59,11 +59,13 @@ pub(crate) fn compute_recording_deck_layout(
         (screen_width - action_width - FEATURE_PANEL_MARGIN).max(FEATURE_PANEL_MARGIN),
     );
     let below_y = selection_y + selection_height + FEATURE_PANEL_TOP_GAP;
-    let action_y = if below_y + REC_ACTION_HEIGHT + FEATURE_PANEL_MARGIN <= screen_height {
-        below_y
-    } else {
-        (screen_height - REC_ACTION_HEIGHT - FEATURE_PANEL_MARGIN).max(FEATURE_PANEL_MARGIN)
-    };
+    let action_y =
+        if below_y + REC_ACTION_HEIGHT + FEATURE_PANEL_MARGIN + DOCK_LIFT <= screen_height {
+            below_y
+        } else {
+            (screen_height - REC_ACTION_HEIGHT - FEATURE_PANEL_MARGIN - DOCK_LIFT)
+                .max(FEATURE_PANEL_MARGIN)
+        };
 
     RecordingDeckLayout {
         left_toggle_rail: RectF {
@@ -92,10 +94,6 @@ pub(crate) fn compute_dropdown_popup_y(menu_y: f64, item_idx: usize, tab: Settin
         SettingsTab::Video => match item_idx {
             3 => menu_y + 162.0,
             4 => menu_y + 227.0,
-            _ => menu_y + 106.0,
-        },
-        SettingsTab::Gif => match item_idx {
-            6 => menu_y + 345.0,
             _ => menu_y + 106.0,
         },
         _ => menu_y + 106.0,

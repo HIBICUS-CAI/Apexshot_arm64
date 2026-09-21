@@ -1475,7 +1475,7 @@ msgid "MP4 video"
 msgstr "فيديو بتنسيق MP4"
 
 msgid "Manual"
-msgstr "دليل الاستخدام"
+msgstr "يدوي"
 
 msgid "Maximum resolution"
 msgstr "الدقة القصوى"
@@ -2227,6 +2227,9 @@ msgstr "عنوان"
 msgid "Drag on the preview to place the title"
 msgstr "اسحب على المعاينة لوضع العنوان"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "انقر أو اسحب على الصورة لوضع مرساة التكبير؛ انقر نقرًا مزدوجًا لإعادة التمركز"
+
 msgid "Anchor X"
 msgstr "مرساة X"
 msgid "Anchor Y"
@@ -2343,3 +2346,97 @@ msgstr "الطبقة السفلية"
 
 msgid "Undo"
 msgstr "تراجع"
+
+msgid "Bounce"
+msgstr "ارتداد"
+
+msgid "Custom"
+msgstr "مخصص"
+
+msgid "Gentle"
+msgstr "لطيف"
+
+msgid "Bouncy"
+msgstr "مرتد"
+
+msgid "Spring"
+msgstr "زنبرك"
+
+msgid "Theme"
+msgstr "السمة"
+
+msgid "Light"
+msgstr "فاتح"
+
+msgid "Dark"
+msgstr "داكن"
+
+msgid "System"
+msgstr "النظام"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "متوازن"
+
+msgid "Frame height in pixels"
+msgstr "ارتفاع الإطار بالبكسل"
+
+msgid "Frame width in pixels"
+msgstr "عرض الإطار بالبكسل"
+
+msgid "Freehand"
+msgstr "رسم حر"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 مع الميكروفون وصوت النظام إن سمح سطح المكتب"
+
+msgid "More frame sizes"
+msgstr "المزيد من أحجام الإطار"
+
+msgid "Number of the selected marker"
+msgstr "رقم العلامة المحددة"
+
+msgid "Number the next marker starts at"
+msgstr "الرقم الذي تبدأ منه العلامة التالية"
+
+msgid "Pinterest"
+msgstr "بينترست"
+
+msgid "Recording quality"
+msgstr "جودة التسجيل"
+
+msgid "Text-aware"
+msgstr "تتبع النص"
+
+msgid "Twitter"
+msgstr "تويتر"
+
+msgid "Ultra"
+msgstr "فائق"
+
+msgid "Background color"
+msgstr "لون الخلفية"
+
+msgid "COLOR"
+msgstr "اللون"
+
+msgid "Choose background color"
+msgstr "اختر لون الخلفية"
+
+msgid "WALLPAPER"
+msgstr "خلفية"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "تملأ الخلفية أو اللون المساحة خلف الفيديو في المعاينة والتصدير"

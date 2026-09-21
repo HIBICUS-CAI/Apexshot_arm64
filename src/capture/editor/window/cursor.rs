@@ -78,53 +78,11 @@ pub fn select_hover_cursor_name(
     }
 }
 
-fn crop_hover_cursor_name(state: &EditorState, point: Point, view_scale: f64) -> &'static str {
-    if state.select_drag_anchor.is_some() {
-        if let Some(handle) = state.select_resize_handle {
-            return cursor_name_for_select_handle(handle);
-        }
-        return "grabbing";
-    }
-
-    if let Some(rect) = state.crop_selection {
-        let crop_action = AnnotationAction::Box {
-            rect,
-            color: state.selected_color,
-            stroke_size: state.stroke_size,
-            shadow: false,
-        };
-        let handle_hit_radius = selection_handle_hit_radius_for_scale(view_scale);
-        if let Some(handle) = super::super::selection::action_resize_handle_at_point_with_radius(
-            &crop_action,
-            point,
-            handle_hit_radius,
-        ) {
-            return cursor_name_for_select_handle(handle);
-        }
-
-        let hit_padding = selection_hit_padding_for_scale(view_scale);
-        if super::super::selection::action_contains_point_with_padding(
-            &crop_action,
-            point,
-            hit_padding,
-        ) {
-            return "grab";
-        }
-    }
-
-    "crosshair"
-}
-
 pub fn cursor_name_for_view_point(
     state: &EditorState,
     transform: ViewTransform,
     view_point: Point,
 ) -> &'static str {
-    if state.selected_tool == Tool::Crop {
-        let image_point = transform.view_to_image(view_point);
-        return crop_hover_cursor_name(state, image_point, transform.scale);
-    }
-
     if !transform.contains_view(view_point) {
         return "default";
     }
@@ -133,7 +91,6 @@ pub fn cursor_name_for_view_point(
     match state.selected_tool {
         Tool::Select => select_hover_cursor_name(state, image_point, transform.scale),
         Tool::Text => "text",
-        Tool::Crop => crop_hover_cursor_name(state, image_point, transform.scale),
         Tool::Background => "default",
         Tool::Highlighter => {
             // Note: Highlighter uses custom cursor set via update_cursor_for_position
@@ -376,7 +333,7 @@ pub fn update_pen_cursor(window: &gtk4::ApplicationWindow, state: &EditorState) 
         1.0,
     );
 
-    set_pen_cursor(window, state.pen_weight.pen_stroke_width(), color)
+    set_pen_cursor(window, state.stroke_size, color)
 }
 
 /// Set custom highlighter cursor on window
@@ -483,10 +440,7 @@ pub fn update_cursor_for_position(
         HighlighterMode::Freehand => {
             set_highlighter_cursor(
                 window,
-                highlighter_cursor_height_for_view(
-                    state.pen_weight.highlighter_stroke_width(),
-                    view_scale,
-                ),
+                highlighter_cursor_height_for_view(state.stroke_size, view_scale),
                 color,
             );
         }

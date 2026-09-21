@@ -98,6 +98,12 @@ pub(super) fn set_child_stdin_nonblocking(stdin: &std::process::ChildStdin) -> s
     if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(std::io::Error::last_os_error());
     }
+    // 8–33MB frames need fewer write() round-trips: grow the pipe to 1MB.
+    // Best-effort — the kernel caps at /proc/sys/fs/pipe-max-size.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::fcntl(fd, libc::F_SETPIPE_SZ, 1024 * 1024);
+    }
     Ok(())
 }
 

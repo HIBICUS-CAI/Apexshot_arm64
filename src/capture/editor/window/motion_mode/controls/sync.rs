@@ -2,7 +2,7 @@ use gtk4::prelude::*;
 use std::rc::Rc;
 
 use crate::i18n::t;
-use crate::recording::editor::model::MotionState;
+use crate::recording::editor::model::{MotionState, MotionTimingKind};
 
 use super::super::widgets::format_duration_label;
 use super::super::{MotionModeParts, MotionSession};
@@ -25,8 +25,6 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let blur_value = parts.shared.blur_value.clone();
     let blur_shutter_slider = parts.shared.blur_shutter_slider.clone();
     let blur_shutter_value = parts.shared.blur_shutter_value.clone();
-    let blur_trail_slider = parts.shared.blur_trail_slider.clone();
-    let blur_trail_value = parts.shared.blur_trail_value.clone();
     let clip_box = parts.transform.clip_box.clone();
     let text_box = parts.text.text_box.clone();
     let text_entry = parts.text.text_entry.clone();
@@ -42,10 +40,7 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let scale_slider = parts.transform.scale_slider.clone();
     let intensity_slider = parts.transform.intensity_slider.clone();
     let intensity_value = parts.transform.intensity_value.clone();
-    let zoom_anchor_x_slider = parts.transform.zoom_anchor_x_slider.clone();
-    let zoom_anchor_x_value = parts.transform.zoom_anchor_x_value.clone();
-    let zoom_anchor_y_slider = parts.transform.zoom_anchor_y_slider.clone();
-    let zoom_anchor_y_value = parts.transform.zoom_anchor_y_value.clone();
+    let anchor_pad = parts.transform.anchor_pad.clone();
     let yaw_slider = parts.transform.yaw_slider.clone();
     let yaw_value = parts.transform.yaw_value.clone();
     let pitch_slider = parts.transform.pitch_slider.clone();
@@ -61,6 +56,12 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let pos_y_value = parts.transform.pos_y_value.clone();
     let ease_slider = parts.transform.ease_slider.clone();
     let ease_value = parts.transform.ease_value.clone();
+    let timing_kind_buttons = parts.transform.timing_kind_buttons.clone();
+    let custom_timing_btn = parts.transform.custom_timing_btn.clone();
+    let custom_easing_rows = parts.transform.custom_easing_rows.clone();
+    let custom_spring_rows = parts.transform.custom_spring_rows.clone();
+    let spring_bounce_slider = parts.transform.spring_bounce_slider.clone();
+    let spring_bounce_value = parts.transform.spring_bounce_value.clone();
     let easing_x1_slider = parts.transform.easing_x1_slider.clone();
     let easing_x1_value = parts.transform.easing_x1_value.clone();
     let easing_y1_slider = parts.transform.easing_y1_slider.clone();
@@ -69,7 +70,6 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
     let easing_x2_value = parts.transform.easing_x2_value.clone();
     let easing_y2_slider = parts.transform.easing_y2_slider.clone();
     let easing_y2_value = parts.transform.easing_y2_value.clone();
-    let reset_timing_btn = parts.transform.reset_timing_btn.clone();
     let delete_btn = parts.shared.delete_btn.clone();
     let syncing = parts.shared.inspector_syncing.clone();
     Rc::new(move || {
@@ -97,22 +97,21 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         }
         let selected = runtime.motion.selected_segment().cloned();
         let selected_text = runtime.motion.selected_text_segment().cloned();
+        let anchor_surface = runtime
+            .card_preview
+            .clone()
+            .or_else(|| runtime.card.clone());
         let (can_undo, can_redo) = runtime.motion_history_availability();
         let blur = runtime.motion.motion_blur;
         let blur_settings = runtime.motion.motion_blur_settings.clamped();
         let perspective_intensity = runtime.motion.perspective_intensity;
-        let transform_timing = runtime.motion.transform_timing;
+        let transform_timing = runtime.motion.selected_transform_timing();
         drop(runtime);
         syncing.set(true);
         blur_slider.set_value(blur);
         blur_value.set_label(&format!("{:.0}%", blur * 100.0));
         blur_shutter_slider.set_value(blur_settings.shutter_angle);
         blur_shutter_value.set_label(&format!("{:.0}°", blur_settings.shutter_angle));
-        blur_trail_slider.set_value(blur_settings.transform_trail_opacity);
-        blur_trail_value.set_label(&format!(
-            "{:.0}%",
-            blur_settings.transform_trail_opacity * 100.0
-        ));
         easing_x1_slider.set_value(transform_timing.easing_x1);
         easing_x1_value.set_label(&format!("{:.0}%", transform_timing.easing_x1 * 100.0));
         easing_y1_slider.set_value(transform_timing.easing_y1);
@@ -121,9 +120,20 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         easing_x2_value.set_label(&format!("{:.0}%", transform_timing.easing_x2 * 100.0));
         easing_y2_slider.set_value(transform_timing.easing_y2);
         easing_y2_value.set_label(&format!("{:.0}%", transform_timing.easing_y2 * 100.0));
+        for (kind, button) in &timing_kind_buttons {
+            button.set_active(*kind == transform_timing.kind);
+        }
+        // Custom discloses the sliders for whichever family is active.
+        custom_easing_rows.set_visible(
+            transform_timing.kind == MotionTimingKind::Ease && custom_timing_btn.is_active(),
+        );
+        custom_spring_rows.set_visible(
+            transform_timing.kind == MotionTimingKind::Spring && custom_timing_btn.is_active(),
+        );
+        spring_bounce_slider.set_value(transform_timing.spring_bounce);
+        spring_bounce_value.set_label(&format!("{:.0}%", transform_timing.spring_bounce * 100.0));
         let has_clip = selected.is_some();
         let has_text = selected_text.is_some();
-        reset_timing_btn.set_sensitive(has_clip);
         clip_box.set_visible(has_clip);
         text_box.set_visible(has_text);
         clip_hint.set_visible(!has_clip && !has_text);
@@ -150,10 +160,7 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
         if let Some(segment) = selected {
             intensity_slider.set_value(segment.intensity);
             intensity_value.set_label(&format!("{:.0}%", segment.intensity * 100.0));
-            zoom_anchor_x_slider.set_value(segment.zoom_anchor_x);
-            zoom_anchor_x_value.set_label(&format!("{:.0}%", segment.zoom_anchor_x * 100.0));
-            zoom_anchor_y_slider.set_value(segment.zoom_anchor_y);
-            zoom_anchor_y_value.set_label(&format!("{:.0}%", segment.zoom_anchor_y * 100.0));
+            anchor_pad.set_anchor(segment.zoom_anchor_x, segment.zoom_anchor_y);
             yaw_slider.set_value(segment.to.rotation_y);
             yaw_value.set_label(&format!("{:.0}°", segment.to.rotation_y));
             pitch_slider.set_value(segment.to.rotation_x);
@@ -173,7 +180,10 @@ pub(super) fn make_redraw(parts: &MotionModeParts, session: &MotionSession) -> R
                 transform_timing.transition_duration * 1000.0
             ));
             scale_slider.set_value(segment.to.scale);
+        } else {
+            anchor_pad.set_anchor(0.5, 0.5);
         }
+        anchor_pad.set_surface(anchor_surface);
         delete_btn.set_sensitive(has_clip || has_text);
         undo_btn.set_sensitive(can_undo);
         redo_btn.set_sensitive(can_redo);
@@ -244,26 +254,6 @@ pub(super) fn install_shared(
                 runtime.motion.motion_blur_settings.shutter_angle = shutter;
             }
             value_label.set_label(&format!("{shutter:.0}°"));
-            request_live_preview();
-        }
-    });
-
-    parts.shared.blur_trail_slider.connect_value_changed({
-        let session = session.runtime.clone();
-        let value_label = parts.shared.blur_trail_value.clone();
-        let request_live_preview = request_live_preview.clone();
-        let syncing = parts.shared.inspector_syncing.clone();
-        move |slider| {
-            if syncing.get() {
-                return;
-            }
-            let trail = slider.value().clamp(0.0, 1.0);
-            {
-                let mut runtime = session.borrow_mut();
-                runtime.begin_motion_edit();
-                runtime.motion.motion_blur_settings.transform_trail_opacity = trail;
-            }
-            value_label.set_label(&format!("{:.0}%", trail * 100.0));
             request_live_preview();
         }
     });

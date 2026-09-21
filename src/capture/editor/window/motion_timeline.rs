@@ -30,7 +30,6 @@ pub(super) struct MotionTimeline {
     pub track: DrawingArea,
     pub text_track: DrawingArea,
     pub playhead: DrawingArea,
-    pub playhead_handle: DrawingArea,
     pub hover_playhead: DrawingArea,
     pub playhead_dragging: Rc<Cell<bool>>,
     pub playhead_hovered: Rc<Cell<bool>>,
@@ -111,8 +110,8 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
         move |_, cr, width, height| draw_ruler(cr, width, height, &runtime)
     });
 
-    // The source is a real timeline clip, not an implied backdrop. Shotbase
-    // exposes this as ThumbnailTrack/MotionPreviewSegmentView; ApexShot has
+    // The source is a real timeline clip, not an implied backdrop. An earlier
+    // design exposes this as ThumbnailTrack/MotionPreviewSegmentView; ApexShot has
     // one static source, so the lane spans the entire Motion composition.
     let source_track = DrawingArea::new();
     source_track.add_css_class("recording-editor-card-zoom-track");
@@ -160,24 +159,13 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
     playhead.set_vexpand(true);
     playhead.set_can_target(false);
 
-    // A narrow grabbable strip that follows the drawn playhead line. Clicking
-    // the tracks no longer scrubs, so dragging this handle is the way to
-    // reposition the playhead. Its allocation is frozen while a drag is in
-    // flight: moving it under the pointer would feed the drag offset (which
-    // GTK derives from widget-local coordinates) back into the position we
-    // compute from it, which reads as lag and rubber-banding.
-    let playhead_handle = DrawingArea::new();
-    playhead_handle.set_width_request(PLAYHEAD_HANDLE_W as i32);
-    playhead_handle.set_height_request(PLAYHEAD_HANDLE_H as i32);
-    playhead_handle.set_halign(Align::Start);
-    playhead_handle.set_valign(Align::Start);
-    playhead_handle.set_margin_top(PLAYHEAD_HANDLE_TOP as i32);
     let playhead_dragging = Rc::new(Cell::new(false));
     let playhead_hovered = Rc::new(Cell::new(false));
-    // Pure draw: never touch layout here. Mutating margin/width inside a
-    // draw invalidates layout, which re-queues a draw — one layout pass per
-    // frame the pointer moves. The handle is positioned from the redraw path
-    // (`sync_playhead_handle`) instead, so scrubbing is draw-only.
+    // Pure draw: the playhead is painted in this static overlay and follows
+    // model state, so a scrub never writes widget geometry or invalidates
+    // layout (the video editor card works the same way). The ruler is the
+    // grab surface, and hover hit-tests the drawn head in board coordinates
+    // (`playhead_head_hit`) instead of a positioned handle widget.
     playhead.set_draw_func({
         let runtime = runtime.clone();
         let dragging = playhead_dragging.clone();
@@ -200,7 +188,6 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
     });
     board.add_overlay(&hover_playhead);
     board.add_overlay(&playhead);
-    board.add_overlay(&playhead_handle);
 
     card.append(&toolbar);
     card.append(&board);
@@ -222,7 +209,6 @@ pub(super) fn build_motion_timeline(runtime: Rc<RefCell<MotionRuntime>>) -> Moti
         track,
         text_track,
         playhead,
-        playhead_handle,
         hover_playhead,
         playhead_dragging,
         playhead_hovered,
@@ -283,8 +269,8 @@ fn draw_source_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell
             (clip_h - 1.0).max(0.0),
             4.5,
         );
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.45);
-        cr.set_line_width(1.0);
+        cr.set_source_rgba(0.80, 0.88, 1.0, 0.90);
+        cr.set_line_width(1.5);
         let _ = cr.stroke();
     }
 }
@@ -522,6 +508,79 @@ fn draw_add_track(
     }
 }
 
+/// Colors for one effect clip. `faint` is the sibling state while another
+/// clip in the same lane owns the selection: it steps back so the selected
+/// clip reads first without disappearing.
+#[derive(Clone, Copy, PartialEq)]
+struct ClipTone {
+    fill: (f64, f64, f64, f64),
+    edge: (f64, f64, f64, f64),
+    handle: (f64, f64, f64, f64),
+    label: f64,
+}
+
+fn motion_clip_tone(selected: bool, faint: bool) -> ClipTone {
+    if selected {
+        ClipTone {
+            fill: (0.30, 0.50, 0.84, 1.0),
+            edge: (0.80, 0.88, 1.0, 0.90),
+            handle: (0.86, 0.93, 1.0, 0.98),
+            label: 0.96,
+        }
+    } else if faint {
+        ClipTone {
+            fill: (0.22, 0.35, 0.55, 0.62),
+            edge: (0.0, 0.0, 0.0, 0.0),
+            handle: (0.0, 0.0, 0.0, 0.0),
+            label: 0.55,
+        }
+    } else {
+        ClipTone {
+            fill: (0.23, 0.38, 0.62, 0.95),
+            edge: (0.0, 0.0, 0.0, 0.0),
+            handle: (0.0, 0.0, 0.0, 0.0),
+            label: 0.82,
+        }
+    }
+}
+
+fn text_clip_tone(selected: bool, faint: bool) -> ClipTone {
+    if selected {
+        ClipTone {
+            fill: (0.84, 0.44, 0.22, 1.0),
+            edge: (1.0, 0.80, 0.60, 0.90),
+            handle: (1.0, 0.88, 0.74, 0.98),
+            label: 0.96,
+        }
+    } else if faint {
+        ClipTone {
+            fill: (0.55, 0.29, 0.16, 0.62),
+            edge: (0.0, 0.0, 0.0, 0.0),
+            handle: (0.0, 0.0, 0.0, 0.0),
+            label: 0.55,
+        }
+    } else {
+        ClipTone {
+            fill: (0.62, 0.32, 0.18, 0.95),
+            edge: (0.0, 0.0, 0.0, 0.0),
+            handle: (0.0, 0.0, 0.0, 0.0),
+            label: 0.84,
+        }
+    }
+}
+
+/// Edge grips that advertise trim-dragging on the selected clip. They render
+/// only with a selection, which keeps unselected lanes quiet.
+fn draw_trim_handles(cr: &Context, x0: f64, y: f64, clip_w: f64, clip_h: f64, tone: ClipTone) {
+    let handle_h = (clip_h - 12.0).max(10.0);
+    let handle_y = y + (clip_h - handle_h) / 2.0;
+    cr.set_source_rgba(tone.handle.0, tone.handle.1, tone.handle.2, tone.handle.3);
+    for handle_x in [x0 + 6.0, x0 + clip_w - 9.0] {
+        rounded_rect(cr, handle_x, handle_y, 3.0, handle_h, 2.0);
+        let _ = cr.fill();
+    }
+}
+
 fn draw_motion_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell<MotionRuntime>>) {
     let runtime = runtime.borrow();
     let w = width.max(1) as f64;
@@ -545,6 +604,9 @@ fn draw_motion_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell
             );
         }
     }
+    // A selection steps this lane's other clips back so the edited clip
+    // reads first, without blacking out the rest of the timeline.
+    let has_selection = runtime.motion.selected.is_some();
     for (index, segment) in runtime.motion.segments.iter().enumerate() {
         let x0 = time_to_x(segment.start, duration, w);
         let x1 = time_to_x(segment.end, duration, w);
@@ -552,13 +614,9 @@ fn draw_motion_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell
         let y = 7.0;
         let clip_h = h - 14.0;
         let selected = runtime.motion.selected == Some(index);
-        let (fill_r, fill_g, fill_b) = if selected {
-            (0.28, 0.46, 0.74)
-        } else {
-            (0.23, 0.38, 0.62)
-        };
+        let tone = motion_clip_tone(selected, has_selection && !selected);
         rounded_rect(cr, x0, y, clip_w, clip_h, 5.0);
-        cr.set_source_rgba(fill_r, fill_g, fill_b, 1.0);
+        cr.set_source_rgba(tone.fill.0, tone.fill.1, tone.fill.2, tone.fill.3);
         let _ = cr.fill();
         if selected {
             rounded_rect(
@@ -569,32 +627,13 @@ fn draw_motion_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell
                 (clip_h - 1.0).max(0.0),
                 4.5,
             );
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.45);
-            cr.set_line_width(1.0);
+            cr.set_source_rgba(tone.edge.0, tone.edge.1, tone.edge.2, tone.edge.3);
+            cr.set_line_width(1.5);
             let _ = cr.stroke();
-
-            cr.set_source_rgba(0.72, 0.84, 1.0, 0.98);
-            rounded_rect(
-                cr,
-                x0 + 6.0,
-                y + (clip_h - (clip_h - 12.0).max(10.0)) / 2.0,
-                3.0,
-                (clip_h - 12.0).max(10.0),
-                2.0,
-            );
-            let _ = cr.fill();
-            rounded_rect(
-                cr,
-                x0 + clip_w - 9.0,
-                y + (clip_h - (clip_h - 12.0).max(10.0)) / 2.0,
-                3.0,
-                (clip_h - 12.0).max(10.0),
-                2.0,
-            );
-            let _ = cr.fill();
+            draw_trim_handles(cr, x0, y, clip_w, clip_h, tone);
         }
         if clip_w > 40.0 {
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.82);
+            cr.set_source_rgba(1.0, 1.0, 1.0, tone.label);
             cr.select_font_face(
                 UI_FONT_FAMILY,
                 gtk4::cairo::FontSlant::Normal,
@@ -630,6 +669,8 @@ fn draw_text_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell<M
             );
         }
     }
+    // Same rule as the Motion lane, applied to this lane's own selection.
+    let has_selection = runtime.motion.selected_text.is_some();
     for (index, segment) in runtime.motion.text_segments.iter().enumerate() {
         let x0 = time_to_x(segment.start, duration, w);
         let x1 = time_to_x(segment.end, duration, w);
@@ -637,13 +678,9 @@ fn draw_text_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell<M
         let y = 6.0;
         let clip_h = h - 12.0;
         let selected = runtime.motion.selected_text == Some(index);
-        let (fill_r, fill_g, fill_b) = if selected {
-            (0.72, 0.39, 0.22)
-        } else {
-            (0.62, 0.32, 0.18)
-        };
+        let tone = text_clip_tone(selected, has_selection && !selected);
         rounded_rect(cr, x0, y, clip_w, clip_h, 5.0);
-        cr.set_source_rgba(fill_r, fill_g, fill_b, 1.0);
+        cr.set_source_rgba(tone.fill.0, tone.fill.1, tone.fill.2, tone.fill.3);
         let _ = cr.fill();
         if selected {
             rounded_rect(
@@ -654,32 +691,13 @@ fn draw_text_track(cr: &Context, width: i32, height: i32, runtime: &Rc<RefCell<M
                 (clip_h - 1.0).max(0.0),
                 4.5,
             );
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.45);
-            cr.set_line_width(1.0);
+            cr.set_source_rgba(tone.edge.0, tone.edge.1, tone.edge.2, tone.edge.3);
+            cr.set_line_width(1.5);
             let _ = cr.stroke();
-
-            cr.set_source_rgba(0.98, 0.78, 0.62, 0.98);
-            rounded_rect(
-                cr,
-                x0 + 6.0,
-                y + (clip_h - (clip_h - 10.0).max(8.0)) / 2.0,
-                3.0,
-                (clip_h - 10.0).max(8.0),
-                2.0,
-            );
-            let _ = cr.fill();
-            rounded_rect(
-                cr,
-                x0 + clip_w - 9.0,
-                y + (clip_h - (clip_h - 10.0).max(8.0)) / 2.0,
-                3.0,
-                (clip_h - 10.0).max(8.0),
-                2.0,
-            );
-            let _ = cr.fill();
+            draw_trim_handles(cr, x0, y, clip_w, clip_h, tone);
         }
         if clip_w > 36.0 {
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.86);
+            cr.set_source_rgba(1.0, 1.0, 1.0, tone.label);
             cr.select_font_face(
                 UI_FONT_FAMILY,
                 gtk4::cairo::FontSlant::Normal,
@@ -722,36 +740,6 @@ pub(in crate::capture::editor::window) fn playhead_head_hit(
     };
     pointer_y <= PLAYHEAD_HANDLE_TOP + PLAYHEAD_HANDLE_H + PLAYHEAD_HOVER_SLOP
         && (pointer_x - line_x).abs() <= half_w + PLAYHEAD_HOVER_SLOP
-}
-
-/// Position the grab handle from model state, outside any draw callback.
-/// The drawn capsule may clip at the board edge so its stem stays centered;
-/// the widget itself clamps into layout so it never gets a negative margin.
-pub(in crate::capture::editor::window) fn sync_playhead_handle(
-    handle: &DrawingArea,
-    runtime: &Rc<RefCell<MotionRuntime>>,
-    board_width: f64,
-    expanded: bool,
-) {
-    let (playhead, duration) = {
-        let runtime = runtime.borrow();
-        (runtime.motion.playhead, runtime.motion.duration.max(0.001))
-    };
-    let pill_w = if expanded {
-        PLAYHEAD_CLOCK_W
-    } else {
-        PLAYHEAD_HANDLE_W
-    };
-    let x = time_to_x(playhead, duration, board_width.max(1.0));
-    let margin = (x - pill_w / 2.0).max(0.0) as i32;
-    // Width/margin writes each invalidate layout, so skip no-ops: during a
-    // scrub this runs per pointer event and must stay allocation-free.
-    if handle.width_request() != pill_w as i32 {
-        handle.set_width_request(pill_w as i32);
-    }
-    if handle.margin_start() != margin {
-        handle.set_margin_start(margin);
-    }
 }
 
 /// Pointer read-out line. Unlike the playhead it has no capsule, so it can be
@@ -868,6 +856,8 @@ pub(super) fn format_clock(seconds: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::{motion_clip_tone, text_clip_tone};
+
     #[test]
     fn motion_timeline_reuses_video_editor_dock_classes() {
         let source = include_str!("motion_timeline.rs");
@@ -879,6 +869,66 @@ mod tests {
                 && source.contains("recording-editor-card-zoom-track")
                 && source.contains("recording-editor-card-playhead"),
             "Motion timeline must use the video editor card chrome, not a flat orange strip"
+        );
+    }
+
+    #[test]
+    fn selected_clip_outshines_unselected_and_faint_siblings() {
+        for (selected, unselected, faint) in [
+            (
+                motion_clip_tone(true, false),
+                motion_clip_tone(false, false),
+                motion_clip_tone(false, true),
+            ),
+            (
+                text_clip_tone(true, false),
+                text_clip_tone(false, false),
+                text_clip_tone(false, true),
+            ),
+        ] {
+            assert!(selected.fill.3 > unselected.fill.3);
+            assert!(unselected.fill.3 > faint.fill.3);
+            assert!(
+                selected.edge.3 >= 0.9,
+                "the selected clip needs a bright outline"
+            );
+            assert!(selected.label > unselected.label);
+            assert!(unselected.label > faint.label);
+        }
+    }
+
+    #[test]
+    fn motion_playhead_stays_draw_only_like_the_video_editor_card() {
+        let source = include_str!("motion_timeline.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            !source.contains("set_margin_start") && !source.contains("set_width_request"),
+            "the playhead must be painted from model state, not positioned as a widget"
+        );
+        let controls = include_str!("motion_mode/controls/timeline.rs");
+        assert!(
+            !controls.contains("playhead_handle") && !controls.contains("set_margin_start"),
+            "scrubbing must not move a handle widget or invalidate layout"
+        );
+    }
+
+    #[test]
+    fn clip_selection_fades_siblings_in_its_own_lane() {
+        let source = include_str!("motion_timeline.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(source.contains("let has_selection = runtime.motion.selected.is_some();"));
+        assert!(source.contains("let has_selection = runtime.motion.selected_text.is_some();"));
+        assert!(source.contains("motion_clip_tone(selected, has_selection && !selected)"));
+        assert!(source.contains("text_clip_tone(selected, has_selection && !selected)"));
+        assert!(
+            !source.contains(
+                "runtime.motion.selected.is_some() || runtime.motion.selected_text.is_some()"
+            ),
+            "selection must not dim the other lane"
         );
     }
 }

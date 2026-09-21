@@ -1,4 +1,4 @@
-use super::super::color::clamp_text_size;
+use super::super::color::{snap_text_size_to_offered, OFFERED_TEXT_SIZES};
 use super::super::render::layout_wrapped_text;
 use super::super::selection::action_bounds_with_padding;
 use super::super::types::{
@@ -26,10 +26,9 @@ impl EditorState {
         bounds: &TextEditBounds,
         skip_index: Option<usize>,
     ) -> (f64, f64) {
-        let image_width = self.base_image.width() as f64;
-        let image_height = self.base_image.height() as f64;
-        let mut right_limit = image_width - bounds.rect.x as f64;
-        let mut bottom_limit = image_height - bounds.rect.y as f64;
+        let (_, _, canvas_max_x, canvas_max_y) = self.annotation_canvas_bounds();
+        let mut right_limit = canvas_max_x - bounds.rect.x as f64;
+        let mut bottom_limit = canvas_max_y - bounds.rect.y as f64;
 
         for obstacle in self.existing_text_bounds(skip_index) {
             let vertical_overlap = bounds.rect.y < obstacle.y + obstacle.height
@@ -49,16 +48,19 @@ impl EditorState {
     }
 
     pub fn begin_text_input(&mut self, position: Point, width: f64, height: f64) {
-        let image_width = self.base_image.width() as f64;
-        let image_height = self.base_image.height() as f64;
-        let baseline_y = position.y.clamp(self.text_size + 8.0, image_height - 8.0);
-        let max_width = (image_width - position.x).max(50.0);
+        let (min_x, min_y, max_x, max_y) = self.annotation_canvas_bounds();
+        let baseline_y = position.y.clamp(
+            min_y + self.text_size + 8.0,
+            (max_y - 8.0).max(min_y + self.text_size + 8.0),
+        );
+        let max_width = (max_x - position.x).max(50.0);
         let constrained_width = width.clamp(50.0, max_width);
-        let max_height = (image_height - (baseline_y - self.text_size - 8.0)).max(44.0);
+        let max_height = (max_y - (baseline_y - self.text_size - 8.0)).max(44.0);
         let constrained_height = height.clamp(44.0, max_height);
         let top_left = Point {
-            x: position.x.clamp(0.0, image_width - 50.0),
-            y: (baseline_y - self.text_size - 8.0).clamp(0.0, image_height - constrained_height),
+            x: position.x.clamp(min_x, (max_x - 50.0).max(min_x)),
+            y: (baseline_y - self.text_size - 8.0)
+                .clamp(min_y, (max_y - constrained_height).max(min_y)),
         };
         let bounds = TextEditBounds::new(top_left, constrained_width, constrained_height);
         self.active_text_bounds = Some(bounds);
@@ -84,7 +86,16 @@ impl EditorState {
 
     pub fn add_text_input_char(&mut self, c: char) {
         if let Some(ref mut state) = self.active_text_input {
-            state.text.insert(state.cursor_position, c);
+            // cursor_position counts chars, String::insert/remove want byte
+            // indices — convert so multi-byte input never panics or lands
+            // one behind.
+            let byte_idx = state
+                .text
+                .char_indices()
+                .nth(state.cursor_position)
+                .map(|(i, _)| i)
+                .unwrap_or_else(|| state.text.len());
+            state.text.insert(byte_idx, c);
             state.cursor_position += 1;
             state.cursor_visible = true;
             state.cursor_blink_timer = 0;
@@ -110,7 +121,14 @@ impl EditorState {
         if let Some(ref mut state) = self.active_text_input {
             if state.cursor_position > 0 {
                 state.cursor_position -= 1;
-                state.text.remove(state.cursor_position);
+                let byte_idx = state
+                    .text
+                    .char_indices()
+                    .nth(state.cursor_position)
+                    .map(|(i, _)| i);
+                if let Some(byte_idx) = byte_idx {
+                    state.text.remove(byte_idx);
+                }
                 state.cursor_blink_timer = 0;
             }
         }
@@ -128,7 +146,7 @@ impl EditorState {
 
     pub fn move_cursor_right(&mut self) {
         if let Some(ref mut state) = self.active_text_input {
-            if state.cursor_position < state.text.len() {
+            if state.cursor_position < state.text.chars().count() {
                 state.cursor_position += 1;
                 state.cursor_visible = true;
                 state.cursor_blink_timer = 0;
@@ -295,7 +313,9 @@ impl EditorState {
             Err(_) => return,
         };
 
-        let mut fitted_size = self.text_size;
+        // Snap legacy/arbitrary sizes (e.g. 65pt default, 117pt from old
+        // auto-fit) to the offered list so the label always matches the menu.
+        let mut fitted_size = snap_text_size_to_offered(self.text_size);
         loop {
             let (available_width_limit, available_height_limit) =
                 self.text_obstacle_limits(&bounds, skip_index);
@@ -337,8 +357,11 @@ impl EditorState {
             };
 
             if !preserve_font_size {
-                while fitted_size < 120.0 {
-                    let next_size = (fitted_size + 1.0).min(120.0);
+                while let Some(next_size) = OFFERED_TEXT_SIZES
+                    .iter()
+                    .copied()
+                    .find(|candidate| *candidate > fitted_size + f64::EPSILON)
+                {
                     let (_, next_height) = measure(next_size, max_width);
                     if next_height > available_height {
                         break;
@@ -349,8 +372,16 @@ impl EditorState {
 
             let (mut layout, mut height) = measure(fitted_size, max_width);
             if !preserve_font_size {
-                while fitted_size > 10.0 && height > available_height {
-                    fitted_size = (fitted_size - 1.0).max(10.0);
+                while height > available_height {
+                    let Some(prev_size) = OFFERED_TEXT_SIZES
+                        .iter()
+                        .copied()
+                        .rev()
+                        .find(|candidate| *candidate < fitted_size - f64::EPSILON)
+                    else {
+                        break;
+                    };
+                    fitted_size = prev_size;
                     let measured = measure(fitted_size, max_width);
                     layout = measured.0;
                     height = measured.1;
@@ -378,9 +409,18 @@ impl EditorState {
 
                 // Live typing should prefer the current font size, but once
                 // width is exhausted we must shrink instead of letting text
-                // extend past the bottom image boundary.
-                while fitted_size > 10.0 && height > available_height {
-                    fitted_size = (fitted_size - 1.0).max(10.0);
+                // extend past the bottom image boundary. Step through offered
+                // sizes so the result always matches the menu.
+                while height > available_height {
+                    let Some(prev_size) = OFFERED_TEXT_SIZES
+                        .iter()
+                        .copied()
+                        .rev()
+                        .find(|candidate| *candidate < fitted_size - f64::EPSILON)
+                    else {
+                        break;
+                    };
+                    fitted_size = prev_size;
                     let measured = measure(fitted_size, max_width);
                     layout = measured.0;
                     height = measured.1;
@@ -393,14 +433,14 @@ impl EditorState {
                 // Preserving width: keep the current box width (capped at available).
                 max_width.round().max(fitted_size * 1.8) as i32
             } else {
-                // Not preserving width: size the box to the actual text width
-                // (with padding), only growing as wide as the text needs.
-                // Add padding_x * 2 to match draw_active_text_input's padding.
+                // Not preserving width: grow the box to the actual text width
+                // (with padding). Grow-only + small buffer so the newest
+                // letter is never clipped/covered by rounding or metrics drift.
                 let padding_x = 10.0;
-                (layout.max_width + padding_x * 2.0)
+                let needed = (layout.max_width + padding_x * 2.0 + 6.0)
                     .max(fitted_size * 1.8)
-                    .min(max_width)
-                    .round() as i32
+                    .max(old_width as f64);
+                needed.min(max_width).round() as i32
             };
             let target_height = if preserve_height {
                 bounds.rect.height
@@ -418,10 +458,22 @@ impl EditorState {
 
         self.text_size = fitted_size;
 
-        // Clamp so the box never overflows below the image.
-        let image_height = self.base_image.height() as i32;
-        if bounds.rect.y + bounds.rect.height > image_height {
-            bounds.rect.height = (image_height - bounds.rect.y).max(44);
+        // Keep the full text visible: shift the box up/left to stay in canvas
+        // instead of capping height/width (capping clips the newest letters).
+        let (min_x, min_y, max_x, max_y) = self.annotation_canvas_bounds();
+        let canvas_bottom = max_y.round() as i32;
+        let canvas_right = max_x.round() as i32;
+        if bounds.rect.y + bounds.rect.height > canvas_bottom {
+            bounds.rect.y = (canvas_bottom - bounds.rect.height).max(min_y.round() as i32);
+        }
+        if bounds.rect.y < min_y.round() as i32 {
+            bounds.rect.y = min_y.round() as i32;
+        }
+        if bounds.rect.x + bounds.rect.width > canvas_right {
+            bounds.rect.x = (canvas_right - bounds.rect.width).max(min_x.round() as i32);
+        }
+        if bounds.rect.x < min_x.round() as i32 {
+            bounds.rect.x = min_x.round() as i32;
         }
 
         bounds.sync_handles();
@@ -485,10 +537,12 @@ impl EditorState {
         // Only update height — x, y, width are untouched.
         bounds.rect.height = new_height;
 
-        // Clamp so the box never overflows below the image.
-        let image_height = self.base_image.height() as i32;
-        if bounds.rect.y + bounds.rect.height > image_height {
-            bounds.rect.height = (image_height - bounds.rect.y).max(44);
+        // Clamp so the box never overflows below the canvas (screenshot or
+        // background padding when a wallpaper is active).
+        let (_, _, _, canvas_max_y) = self.annotation_canvas_bounds();
+        let canvas_bottom = canvas_max_y.round() as i32;
+        if bounds.rect.y + bounds.rect.height > canvas_bottom {
+            bounds.rect.height = (canvas_bottom - bounds.rect.y).max(44);
         }
 
         bounds.sync_handles();
@@ -532,10 +586,12 @@ impl EditorState {
 
         bounds.rect.height = new_height;
 
-        // Clamp so the box never overflows below the image.
-        let image_height = self.base_image.height() as i32;
-        if bounds.rect.y + bounds.rect.height > image_height {
-            bounds.rect.height = (image_height - bounds.rect.y).max(44);
+        // Clamp so the box never overflows below the canvas (screenshot or
+        // background padding when a wallpaper is active).
+        let (_, _, _, canvas_max_y) = self.annotation_canvas_bounds();
+        let canvas_bottom = canvas_max_y.round() as i32;
+        if bounds.rect.y + bounds.rect.height > canvas_bottom {
+            bounds.rect.height = (canvas_bottom - bounds.rect.y).max(44);
         }
 
         bounds.sync_handles();
@@ -577,7 +633,7 @@ impl EditorState {
     }
 
     pub fn set_text_size(&mut self, size: f64) -> bool {
-        let next = clamp_text_size(size);
+        let next = snap_text_size_to_offered(size);
         if let Some(index) = self
             .active_text_input
             .as_ref()
@@ -628,7 +684,7 @@ impl EditorState {
     }
 
     pub fn set_selected_text_action_size(&mut self, size: f64) -> bool {
-        let next = clamp_text_size(size);
+        let next = snap_text_size_to_offered(size);
 
         if let Some(index) = self
             .active_text_input

@@ -376,11 +376,51 @@ pub(crate) fn aspect_ratio_for_index(index: usize) -> f64 {
     RATIOS.get(index).copied().unwrap_or(0.0)
 }
 
+/// Float comparison for aspect ratios (mirrors C++ `ratiosEqual`).
+pub(crate) fn ratios_equal(a: f64, b: f64) -> bool {
+    if a <= 0.0 && b <= 0.0 {
+        return true;
+    }
+    if a <= 0.0 || b <= 0.0 {
+        return false;
+    }
+    (a - b).abs() < 0.001
+}
+
+/// Aspect ratio owned by a top-bar pill (0=Free, 1=16:9, 2=4:3, 3=1:1).
+pub(crate) fn top_bar_ratio_for_pill(index: usize) -> f64 {
+    super::layout::TOP_BAR_PILL_RATIOS
+        .get(index)
+        .copied()
+        .unwrap_or(0.0)
+}
+
+/// Legacy capture-menu aspect index for a ratio (Free->0, 1:1->1, 4:3->3,
+/// 16:9->7). Custom ratios with no legacy slot return -1; kept only to sync
+/// the compat `capture_aspect_ratio_index` field.
+pub(crate) fn capture_aspect_index_for_ratio(ratio: f64) -> i32 {
+    if ratio <= 0.0 {
+        return 0;
+    }
+    if ratios_equal(ratio, 1.0) {
+        return 1;
+    }
+    if ratios_equal(ratio, 4.0 / 3.0) {
+        return 3;
+    }
+    if ratios_equal(ratio, 16.0 / 9.0) {
+        return 7;
+    }
+    -1
+}
+
 pub(crate) fn active_aspect_ratio(st: &SelectorState) -> f64 {
     if st.recording.panel_open {
         aspect_ratio_for_index(st.recording.record_aspect_ratio_index)
+    } else if st.top_bar_snap_to_ratios {
+        st.top_bar_aspect_ratio.max(0.0)
     } else {
-        aspect_ratio_for_index(st.capture_aspect_ratio_index)
+        0.0
     }
 }
 
@@ -514,7 +554,7 @@ mod tests {
     #[test]
     fn active_aspect_ratio_prefers_recording_index_when_panel_open() {
         let mut st = SelectorState {
-            capture_aspect_ratio_index: 1, // 1:1
+            top_bar_aspect_ratio: 1.0, // 1:1 pill
             ..Default::default()
         };
         st.recording.record_aspect_ratio_index = 7; // 16:9
@@ -522,5 +562,48 @@ mod tests {
         assert!((active_aspect_ratio(&st) - 1.0).abs() < 1e-9);
         st.recording.panel_open = true;
         assert!((active_aspect_ratio(&st) - 16.0 / 9.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn active_aspect_ratio_is_free_when_snap_disabled() {
+        let mut st = SelectorState {
+            top_bar_aspect_ratio: 16.0 / 9.0,
+            top_bar_snap_to_ratios: false,
+            ..Default::default()
+        };
+        assert_eq!(active_aspect_ratio(&st), 0.0);
+        st.top_bar_snap_to_ratios = true;
+        assert!((active_aspect_ratio(&st) - 16.0 / 9.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ratios_equal_treats_nonpositive_as_free() {
+        assert!(ratios_equal(0.0, 0.0));
+        assert!(ratios_equal(-1.0, 0.0));
+        assert!(!ratios_equal(0.0, 1.0));
+        assert!(ratios_equal(16.0 / 9.0, 16.0 / 9.0));
+        assert!(ratios_equal(21.0 / 9.0, 7.0 / 3.0));
+        assert!(!ratios_equal(16.0 / 9.0, 16.0 / 10.0));
+    }
+
+    #[test]
+    fn top_bar_pill_ratios_cover_free_widescreen_standard_and_square() {
+        assert_eq!(top_bar_ratio_for_pill(0), 0.0);
+        assert!((top_bar_ratio_for_pill(1) - 16.0 / 9.0).abs() < 1e-9);
+        assert!((top_bar_ratio_for_pill(2) - 4.0 / 3.0).abs() < 1e-9);
+        assert!((top_bar_ratio_for_pill(3) - 1.0).abs() < 1e-9);
+        assert_eq!(top_bar_ratio_for_pill(99), 0.0);
+    }
+
+    #[test]
+    fn capture_aspect_index_maps_known_ratios_and_sentinels_custom() {
+        assert_eq!(capture_aspect_index_for_ratio(0.0), 0);
+        assert_eq!(capture_aspect_index_for_ratio(1.0), 1);
+        assert_eq!(capture_aspect_index_for_ratio(4.0 / 3.0), 3);
+        assert_eq!(capture_aspect_index_for_ratio(16.0 / 9.0), 7);
+        // Menu-only ratios have no legacy slot.
+        assert_eq!(capture_aspect_index_for_ratio(2.0), -1);
+        assert_eq!(capture_aspect_index_for_ratio(21.0 / 9.0), -1);
+        assert_eq!(capture_aspect_index_for_ratio(9.0 / 16.0), -1);
     }
 }

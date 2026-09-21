@@ -162,8 +162,8 @@ pub enum CursorThemeFile {
     #[serde(alias = "tahoe-inverted")]
     TahoeInverted,
     Dot,
-    #[serde(alias = "minimal")]
-    Figma,
+    #[serde(alias = "figma")]
+    Minimal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -185,12 +185,13 @@ pub struct CropFile {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BackgroundFile {
     None,
     Plain { r: u8, g: u8, b: u8 },
     Gradient { index: usize },
+    Wallpaper { path: PathBuf },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -406,11 +407,16 @@ fn crop_from_file(crop: CropFile) -> CropSelection {
     }
 }
 
-fn background_to_file(bg: VideoBackground) -> BackgroundFile {
+fn background_to_file(bg: &VideoBackground) -> BackgroundFile {
     match bg {
         VideoBackground::None => BackgroundFile::None,
-        VideoBackground::Plain { r, g, b } => BackgroundFile::Plain { r, g, b },
-        VideoBackground::Gradient(index) => BackgroundFile::Gradient { index },
+        VideoBackground::Plain { r, g, b } => BackgroundFile::Plain {
+            r: *r,
+            g: *g,
+            b: *b,
+        },
+        VideoBackground::Gradient(index) => BackgroundFile::Gradient { index: *index },
+        VideoBackground::Wallpaper(path) => BackgroundFile::Wallpaper { path: path.clone() },
     }
 }
 
@@ -419,6 +425,26 @@ fn background_from_file(bg: BackgroundFile) -> VideoBackground {
         BackgroundFile::None => VideoBackground::None,
         BackgroundFile::Plain { r, g, b } => VideoBackground::Plain { r, g, b },
         BackgroundFile::Gradient { index } => VideoBackground::Gradient(index),
+        BackgroundFile::Wallpaper { path } => {
+            // Old projects stored gradients by index; new wallpaper entries
+            // resolve to the bundled asset when the file moved.
+            let resolved = if path.is_absolute() && path.is_file() {
+                path
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                let candidate =
+                    crate::capture::editor::window::background_panel::background_gradient_asset_path(
+                        name,
+                    );
+                if candidate.is_file() {
+                    candidate
+                } else {
+                    path
+                }
+            } else {
+                path
+            };
+            VideoBackground::Wallpaper(resolved)
+        }
     }
 }
 
@@ -452,7 +478,7 @@ fn cursor_theme_to_file(theme: CursorTheme) -> CursorThemeFile {
         CursorTheme::Tahoe => CursorThemeFile::Tahoe,
         CursorTheme::TahoeInverted => CursorThemeFile::TahoeInverted,
         CursorTheme::Dot => CursorThemeFile::Dot,
-        CursorTheme::Figma => CursorThemeFile::Figma,
+        CursorTheme::Minimal => CursorThemeFile::Minimal,
     }
 }
 
@@ -466,7 +492,7 @@ fn cursor_theme_from_file(theme: CursorThemeFile) -> CursorTheme {
         CursorThemeFile::Tahoe => CursorTheme::Tahoe,
         CursorThemeFile::TahoeInverted => CursorTheme::TahoeInverted,
         CursorThemeFile::Dot => CursorTheme::Dot,
-        CursorThemeFile::Figma => CursorTheme::Figma,
+        CursorThemeFile::Minimal => CursorTheme::Minimal,
     }
 }
 
@@ -623,7 +649,7 @@ impl VideoEditState {
             zoom_hidden: self.zoom_hidden,
             zoom_locked: self.zoom_locked,
             crop: self.crop.map(crop_to_file),
-            background: background_to_file(self.background),
+            background: background_to_file(&self.background),
             background_padding: self.background_padding,
             background_corner_radius: self.background_corner_radius,
             background_shadow: self.background_shadow,
@@ -813,6 +839,23 @@ mod tests {
             project_path_for_video(Path::new("/tmp/a.mp4")),
             project_path_for_video(Path::new("/tmp/b.mp4"))
         );
+    }
+
+    #[test]
+    fn legacy_figma_cursor_theme_key_still_loads() {
+        // Projects saved before the rename stored "figma" for the Minimal
+        // theme. New saves write "minimal", which older builds already accept
+        // through the alias they carried for that key.
+        let legacy: CursorThemeFile = serde_json::from_str("\"figma\"").unwrap();
+        assert_eq!(legacy, CursorThemeFile::Minimal);
+        assert_eq!(cursor_theme_from_file(legacy), CursorTheme::Minimal);
+        assert_eq!(
+            serde_json::to_string(&CursorThemeFile::Minimal).unwrap(),
+            "\"minimal\""
+        );
+        assert_eq!(CursorTheme::parse("figma"), CursorTheme::Minimal);
+        assert_eq!(CursorTheme::Minimal.as_str(), "minimal");
+        assert_eq!(CursorTheme::Minimal.label(), "Minimal");
     }
 
     #[test]
@@ -1100,6 +1143,25 @@ mod tests {
         assert_eq!(restored.cursor.click_duration_ms, 800);
         assert_eq!(restored.zoom_clips[0].easing, ZoomEasing::Snappy);
         assert_eq!(restored.zoom_clips[0].ease_ms, 480);
+        cleanup_project(&video);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn roundtrip_preserves_wallpaper_background_and_padding() {
+        let dir = scratch("wallpaper-bg");
+        let video = write_video(&dir, "clip.mp4", 24);
+        let wallpaper = dir.join("wallpaper-001.jpg");
+        fs::write(&wallpaper, b"fake-jpg").unwrap();
+        let mut state = VideoEditState::new(metadata_for(&video, 24));
+        state.background = VideoBackground::Wallpaper(wallpaper.clone());
+        state.background_padding = 40.0;
+        save_project(&video, &state.to_project()).unwrap();
+        let loaded = load_project(&video).expect("project should load");
+        let mut restored = VideoEditState::new(metadata_for(&video, 24));
+        restored.apply_project(loaded);
+        assert_eq!(restored.background, VideoBackground::Wallpaper(wallpaper));
+        assert!((restored.background_padding - 40.0).abs() < 1e-12);
         cleanup_project(&video);
         let _ = fs::remove_dir_all(&dir);
     }

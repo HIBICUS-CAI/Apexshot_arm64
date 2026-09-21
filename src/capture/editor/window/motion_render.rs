@@ -1,6 +1,6 @@
 //! Shared Motion preview/export drawing.
 
-use gtk4::cairo::{Context, Filter, Format, ImageSurface, LinearGradient, Matrix};
+use gtk4::cairo::{Context, Filter, Format, ImageSurface, LinearGradient, Matrix, Operator};
 use image::RgbaImage;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,8 +8,8 @@ use std::process::Command;
 
 use crate::recording::editor::model::{
     affine_from_three_points as affine_components, card_depth, project_card_corners, project_point,
-    MotionAppearance, MotionBackgroundFillType, MotionBlurBudgetMode, MotionFramePreset,
-    MotionSceneShadowPreset, MotionState, MotionTextSegment, MotionTransform, MOTION_EXPORT_FPS,
+    MotionAppearance, MotionBackgroundFillType, MotionBlurBudgetMode, MotionSceneShadowPreset,
+    MotionState, MotionTextSegment, MotionTransform, MOTION_EXPORT_FPS,
 };
 
 include!("motion_render/geometry.rs");

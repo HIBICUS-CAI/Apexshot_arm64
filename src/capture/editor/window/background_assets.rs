@@ -1,8 +1,8 @@
 //! Background gradient/wallpaper asset loading and cache handles (PR 10.13).
 //!
 //! Owns preload worker, UI-thread completion poll, gradient surface slots, and
-//! wallpaper path→surface cache. The draw path and background panel still
-//! consume the returned handles.
+//! wallpaper path→surface cache. The draw path and Appearance panel consume
+//! the returned cache handles.
 
 use gtk4::{glib, prelude::*, DrawingArea};
 use image::RgbaImage;
@@ -19,7 +19,6 @@ use super::background_panel;
 pub(super) struct BackgroundAssetCaches {
     pub gradient_surfaces: Rc<RefCell<Vec<Option<gtk4::cairo::ImageSurface>>>>,
     pub wallpaper_cache: Rc<RefCell<HashMap<PathBuf, gtk4::cairo::ImageSurface>>>,
-    pub wallpaper_loader_sender: mpsc::Sender<(Option<usize>, PathBuf, RgbaImage)>,
 }
 
 /// Start background preload of gradients/system wallpaper and return cache handles.
@@ -46,7 +45,10 @@ pub(super) fn install_background_asset_loading(
                 // 1. System wallpaper (High Priority)
                 if let Some(path) = background_panel::detect_system_wallpaper_path() {
                     println!("[DEBUG] Detected system wallpaper: {:?}", path);
-                    if let Some(rgba) = background_panel::load_background_image_optimized(&path) {
+                    if let Some(rgba) = background_panel::load_background_preview_image(
+                        &path,
+                        background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    ) {
                         let _ = sender.send((None, path, rgba));
                     }
                 } else {
@@ -55,9 +57,10 @@ pub(super) fn install_background_asset_loading(
                     let fallback_path = background_panel::background_gradient_asset_path(
                         background_panel::BACKGROUND_GRADIENT_PREVIEW_FILES[0],
                     );
-                    if let Some(rgba) =
-                        background_panel::load_background_image_optimized(&fallback_path)
-                    {
+                    if let Some(rgba) = background_panel::load_background_preview_image(
+                        &fallback_path,
+                        background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    ) {
                         let _ = sender.send((None, fallback_path, rgba));
                     }
                 }
@@ -68,7 +71,10 @@ pub(super) fn install_background_asset_loading(
                     .enumerate()
                 {
                     let path = background_panel::background_gradient_asset_path(file_name);
-                    if let Some(rgba) = background_panel::load_background_image_optimized(&path) {
+                    if let Some(rgba) = background_panel::load_background_preview_image(
+                        &path,
+                        background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                    ) {
                         if sender.send((Some(idx), path, rgba)).is_err() {
                             break;
                         }
@@ -100,7 +106,6 @@ pub(super) fn install_background_asset_loading(
     BackgroundAssetCaches {
         gradient_surfaces,
         wallpaper_cache,
-        wallpaper_loader_sender,
     }
 }
 
@@ -112,7 +117,7 @@ mod tests {
         assert!(
             source.contains("detect_system_wallpaper_path()")
                 && source.contains("BACKGROUND_GRADIENT_PREVIEW_FILES")
-                && source.contains("load_background_image_optimized")
+                && source.contains("load_background_preview_image")
                 && source.contains("Duration::from_millis(100)")
                 && source.contains("struct BackgroundAssetCaches")
                 && source.contains("fn install_background_asset_loading"),

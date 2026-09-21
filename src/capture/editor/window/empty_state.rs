@@ -224,6 +224,7 @@ pub(super) fn install_empty_drop_zone(
     loading_revealer.set_can_target(false);
     loading_revealer.set_halign(Align::Center);
     loading_revealer.set_valign(Align::Start);
+    loading_revealer.set_margin_top(12);
     loading_revealer.set_child(Some(&loading_box));
     loading_revealer.set_transition_type(gtk4::RevealerTransitionType::SlideDown);
     loading_revealer.set_reveal_child(false);
@@ -311,6 +312,7 @@ mod tests {
                 && source.contains("Some(window.clone()),\n                    Some(image),")
                 && source.contains("Drop an image here")
                 && source.contains("Loading image…")
+                && source.contains("loading_revealer.set_margin_top")
                 && source.contains("initial_image_path: Option<PathBuf>")
                 && source.contains("root_overlay.add_controller(drop_target)"),
             "empty state must validate image types and reload into the same window"

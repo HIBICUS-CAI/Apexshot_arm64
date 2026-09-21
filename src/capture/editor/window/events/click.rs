@@ -6,7 +6,7 @@
 
 use gtk4::{
     gdk, glib, prelude::*, ApplicationWindow, Box as GtkBox, Button, DrawingArea,
-    EventControllerKey, GestureClick, Label, Popover,
+    EventControllerKey, GestureClick, Label,
 };
 use image::RgbaImage;
 use std::cell::{Cell, RefCell};
@@ -73,7 +73,6 @@ pub(super) fn wire_canvas_click(
     color_buttons: &[Button],
     color_picker_dot: &GtkBox,
     color_class_names: &[&'static str],
-    color_popover: &Popover,
     space_pan_active: &Rc<Cell<bool>>,
     eyedropper_mode: &Rc<Cell<bool>>,
     eyedropper_from_sidebar: &Rc<Cell<bool>>,
@@ -110,6 +109,24 @@ pub(super) fn wire_canvas_click(
                 }
                 return glib::Propagation::Stop;
             }
+
+            // Escape drops the selected number marker so the floating bar returns to
+            // its "next marker" state instead of editing that marker.
+            let deselected = {
+                let mut st = state_key.lock().unwrap();
+                if st.selected_tool == Tool::Number && st.selected_action_index.is_some() {
+                    st.clear_selection();
+                    true
+                } else {
+                    false
+                }
+            };
+            if deselected {
+                if let Some(area) = drawing_area_key.upgrade() {
+                    area.queue_draw();
+                }
+                return glib::Propagation::Stop;
+            }
         }
 
         glib::Propagation::Proceed
@@ -130,7 +147,6 @@ pub(super) fn wire_canvas_click(
     let eyedropper_from_sidebar_click = eyedropper_from_sidebar.clone();
     let eyedropper_point_click = eyedropper_point.clone();
     let eyedropper_rendered_click = eyedropper_rendered.clone();
-    let color_popover_canvas_click = color_popover.clone();
     let space_pan_active_click = space_pan_active.clone();
     let set_picker_panel_visibility_canvas_click = set_picker_panel_visibility.clone();
     let canvas_eyedropper_ring_click = canvas_eyedropper_ring.clone();
@@ -271,7 +287,7 @@ pub(super) fn wire_canvas_click(
                 }
             };
 
-            let mut reopen_color_popover = false;
+            let mut reopen_picker = false;
             let from_sidebar = eyedropper_from_sidebar_click.get();
             if let Some(color) = picked_color {
                 // Only add to custom colors when picked from sidebar
@@ -280,7 +296,7 @@ pub(super) fn wire_canvas_click(
                     // Only apply to editor and sync picker if not from sidebar
                     apply_picker_color_to_editor_canvas_click(color);
                     sync_picker_from_color_canvas_click(color);
-                    reopen_color_popover = true;
+                    reopen_picker = true;
                 }
             }
 
@@ -291,9 +307,8 @@ pub(super) fn wire_canvas_click(
             canvas_eyedropper_ring_click.set_visible(false);
             set_window_cursor_name(&window_click, None);
 
-            if reopen_color_popover {
+            if reopen_picker {
                 set_picker_panel_visibility_canvas_click(true);
-                color_popover_canvas_click.popup();
             }
 
             if let Some(area) = drawing_area_click.upgrade() {
@@ -368,6 +383,16 @@ pub(super) fn wire_canvas_click(
                     }
                     if let Some(font_family) = st.selected_text_font_family() {
                         st.text_font_family = font_family;
+                    }
+                    if let Some(crate::capture::editor::types::AnnotationAction::Obfuscate {
+                        method,
+                        amount,
+                        ..
+                    }) = st.selected_action()
+                    {
+                        let (method, amount) = (*method, *amount);
+                        st.set_obfuscate_method(method);
+                        st.set_current_obfuscate_amount(amount);
                     }
 
                     let selected_color_index = selected_color.map(palette_index_for_color);
@@ -521,8 +546,10 @@ pub(super) fn wire_canvas_click(
                         }
                     } else {
                         // Click on empty area: deselect and start a new text box.
+                        // Wide initial box so short words ("god") never wrap on
+                        // the 3rd char and read as phantom whitespace/lag.
                         st.selected_action_index = None;
-                        let initial_width = (st.text_size * 1.8).max(140.0);
+                        let initial_width = (st.text_size * 3.2).max(220.0);
                         let initial_height = (st.text_size * 1.45 + 16.0).max(44.0);
                         st.begin_text_input(image_point, initial_width, initial_height);
                     }
@@ -551,7 +578,15 @@ pub(super) fn wire_canvas_click(
                 }
             }
             Tool::Number => {
-                state_click.lock().unwrap().add_number_marker(image_point);
+                {
+                    let mut st = state_click.lock().unwrap();
+                    // Clicking an existing marker re-opens its bar instead of stacking a
+                    // second marker on top of it (mirrors the Box/Circle/Obfuscate
+                    // reselect path). Empty canvas still places a new marker.
+                    if !st.select_number_action_at_point_with_scale(image_point, t.scale) {
+                        st.add_number_marker(image_point);
+                    }
+                }
                 sync_size_control_canvas_click();
                 if let Some(area) = drawing_area_click.upgrade() {
                     area.queue_draw();

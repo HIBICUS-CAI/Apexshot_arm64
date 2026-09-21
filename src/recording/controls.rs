@@ -1,6 +1,8 @@
 use super::*;
+#[cfg(test)]
+use crate::capture_overlay::RecordingType;
 use crate::{
-    capture_overlay::{RecordingRequest, RecordingType},
+    capture_overlay::RecordingRequest,
     config::{save_config, AppConfig},
     recording::editor::sidecar::{
         delete_recording_outputs, CaptureRegion, ClickSample, CursorKind, PointerSample,
@@ -255,7 +257,6 @@ pub struct PreparedOverlayRecordingRequest {
 
 enum PreparedShellRecording {
     Video(super::backend::BuiltPipeline),
-    Gif(super::backend::PreparedGifWaylandRecording),
 }
 
 fn should_use_shell_mask_for_request(
@@ -293,10 +294,6 @@ pub fn prepare_overlay_recording_request(
     app_config.rec_video_mono = request.record_mono;
     app_config.rec_noise_suppression = request.noise_suppression;
     app_config.rec_video_open_editor = request.open_editor;
-    app_config.rec_gif_fps = request.gif_fps;
-    app_config.rec_gif_quality = request.gif_quality;
-    app_config.rec_gif_size_idx = request.gif_size_idx;
-    app_config.rec_gif_optimize = request.optimize_gif;
 
     if request.remember_selection {
         app_config.last_selection_x = Some(request.x);
@@ -305,11 +302,7 @@ pub fn prepare_overlay_recording_request(
         app_config.last_selection_h = Some(request.height);
     }
 
-    let extension = match request.record_type {
-        RecordingType::Video => "mp4",
-        RecordingType::Gif => "gif",
-    };
-    let output_path = super::recording_output_path(&app_config, extension, now);
+    let output_path = super::recording_output_path(&app_config, "mp4", now);
     super::ensure_recording_parent_dir(&output_path);
 
     let max_resolution = match request.video_max_res {
@@ -319,31 +312,13 @@ pub fn prepare_overlay_recording_request(
         _ => None,
     };
 
-    let video_fps = match request.video_fps {
+    let fps = match request.video_fps {
         0 => 24,
         1 => 30,
         2 => 50,
         3 => 60,
         _ => 30,
     };
-
-    let (fps, gif_quality, gif_optimize, gif_max_width) =
-        if matches!(request.record_type, RecordingType::Gif) {
-            let max_width = match request.gif_size_idx {
-                0 => Some(800),
-                1 => Some(640),
-                2 => Some(480),
-                _ => None,
-            };
-            (
-                request.gif_fps as u32,
-                request.gif_quality,
-                request.optimize_gif,
-                max_width,
-            )
-        } else {
-            (video_fps, 0.75, true, Some(800))
-        };
 
     let (capture_x, capture_y, capture_width, capture_height) = if request.fullscreen {
         (None, None, None, None)
@@ -363,20 +338,17 @@ pub fn prepare_overlay_recording_request(
         x: capture_x,
         y: capture_y,
         cursor: true,
-        pointer_track: matches!(request.record_type, RecordingType::Video)
-            && crate::gnome_shell::should_use_pointer_track(),
+        pointer_track: crate::gnome_shell::should_use_pointer_track(),
         hidpi: request.hidpi,
         max_resolution,
         fps,
+        crf: super::crf_for_quality(app_config.rec_video_quality),
         mono_audio: request.record_mono,
         mic_enabled: request.mic,
         speaker_enabled: request.speaker,
         mic_source: None,
         speaker_source: None,
         noise_suppression: request.noise_suppression,
-        gif_quality,
-        gif_optimize,
-        gif_max_width,
     };
 
     let controls_params = Some(RecordingControlsParams {
@@ -399,7 +371,7 @@ pub fn prepare_overlay_recording_request(
         recording_config,
         controls_params,
         use_shell_mask,
-        open_editor: matches!(request.record_type, RecordingType::Video) && request.open_editor,
+        open_editor: request.open_editor,
     }
 }
 
@@ -428,6 +400,17 @@ async fn run_recording_with_controls_locked(
         "[recording] GNOME Shell not detected; using native recording path (shortcuts + notifications)."
     );
     run_recording_with_native_controls(config, params).await
+}
+
+/// Standalone countdown window for entry points without a controls deck
+/// (e.g. CLI): shows the timer when Settings enables it. Returns false when
+/// the user cancels the countdown.
+pub async fn run_standalone_countdown() -> anyhow::Result<bool> {
+    run_recording_countdown_subprocess(RecordingControlsParams {
+        countdown_seconds: 3,
+        ..Default::default()
+    })
+    .await
 }
 
 async fn run_recording_countdown_subprocess(
@@ -488,17 +471,6 @@ async fn prepare_shell_recording(
         return Ok(None);
     }
 
-    if config
-        .output_path
-        .extension()
-        .is_some_and(|extension| extension == "gif")
-    {
-        return super::backend::prepare_gif_wayland_recording(config)
-            .await
-            .map(PreparedShellRecording::Gif)
-            .map(Some);
-    }
-
     super::backend::prepare_recording_backend(config)
         .await
         .map(PreparedShellRecording::Video)
@@ -513,9 +485,6 @@ async fn start_shell_recording(
     match prepared {
         Some(PreparedShellRecording::Video(backend)) => {
             super::backend::start_recording_with_prepared_backend(backend, Some(command_rx)).await
-        }
-        Some(PreparedShellRecording::Gif(backend)) => {
-            super::backend::record_prepared_gif_wayland_native(backend, Some(command_rx)).await
         }
         None => super::start_recording_with_commands(config, Some(command_rx)).await,
     }
@@ -538,9 +507,7 @@ pub async fn run_recording_with_native_controls(
     // Prepare the capture backend *before* countdown so any portal / permission
     // UI appears first. Countdown then leads straight into recording without a
     // second chooser after "3-2-1".
-    let prepared_backend = if super::wf_recorder::is_wlroots_session()
-        || config.output_path.extension().is_some_and(|e| e == "gif")
-    {
+    let prepared_backend = if super::wf_recorder::is_wlroots_session() {
         None
     } else {
         match super::backend::prepare_recording_backend(config.clone()).await {
@@ -819,12 +786,29 @@ pub fn run_overlay_recording_request_with_gtk(
         if let Some(params) = controls_params {
             runtime
                 .block_on(run_recording_with_controls_locked(recording_config, params))
-                .map_err(|err| anyhow::anyhow!("failed to run recording controls: {err}"))
+                .map_err(|err| {
+                    if err
+                        .downcast_ref::<super::RecordError>()
+                        .is_some_and(|e| matches!(e, super::RecordError::Cancelled))
+                    {
+                        err
+                    } else {
+                        anyhow::anyhow!("failed to run recording controls: {err}")
+                    }
+                })
         } else {
             runtime
                 .block_on(super::start_recording(recording_config))
                 .map(|path| (path, StopAction::Save))
-                .map_err(|err| anyhow::anyhow!("Recording failed: {err}"))
+                .map_err(|err| {
+                    // Preserve the type so the outcome handler below can tell
+                    // a portal-dialog cancel apart from a real failure.
+                    if matches!(err, super::RecordError::Cancelled) {
+                        anyhow::Error::from(err)
+                    } else {
+                        anyhow::anyhow!("Recording failed: {err}")
+                    }
+                })
         }
     })
     .join()
@@ -889,6 +873,13 @@ pub fn run_overlay_recording_request_with_gtk(
             Ok(path)
         }
         Err(err) => {
+            if err
+                .downcast_ref::<super::RecordError>()
+                .is_some_and(|e| matches!(e, super::RecordError::Cancelled))
+            {
+                eprintln!("[recording] Recording cancelled by user.");
+                return Err(err);
+            }
             crate::gnome_shell::hide_recording_mask_best_effort();
             super::notify_recording_session_ended_best_effort();
             crate::utils::notify::desktop_notification(
@@ -1026,10 +1017,6 @@ mod tests {
             record_mono: true,
             noise_suppression: true,
             open_editor: true,
-            gif_fps: 12,
-            gif_quality: 0.4,
-            gif_size_idx: 2,
-            optimize_gif: false,
             fullscreen: false,
         };
 
@@ -1080,9 +1067,6 @@ mod tests {
         assert_eq!(prepared.recording_config.noise_suppression, true);
         assert_eq!(prepared.recording_config.mic_enabled, true);
         assert_eq!(prepared.recording_config.speaker_enabled, false);
-        assert_eq!(prepared.recording_config.gif_quality, 0.75);
-        assert_eq!(prepared.recording_config.gif_optimize, true);
-        assert_eq!(prepared.recording_config.gif_max_width, Some(800));
         assert_eq!(
             prepared.controls_params,
             Some(RecordingControlsParams {
@@ -1117,23 +1101,6 @@ mod tests {
         );
 
         assert!(prepared.open_editor);
-    }
-
-    #[test]
-    fn prepare_overlay_recording_request_does_not_set_open_editor_for_gif() {
-        let request = RecordingRequest {
-            record_type: RecordingType::Gif,
-            open_editor: true,
-            ..RecordingRequest::default()
-        };
-
-        let prepared = prepare_overlay_recording_request(
-            AppConfig::default(),
-            &request,
-            chrono::Utc.with_ymd_and_hms(2026, 5, 8, 12, 0, 0).unwrap(),
-        );
-
-        assert!(!prepared.open_editor);
     }
 
     #[test]
@@ -1232,65 +1199,6 @@ mod tests {
     }
 
     #[test]
-    fn prepare_overlay_recording_request_maps_gif_settings_without_controls() {
-        let request = RecordingRequest {
-            x: 1,
-            y: 2,
-            width: 300,
-            height: 200,
-            record_type: RecordingType::Gif,
-            controls: false,
-            mic: false,
-            speaker: true,
-            display_rec_time: false,
-            hidpi: false,
-            notifications: true,
-            cursor: true,
-            remember_selection: false,
-            dim_screen: true,
-            countdown: true,
-            video_format: 0,
-            video_max_res: 1,
-            video_fps: 2,
-            record_mono: false,
-            noise_suppression: false,
-            open_editor: false,
-            gif_fps: 18,
-            gif_quality: 0.6,
-            gif_size_idx: 1,
-            optimize_gif: false,
-            fullscreen: true,
-        };
-
-        let prepared = prepare_overlay_recording_request(
-            AppConfig {
-                video_export_location: "/var/tmp/apexshot-gifs".into(),
-                ..AppConfig::default()
-            },
-            &request,
-            chrono::Utc.with_ymd_and_hms(2026, 3, 25, 12, 0, 1).unwrap(),
-        );
-
-        assert_eq!(
-            prepared.output_path,
-            PathBuf::from("/var/tmp/apexshot-gifs/ApexShot Recording 2026-03-25 at 12-00-01.gif")
-        );
-        assert_eq!(prepared.updated_app_config.rec_remember_selection, false);
-        assert_eq!(prepared.updated_app_config.last_selection_x, None);
-        assert_eq!(prepared.updated_app_config.last_selection_y, None);
-        assert_eq!(prepared.updated_app_config.last_selection_w, None);
-        assert_eq!(prepared.updated_app_config.last_selection_h, None);
-        assert_eq!(prepared.recording_config.max_resolution, Some((1920, 1080)));
-        assert_eq!(prepared.recording_config.fps, 18);
-        assert_eq!(prepared.recording_config.gif_quality, 0.6);
-        assert_eq!(prepared.recording_config.gif_optimize, false);
-        assert_eq!(prepared.recording_config.gif_max_width, Some(640));
-        assert_eq!(prepared.recording_config.speaker_enabled, true);
-        assert!(prepared.controls_params.is_some());
-        assert_eq!(prepared.use_shell_mask, false);
-    }
-
-    #[test]
     fn prepare_overlay_recording_request_sets_shell_mask_for_gnome_wayland_area_recording() {
         let request = RecordingRequest {
             x: 10,
@@ -1312,10 +1220,6 @@ mod tests {
             video_fps: 1,
             record_mono: false,
             open_editor: false,
-            gif_fps: 12,
-            gif_quality: 0.75,
-            gif_size_idx: 0,
-            optimize_gif: true,
             fullscreen: false,
             ..RecordingRequest::default()
         };
@@ -1368,10 +1272,6 @@ mod tests {
             video_fps: 1,
             record_mono: false,
             open_editor: false,
-            gif_fps: 12,
-            gif_quality: 0.75,
-            gif_size_idx: 0,
-            optimize_gif: true,
             fullscreen: true,
             ..RecordingRequest::default()
         };
@@ -1423,10 +1323,6 @@ mod tests {
             video_fps: 1,
             record_mono: false,
             open_editor: false,
-            gif_fps: 12,
-            gif_quality: 0.75,
-            gif_size_idx: 0,
-            optimize_gif: true,
             fullscreen: false,
             ..RecordingRequest::default()
         };

@@ -160,9 +160,7 @@ pub(super) fn wire_zoom_controls(
     zoom_to_selection_btn.connect_clicked(move |b| {
         let selection_rect = {
             let st = state_zoom_sel.lock().unwrap();
-            if let Some(crop_rect) = st.draft_crop_rect().or(st.crop_selection) {
-                Some(crop_rect)
-            } else if let Some(action_idx) = st.selected_action_index {
+            if let Some(action_idx) = st.selected_action_index {
                 if let Some(action) = st.actions.get(action_idx) {
                     super::super::super::selection::action_bounds_with_padding(action, 0.0)
                 } else {

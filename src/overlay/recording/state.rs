@@ -18,7 +18,6 @@ pub(crate) enum SettingsTab {
     #[default]
     General,
     Video,
-    Gif,
 }
 
 /// All state that only matters when the recording panel is open.
@@ -49,12 +48,6 @@ pub(crate) struct RecordingState {
     pub(crate) noise_suppression: bool,
     pub(crate) open_editor: bool,
 
-    // GIF tab settings
-    pub(crate) gif_fps: f64,
-    pub(crate) gif_quality: f64,
-    pub(crate) optimize_gif: bool,
-    pub(crate) gif_size_idx: usize,
-
     // Crop menu (recording panel)
     pub(crate) crop_menu_open: bool,
     pub(crate) hovered_crop_menu_item: i32,
@@ -66,7 +59,6 @@ pub(crate) struct RecordingState {
     pub(crate) hovered_settings_item: i32,
     pub(crate) hovered_settings_dropdown_item: i32,
     pub(crate) settings_dropdown_open: Option<usize>,
-    pub(crate) gif_slider_dragging: Option<u8>,
 
     // Volume popup menus
     pub(crate) mic_volume_popup_open: bool,
@@ -98,10 +90,6 @@ impl Default for RecordingState {
             record_mono: false,
             noise_suppression: false,
             open_editor: false,
-            gif_fps: 15.0,
-            gif_quality: 0.9,
-            optimize_gif: true,
-            gif_size_idx: 0,
             crop_menu_open: false,
             hovered_crop_menu_item: -1,
             record_aspect_ratio_index: 0,
@@ -110,7 +98,6 @@ impl Default for RecordingState {
             hovered_settings_item: -1,
             hovered_settings_dropdown_item: -1,
             settings_dropdown_open: None,
-            gif_slider_dragging: None,
             mic_volume_popup_open: false,
             speaker_volume_popup_open: false,
             mic_volume: 1.0,
@@ -135,10 +122,6 @@ impl RecordingState {
             record_mono: config.rec_video_mono,
             noise_suppression: config.rec_noise_suppression,
             open_editor: config.rec_video_open_editor,
-            gif_fps: config.rec_gif_fps as f64,
-            gif_quality: config.rec_gif_quality,
-            optimize_gif: config.rec_gif_optimize,
-            gif_size_idx: config.rec_gif_size_idx as usize,
             mic_toggle: config.rec_mic,
             speaker_toggle: config.rec_speaker,
             ..Self::default()
@@ -170,10 +153,6 @@ mod tests {
             rec_video_mono: true,
             rec_noise_suppression: true,
             rec_video_open_editor: true,
-            rec_gif_fps: 24,
-            rec_gif_quality: 0.4,
-            rec_gif_optimize: false,
-            rec_gif_size_idx: 2,
             rec_mic: true,
             rec_speaker: true,
             ..AppConfig::default()
@@ -192,10 +171,6 @@ mod tests {
         assert!(state.record_mono);
         assert!(state.noise_suppression);
         assert!(state.open_editor);
-        assert_eq!(state.gif_fps, 24.0);
-        assert_eq!(state.gif_quality, 0.4);
-        assert!(!state.optimize_gif);
-        assert_eq!(state.gif_size_idx, 2);
         assert!(state.mic_toggle);
         assert!(state.speaker_toggle);
     }

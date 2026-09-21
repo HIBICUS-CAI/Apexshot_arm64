@@ -70,6 +70,32 @@ struct CardLayout {
     cy: f64,
 }
 
+/// Reference scale shared with the Static canvas: slider units are defined
+/// against a 400px long edge, so a padding of 40 means 10% surround per side
+/// no matter how large the screenshot is.
+pub(super) fn motion_reference_scale(img_w: f64, img_h: f64) -> f64 {
+    (img_w.max(img_h) / 400.0).clamp(0.25, 8.0)
+}
+
+/// Fit the padded canvas (screenshot + surround) into the stage, matching the
+/// Static composition where padding grows the canvas instead of shrinking the
+/// card by raw pixels.
+pub(super) fn motion_canvas_fit(
+    img_w: f64,
+    img_h: f64,
+    padding: f64,
+    bounds_w: f64,
+    bounds_h: f64,
+) -> f64 {
+    let scale = motion_reference_scale(img_w, img_h);
+    let pad_px = padding.clamp(0.0, 200.0) * scale;
+    let canvas_w = img_w + pad_px * 2.0;
+    let canvas_h = img_h + pad_px * 2.0;
+    (bounds_w / canvas_w)
+        .min(bounds_h / canvas_h)
+        .clamp(0.05, 1.0)
+}
+
 impl CardLayout {
     fn with_padding(
         surface: &ImageSurface,
@@ -80,10 +106,7 @@ impl CardLayout {
     ) -> Self {
         let img_w = surface.width().max(1) as f64;
         let img_h = surface.height().max(1) as f64;
-        let pad = padding.clamp(0.0, (stage.bounds_w.min(stage.bounds_h) - 2.0).max(0.0));
-        let fit = ((stage.bounds_w - pad) / img_w)
-            .min((stage.bounds_h - pad) / img_h)
-            .clamp(0.05, 1.0);
+        let fit = motion_canvas_fit(img_w, img_h, padding, stage.bounds_w, stage.bounds_h);
         let (cx, cy) = motion_card_center(img_w, img_h, fit, stage, transform, zoom_anchor);
         Self {
             img_w,
@@ -128,6 +151,35 @@ impl CardLayout {
             origin.1 - yx * image_x - yy * image_y,
         ))
     }
+}
+
+/// Maximum travel of any card corner between two poses, in stage pixels.
+/// The motion blur renderer sizes its temporal sample count from this so the
+/// smear gradient stays continuous even during fast camera moves.
+pub(super) fn card_corner_travel(
+    surface: &ImageSurface,
+    stage: MotionStage,
+    from: MotionTransform,
+    to: MotionTransform,
+    from_anchor: (f64, f64),
+    to_anchor: (f64, f64),
+    padding: f64,
+) -> f64 {
+    let corners = |transform: MotionTransform, anchor: (f64, f64)| {
+        let layout = CardLayout::with_padding(surface, stage, transform, anchor, padding);
+        [
+            layout.project(0.0, 0.0),
+            layout.project(layout.img_w, 0.0),
+            layout.project(layout.img_w, layout.img_h),
+            layout.project(0.0, layout.img_h),
+        ]
+    };
+    let from = corners(from, from_anchor);
+    let to = corners(to, to_anchor);
+    from.iter()
+        .zip(to.iter())
+        .map(|(a, b)| ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt())
+        .fold(0.0, f64::max)
 }
 
 /// Convert a pointer in the Motion preview back into the source artboard.
@@ -199,36 +251,92 @@ fn motion_scene_bounds(width: f64, height: f64) -> (f64, f64, f64, f64) {
 }
 
 fn rounded_rectangle(context: &Context, x: f64, y: f64, width: f64, height: f64, radius: f64) {
-    let radius = radius.min(width.min(height) * 0.5).max(0.0);
-    context.new_sub_path();
-    context.arc(
-        x + width - radius,
-        y + radius,
-        radius,
-        -std::f64::consts::FRAC_PI_2,
-        0.0,
-    );
-    context.arc(
-        x + width - radius,
-        y + height - radius,
-        radius,
-        0.0,
-        std::f64::consts::FRAC_PI_2,
-    );
-    context.arc(
-        x + radius,
-        y + height - radius,
-        radius,
-        std::f64::consts::FRAC_PI_2,
-        std::f64::consts::PI,
-    );
-    context.arc(
-        x + radius,
-        y + radius,
-        radius,
-        std::f64::consts::PI,
-        std::f64::consts::FRAC_PI_2 * 3.0,
-    );
+    // Motion card shares the static smooth-corner outline so preview, export
+    // and thumbnails agree; see render::rounded_rect_path.
+    crate::capture::editor::render::rounded_rect_path(context, x, y, width, height, radius);
+}
+
+/// Stage-space outline of a card-space rounded rect under the live camera.
+///
+/// Borders, the Liquid rim and inset bands must hug the card edge even
+/// mid-clip. Tracing the projected quad instead draws a sharp frame around
+/// a rounded image while the clip plays — the image keeps its radius via
+/// texture alpha, so the frame visibly loses it and snaps back when
+/// playback stops. Sampling the same superellipse corners as
+/// `render::rounded_rect_path` and pushing them through the perspective
+/// projection keeps every pose consistent. Straight edges need no samples
+/// (projective transforms preserve lines); `radius` uses the same
+/// card-space units as the mesh grid (`hw`/`hh` include fit and scale).
+fn projected_rounded_rect_points(
+    half_w: f64,
+    half_h: f64,
+    radius: f64,
+    transform: MotionTransform,
+    depth: f64,
+    cx: f64,
+    cy: f64,
+) -> Vec<(f64, f64)> {
+    const SEGMENTS_PER_CORNER: usize = 10;
+    let half_w = half_w.max(0.0);
+    let half_h = half_h.max(0.0);
+    let radius = radius.clamp(0.0, half_w.min(half_h));
+    let project = |x: f64, y: f64| {
+        let (px, py) = project_point(x, y, transform, depth);
+        (cx + px, cy + py)
+    };
+    if radius <= 0.001 {
+        // Sharp-mitered frame, matching the zero-radius flat path.
+        return [
+            (half_w, -half_h),
+            (half_w, half_h),
+            (-half_w, half_h),
+            (-half_w, -half_h),
+        ]
+        .into_iter()
+        .map(|(x, y)| project(x, y))
+        .collect();
+    }
+    // (center_x, center_y, start_angle) in path order: TR, BR, BL, TL.
+    let corners = [
+        (
+            half_w - radius,
+            -half_h + radius,
+            -std::f64::consts::FRAC_PI_2,
+        ),
+        (half_w - radius, half_h - radius, 0.0),
+        (
+            -half_w + radius,
+            half_h - radius,
+            std::f64::consts::FRAC_PI_2,
+        ),
+        (-half_w + radius, -half_h + radius, std::f64::consts::PI),
+    ];
+    let mut out = Vec::with_capacity(4 * (SEGMENTS_PER_CORNER + 1));
+    for (center_x, center_y, start) in corners {
+        for step in 0..=SEGMENTS_PER_CORNER {
+            let angle =
+                start + (step as f64) / (SEGMENTS_PER_CORNER as f64) * std::f64::consts::FRAC_PI_2;
+            let (sine, cosine) = angle.sin_cos();
+            out.push(project(
+                center_x + radius * cosine.signum() * cosine.abs().sqrt(),
+                center_y + radius * sine.signum() * sine.abs().sqrt(),
+            ));
+        }
+    }
+    out
+}
+
+/// Cairo path through projected outline points.
+fn path_through_points(context: &Context, points: &[(f64, f64)]) {
+    let mut first = true;
+    for (x, y) in points {
+        if first {
+            context.move_to(*x, *y);
+            first = false;
+        } else {
+            context.line_to(*x, *y);
+        }
+    }
     context.close_path();
 }
 
@@ -244,11 +352,13 @@ fn motion_card_center(
     transform: MotionTransform,
     zoom_anchor: (f64, f64),
 ) -> (f64, f64) {
-    // Position is the card center in the background's coordinate space. The
-    // pad edges therefore map directly to the background edges at every scale
-    // instead of behaving like a small translation or a zoom-dependent pan.
-    let cx = stage.center_x + transform.pos_x * stage.bounds_w * 0.5;
-    let cy = stage.center_y + transform.pos_y * stage.bounds_h * 0.5;
+    // Position is the camera framing in the background's coordinate space:
+    // pad top-right shows top-right. The card moves opposite the camera so the
+    // requested region lands in the stage center. Pad edges map to background
+    // edges at every scale instead of behaving like a small translation or a
+    // zoom-dependent pan.
+    let cx = stage.center_x - transform.pos_x * stage.bounds_w * 0.5;
+    let cy = stage.center_y - transform.pos_y * stage.bounds_h * 0.5;
     let (anchor_x, anchor_y) = (zoom_anchor.0.clamp(0.0, 1.0), zoom_anchor.1.clamp(0.0, 1.0));
     if (transform.scale - 1.0).abs() < f64::EPSILON
         || ((anchor_x - 0.5).abs() < f64::EPSILON && (anchor_y - 0.5).abs() < f64::EPSILON)

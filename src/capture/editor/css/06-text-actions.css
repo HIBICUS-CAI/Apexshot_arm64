@@ -51,3 +51,145 @@
             button.editor-done-button:active {
                 background: #8a4a2d;
             }
+
+            .editor-text-floating-bar {
+                background-color: #0f0f0f;
+                border-radius: 12px;
+                padding: 6px 10px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            }
+
+            .editor-obfuscate-slider-bar {
+                padding: 2px 8px;
+                min-width: 240px;
+                border-radius: 12px;
+            }
+
+            .editor-obfuscate-intensity-slider {
+                min-width: 200px;
+                margin: 0;
+            }
+
+            .editor-obfuscate-intensity-slider trough {
+                background-color: alpha(white, 0.20);
+                border-radius: 999px;
+                border: none;
+                min-height: 4px;
+            }
+
+            .editor-obfuscate-intensity-slider highlight {
+                background-color: alpha(white, 0.20);
+                border-radius: 999px;
+                border: none;
+            }
+
+            .editor-obfuscate-intensity-slider slider {
+                background: #b05c38;
+                border: 2px solid white;
+                border-radius: 50%;
+                min-width: 8px;
+                min-height: 8px;
+            }
+
+            .editor-obfuscate-intensity-slider slider:hover {
+                background: #c06a44;
+            }
+
+            .editor-obfuscate-intensity-slider slider:active {
+                background: #8a4a2d;
+            }
+
+            /* Floating tool bars: number (style + stepper + size), highlighter
+               (mode), and arrow (style) share one compact rounded-rect shell. */
+            .editor-number-floating-bar,
+            .editor-highlighter-floating-bar,
+            .editor-arrow-floating-bar {
+                padding: 4px 8px;
+                border-radius: 12px;
+            }
+
+            .editor-number-floating-bar .editor-number-bar-stepper {
+                background: alpha(white, 0.04);
+                border-radius: 8px;
+                padding: 1px 2px;
+            }
+
+            .editor-number-floating-bar .editor-number-start-entry {
+                min-height: 22px;
+                min-width: 34px;
+                padding: 0 4px;
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            .editor-number-floating-bar button.editor-number-start-stepper {
+                min-width: 22px;
+                min-height: 22px;
+                padding: 0;
+                border: none;
+                border-radius: 6px;
+                background: alpha(white, 0.10);
+                font-size: 13px;
+                font-weight: 700;
+            }
+
+            .editor-number-floating-bar button.editor-number-start-stepper:hover {
+                background: alpha(white, 0.18);
+            }
+
+            .editor-number-floating-bar button.editor-number-start-stepper:active {
+                background: alpha(white, 0.26);
+            }
+
+            .editor-text-floating-bar .editor-tools-group {
+                background: transparent;
+                border: none;
+                padding: 0;
+            }
+
+            /* Toolbar dropdowns (font, size, arrow, stroke, number, obfuscate):
+               same rows as the settings select popover. */
+            popover.editor-popover,
+            popover.editor-popover > contents {
+                background: transparent;
+                border: none;
+                box-shadow: none;
+                padding: 0;
+            }
+
+            popover.editor-popover > contents {
+                min-width: 0;
+                background-color: #1d1d1d;
+                color: #F1F1F3;
+                border: 1px solid alpha(white, 0.12);
+                border-radius: 12px;
+                padding: 6px;
+                box-shadow: 0 12px 32px alpha(black, 0.45);
+            }
+
+            button.editor-popover-list-item {
+                min-height: 0;
+                background-color: transparent;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 13px;
+                font-weight: 500;
+                color: alpha(white, 0.85);
+            }
+
+            button.editor-popover-list-item:hover {
+                background-color: alpha(white, 0.08);
+                color: white;
+            }
+
+            button.editor-popover-list-item:active {
+                background-color: alpha(white, 0.12);
+                color: white;
+            }

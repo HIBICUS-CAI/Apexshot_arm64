@@ -19,8 +19,8 @@ use super::pen_weight::{HighlighterMode, PenWeight};
 use super::selection::action_bounds_with_padding;
 use super::state::EditorState;
 use super::types::{
-    tool_button_index, AnnotationAction, ArrowStyle, BackgroundStyle, CropAspectRatio, DrawColor,
-    EditorError, Tool, ViewTransform,
+    tool_button_index, AnnotationAction, ArrowStyle, BackgroundStyle, DrawColor, EditorError, Tool,
+    ViewTransform,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +46,11 @@ impl AnnotateRuntimeConfig {
     }
 }
 
-fn build_arrow_thickness_preview(weight: super::pen_weight::PenWeight, light: bool) -> DrawingArea {
+/// Stroke sample the pen/highlighter thickness rows and popovers use.
+pub(super) fn build_arrow_thickness_preview(
+    weight: super::pen_weight::PenWeight,
+    light: bool,
+) -> DrawingArea {
     let preview = DrawingArea::new();
     preview.set_content_width(22);
     preview.set_content_height(16);
@@ -199,7 +203,7 @@ fn selected_action_geometry(action: &AnnotationAction) -> String {
 use super::ui_support::{
     arrow_style_toolbar_icon, install_editor_css, prefers_dark_glass_theme,
     prefers_reduced_transparency, recommended_window_size_with_extra_width, set_active_tool_button,
-    tool_icon_widget, toolbar_icon_size, EDITOR_MIN_WINDOW_WIDTH,
+    tool_icon_widget, toolbar_icon_size, EDITOR_MIN_WINDOW_WIDTH, EDITOR_TOP_CHROME_HEIGHT,
 };
 
 const TEXT_SIZE_OPTIONS: [i32; 12] = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
@@ -223,35 +227,6 @@ fn sync_arrow_option_selection(list: &GtkBox, selected_index: usize) {
             button.add_css_class("editor-arrow-inspector-option-active");
         } else {
             button.remove_css_class("editor-arrow-inspector-option-active");
-        }
-
-        if let Some(content) = button.child() {
-            if let Ok(row) = content.downcast::<GtkBox>() {
-                if let Some(check_icon) = row.last_child() {
-                    if let Ok(widget) = check_icon.downcast::<gtk4::Widget>() {
-                        widget.set_visible(index == selected_index);
-                    }
-                }
-            }
-        }
-
-        index += 1;
-    }
-}
-
-fn sync_crop_option_selection(list: &GtkBox, selected_index: usize) {
-    let mut child_opt = list.first_child();
-    let mut index = 0usize;
-    while let Some(child) = child_opt {
-        child_opt = child.next_sibling();
-        let Ok(button) = child.downcast::<Button>() else {
-            continue;
-        };
-
-        if index == selected_index {
-            button.add_css_class("editor-crop-inspector-option-active");
-        } else {
-            button.remove_css_class("editor-crop-inspector-option-active");
         }
 
         if let Some(content) = button.child() {
@@ -327,6 +302,7 @@ fn sync_obfuscate_option_selection(list: &GtkBox, selected_index: usize) {
     }
 }
 
+mod arrow_bar;
 mod background_assets;
 pub mod background_panel;
 mod canvas;
@@ -340,12 +316,18 @@ mod cursor;
 mod effects;
 mod empty_state;
 mod events;
+mod floating_bar;
+mod focus_bar;
 mod footer;
+mod highlighter_bar;
 mod inspectors;
 mod motion_host;
 mod motion_mode;
 mod motion_render;
 mod motion_timeline;
+mod number_bar;
+mod obfuscate_bar;
+mod text_bar;
 mod toolbar;
 
 use background_assets::BackgroundAssetCaches;
@@ -659,6 +641,9 @@ fn setup_editor_window_full(
                 st.background_style = crate::annotations::background_style_from_serializable(
                     &annotation_file.background.style,
                 );
+                // Per-image padding is part of that image's saved composition,
+                // so it restores when the same image is reopened. Only the
+                // global prefs value is ignored (see `EditorPreferences`).
                 st.background_padding = annotation_file.background.padding;
                 st.background_shadow = annotation_file.background.shadow;
                 st.background_insert = annotation_file.background.insert;
@@ -800,7 +785,6 @@ fn setup_editor_window_full(
         traffic_minimize,
         traffic_zoom,
         select_btn,
-        crop_btn,
         background_btn,
         draw_btn,
         arrow_btn,
@@ -815,7 +799,6 @@ fn setup_editor_window_full(
         sep_1,
         sep_2,
     } = toolbar::build_toolbar_base(toolbar::ToolbarBaseIconNames {
-        crop: icon_names::custom::CROP_SYMBOLIC,
         draw: icon_names::custom::PENCIL_SYMBOLIC,
         arrow: icon_names::custom::ARROW2_TOP_RIGHT_SYMBOLIC,
         line: icon_names::custom::FUNCTION_LINEAR_SYMBOLIC,
@@ -843,14 +826,19 @@ fn setup_editor_window_full(
         }
     });
 
+    // Deferred background-fill writer: the toolbar color paths are built
+    // before the Motion session exists, so they resolve the setter (single
+    // source of truth) at click time.
+    let background_fill_slot: Rc<RefCell<Option<Rc<dyn Fn(DrawColor)>>>> =
+        Rc::new(RefCell::new(None));
     let color_picker_parts = color_picker::build_color_picker(
         state.clone(),
         canvas_queue_draw_signal,
         drawing_area_placeholder.clone(),
         annotate_config.show_color_names,
+        background_fill_slot.clone(),
     );
-    let _color_picker_trigger_host = color_picker_parts.trigger_host;
-    let color_popover = color_picker_parts.popover;
+    let color_floating_card = color_picker_parts.floating_card;
     let color_buttons = color_picker_parts.color_buttons;
     let color_picker_dot = color_picker_parts.color_picker_dot;
     let color_class_names = color_picker_parts.color_class_names;
@@ -874,10 +862,10 @@ fn setup_editor_window_full(
         size_slider,
         text_size_group,
         text_size_label,
-        text_size_list: _toolbar_text_size_list,
+        text_size_list: toolbar_text_size_list,
         font_family_group,
         font_family_label,
-        font_family_list: _toolbar_font_family_list,
+        font_family_list: toolbar_font_family_list,
         obfuscate_method_group,
         obfuscate_method_button,
         obfuscate_method_popover: _,
@@ -904,7 +892,6 @@ fn setup_editor_window_full(
         stroke_size_popover: _,
         stroke_size_list: _toolbar_stroke_size_list,
     } = toolbar::build_toolbar_mode_controls(
-        &crop_btn,
         &background_btn,
         &select_btn,
         &draw_btn,
@@ -938,102 +925,6 @@ fn setup_editor_window_full(
         &traffic_zoom,
         &traffic_close,
     );
-
-    let crop_ratio_list = GtkBox::new(Orientation::Vertical, 0);
-    for crop_type in CropAspectRatio::ALL {
-        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
-        btn_box.set_margin_start(8);
-        btn_box.set_margin_end(8);
-        btn_box.set_margin_top(4);
-        btn_box.set_margin_bottom(4);
-
-        let label_widget = Label::new(Some(&t(crop_type.label())));
-        label_widget.set_hexpand(true);
-        label_widget.set_xalign(0.0);
-        let check_icon = Label::new(Some("✓"));
-        check_icon.set_visible(crop_type == CropAspectRatio::Freeform);
-        check_icon.add_css_class("editor-crop-inspector-check");
-
-        btn_box.append(&label_widget);
-        btn_box.append(&check_icon);
-
-        let btn = Button::builder()
-            .has_frame(false)
-            .css_classes([
-                "editor-popover-list-item",
-                "flat",
-                "editor-crop-inspector-option",
-            ])
-            .child(&btn_box)
-            .build();
-        if crop_type == CropAspectRatio::Freeform {
-            btn.add_css_class("editor-crop-inspector-option-active");
-        }
-
-        crop_ratio_list.append(&btn);
-    }
-
-    let crop_dimensions_group = GtkBox::new(Orientation::Vertical, 0);
-    crop_dimensions_group.set_halign(gtk4::Align::Fill);
-    crop_dimensions_group.set_hexpand(true);
-
-    let crop_dimensions_row = GtkBox::new(Orientation::Horizontal, 8);
-    crop_dimensions_row.add_css_class("editor-crop-dimensions-row");
-    crop_dimensions_row.set_halign(gtk4::Align::Center);
-
-    // Width box
-    let w_box = GtkBox::new(Orientation::Vertical, 0);
-    w_box.set_halign(gtk4::Align::Fill);
-    w_box.set_hexpand(true);
-    w_box.add_css_class("editor-dimension-box");
-    let crop_width_value = Label::new(Some("—"));
-    crop_width_value.add_css_class("editor-crop-dimensions-value");
-    let w_sub_label = Label::new(Some(&t("WIDTH")));
-    w_sub_label.add_css_class("editor-dimension-label");
-    w_box.append(&crop_width_value);
-    w_box.append(&w_sub_label);
-
-    let crop_size_separator = Label::new(Some("×"));
-    crop_size_separator.add_css_class("editor-crop-dimensions-separator");
-    crop_size_separator.set_valign(gtk4::Align::Center);
-
-    // Height box
-    let h_box = GtkBox::new(Orientation::Vertical, 0);
-    h_box.set_halign(gtk4::Align::Fill);
-    h_box.set_hexpand(true);
-    h_box.add_css_class("editor-dimension-box");
-    let crop_height_value = Label::new(Some("—"));
-    crop_height_value.add_css_class("editor-crop-dimensions-value");
-    let h_sub_label = Label::new(Some(&t("HEIGHT")));
-    h_sub_label.add_css_class("editor-dimension-label");
-    h_box.append(&crop_height_value);
-    h_box.append(&h_sub_label);
-
-    crop_dimensions_row.append(&w_box);
-    crop_dimensions_row.append(&crop_size_separator);
-    crop_dimensions_row.append(&h_box);
-    crop_dimensions_group.append(&crop_dimensions_row);
-
-    let crop_actions_group = GtkBox::new(Orientation::Vertical, 8);
-    crop_actions_group.set_halign(gtk4::Align::Fill);
-    crop_actions_group.set_hexpand(true);
-
-    let crop_apply_btn = Button::with_label(&t("Apply selection"));
-    crop_apply_btn.set_has_frame(false);
-    crop_apply_btn.set_halign(gtk4::Align::Fill);
-    crop_apply_btn.set_hexpand(true);
-    crop_apply_btn.add_css_class("editor-add-to-colors-button");
-    crop_apply_btn.add_css_class("editor-colors-panel-action-button");
-    crop_apply_btn.set_sensitive(false);
-
-    let crop_reset_btn = Button::with_label(&t("Reset"));
-    crop_reset_btn.set_has_frame(false);
-    crop_reset_btn.set_halign(gtk4::Align::Fill);
-    crop_reset_btn.set_hexpand(true);
-    crop_reset_btn.add_css_class("editor-colors-panel-action-button");
-
-    crop_actions_group.append(&crop_apply_btn);
-    crop_actions_group.append(&crop_reset_btn);
 
     let arrow_style_list = GtkBox::new(Orientation::Vertical, 0);
     for style in ArrowStyle::ALL {
@@ -1352,7 +1243,42 @@ fn setup_editor_window_full(
         save_btn.set_sensitive(false);
     }
 
-    let motion_host = motion_host::MotionHost::new(&window, prefers_dark, empty_drop_zone);
+    // The Background tool runs on the shared Motion runtime: seed it from the
+    // restored per-image state before the appearance panels are built and the
+    // static sync starts, so a saved background is never discarded (single
+    // shared background, no double layer, no added fill).
+    let restored_background_padding = state.lock().unwrap().background_padding;
+    let motion_host = motion_host::MotionHost::new(
+        &window,
+        prefers_dark,
+        empty_drop_zone,
+        restored_background_padding,
+    );
+    {
+        let st = state.lock().unwrap();
+        // Fresh images (None) stay on None so Motion looks like Static;
+        // images with a saved background import it so both start in sync.
+        if st.background_style != BackgroundStyle::None {
+            let session = motion_host.session();
+            let mut runtime = session.runtime.borrow_mut();
+            let (appearance, frame) = {
+                let motion = &mut runtime.motion;
+                (&mut motion.appearance, &mut motion.frame)
+            };
+            background_panel::sync_static_appearance_to_motion(&st, appearance, frame);
+            runtime.refresh_motion_surfaces();
+        }
+    }
+    *background_fill_slot.borrow_mut() = Some(Rc::new({
+        let session = motion_host.session();
+        move |color: DrawColor| {
+            let mut runtime = session.runtime.borrow_mut();
+            runtime.begin_motion_edit();
+            runtime.motion.appearance.background_fill_type =
+                crate::recording::editor::model::MotionBackgroundFillType::Color;
+            runtime.motion.appearance.background_color = [color.r, color.g, color.b, color.a];
+        }
+    }));
     let last_inspector = motion_host.last_inspector();
     let in_motion = motion_host.in_motion();
 
@@ -1369,7 +1295,6 @@ fn setup_editor_window_full(
     } = canvas::build_canvas_shell(
         img_width as i32,
         img_height as i32,
-        &GtkBox::new(Orientation::Vertical, 0), // Placeholder, will be replaced
         canvas::EYEDROPPER_LOUPE_SIZE,
     );
     // The zoom controls are added to the canvas pane later so they remain fixed
@@ -1380,22 +1305,33 @@ fn setup_editor_window_full(
     let BackgroundAssetCaches {
         gradient_surfaces,
         wallpaper_cache,
-        wallpaper_loader_sender,
     } = background_assets::install_background_asset_loading(&drawing_area);
 
     // Async Effects Pipeline (channels, worker, polling, watchdog, rebuild callback).
     let rebuild_effects_async = effects::install_async_effects_pipeline(&state, &drawing_area);
 
-    let background_panel_parts = background_panel::build_background_panel(
+    // Static Background shares Motion Appearance: same builder, same session,
+    // same side-panel tools (Appearance). No crop here.
+    // Auto-select slot: filled once the toolbar wiring exists below. The panel
+    // captures this forwarder now, so Appearance clicks (and Motion-leave
+    // rebuilds) arm Background even though tool buttons don't exist yet.
+    let background_auto_select_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> =
+        Rc::new(RefCell::new(None));
+    let background_interact_forwarder: Rc<dyn Fn()> = Rc::new({
+        let slot = background_auto_select_slot.clone();
+        move || {
+            if let Some(switch) = slot.borrow().as_ref() {
+                switch();
+            }
+        }
+    });
+    let background_inspector = background_panel::build_shared_background_panel(
         &window,
-        state.clone(),
+        &motion_host.session(),
         &drawing_area,
-        wallpaper_loader_sender,
+        Some(background_interact_forwarder.clone()),
     );
-    let background_inspector = background_panel_parts.root;
-    let start_background_gradient_preview_loading =
-        background_panel_parts.start_gradient_preview_loading;
-    let sync_background_active_classes = background_panel_parts.sync_active_classes;
+    let static_appearance_slot = Rc::new(RefCell::new(background_inspector.clone()));
 
     let colors_panel_parts = colors_panel::build_colors_panel(
         state.clone(),
@@ -1456,12 +1392,10 @@ fn setup_editor_window_full(
         let sync_toolbar_color_status = sync_toolbar_color_status.clone();
         let sync_picker_for_active_tool = sync_picker_for_active_tool.clone();
         let sync_colors_panel_for_active_tool = sync_colors_panel_for_active_tool.clone();
-        let sync_background_active_classes = sync_background_active_classes.clone();
         move || {
             sync_toolbar_color_status();
             sync_picker_for_active_tool();
             sync_colors_panel_for_active_tool();
-            sync_background_active_classes();
         }
     });
     register_color_panel_sync(sync_shared_colors_for_active_tool.clone());
@@ -1585,9 +1519,6 @@ fn setup_editor_window_full(
         select_detail_label: &select_detail_label,
         select_geometry_label: &select_geometry_label,
         select_hint_label: &select_hint_label,
-        crop_dimensions_group: &crop_dimensions_group,
-        crop_ratio_list: &crop_ratio_list,
-        crop_actions_group: &crop_actions_group,
         pen_inspector_list: &pen_inspector_list,
         arrow_style_list: &arrow_style_list,
         arrow_thickness_list: &arrow_thickness_list,
@@ -1638,12 +1569,205 @@ fn setup_editor_window_full(
 
     *drawing_area_placeholder.borrow_mut() = Some(drawing_area.downgrade());
 
+    // Vertical space docked tool bars claim from the canvas (see `DockedBarInset`).
+    // Docked tool bars reflow the canvas: they claim a band above it through this
+    // shared inset (the layout and the draw transform both read it), so the image
+    // moves down while a bar is docked and returns when it goes away.
+    let docked_inset = super::ui_support::DockedBarInset::new();
+    let dock_refs = floating_bar::DockRefs {
+        scroller: canvas_scroller.clone(),
+        drawing_area: drawing_area.clone(),
+    };
+
+    // Docked text bar (font + size) below the main toolbar, like the other
+    // tool bars. Shows while Text is armed, with a text selected, or editing.
+    // (Color lives in the toolbar chip next to -/□/×, which opens the picker.)
+    // Clicking an existing text with Text/Select re-selects it, which is how
+    // the bar comes back for an older text.
+    let text_bar = text_bar::build_text_bar(&font_family_group, &text_size_group);
+    canvas_overlay.add_overlay(&text_bar.root);
+    text_bar::install_text_bar_tick(&text_bar, &drawing_area, &state, &dock_refs, &docked_inset);
+
+    // Floating number bar (mirrors the pen/highlighter bars): one contextual bar
+    // that stays docked above the canvas while the Number tool is armed or the
+    // Select tool holds a number marker, so it never covers the drawing.
+    // Clicking an existing marker with the Number tool re-selects it, which is
+    // how it comes back.
+    let number_bar = number_bar::build_number_bar(&state, &drawing_area);
+    canvas_overlay.add_overlay(&number_bar.root);
+    number_bar::install_number_bar_tick(
+        &number_bar,
+        &drawing_area,
+        &state,
+        &transform,
+        &dock_refs,
+        &docked_inset,
+    );
+
+    // Floating highlighter bar: mode (text-aware / freehand). Docked while the tool
+    // is armed, and while the Select tool has a stroke selected, so it never parks
+    // over a long freehand bounding box. Thickness rides the toolbar size slider.
+    let highlighter_bar = highlighter_bar::build_highlighter_bar(&state, &drawing_area, &window);
+    canvas_overlay.add_overlay(&highlighter_bar.root);
+    highlighter_bar::install_highlighter_bar_tick(
+        &highlighter_bar,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+    );
+
+    // Floating arrow bar: style. Docked while the tool is armed, and while the
+    // Select tool has an arrow selected. Thickness rides the toolbar size slider.
+    let arrow_bar = arrow_bar::build_arrow_bar(&state, &drawing_area);
+    canvas_overlay.add_overlay(&arrow_bar.root);
+    arrow_bar::install_arrow_bar_tick(&arrow_bar, &drawing_area, &state, &dock_refs, &docked_inset);
+
+    // Floating obfuscate bars: method picker above the active rect, intensity
+    // slider below it. Anchored to the rect they edit, like the text bar.
+    let obfuscate_bar = obfuscate_bar::build_obfuscate_bar(
+        &state,
+        &drawing_area,
+        &obfuscate_method_button,
+        &obfuscate_method_list,
+        &size_slider,
+        &rebuild_effects_async,
+    );
+    canvas_overlay.add_overlay(&obfuscate_bar.method_bar);
+    canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);
+    obfuscate_bar::install_obfuscate_bar_tick(
+        &obfuscate_bar,
+        &drawing_area,
+        &state,
+        &transform,
+        &size_slider,
+    );
+
+    // Floating focus bar: intensity slider below the active rect. Anchored to
+    // the rect it edits, like the obfuscate slider — no method pill.
+    let focus_bar =
+        focus_bar::build_focus_bar(&state, &drawing_area, &size_slider, &rebuild_effects_async);
+    canvas_overlay.add_overlay(&focus_bar.slider_bar);
+    focus_bar::install_focus_bar_tick(&focus_bar, &drawing_area, &state, &transform, &size_slider);
+
+    // Floating color card: the picker panel floats over the right edge of the
+    // canvas pane, flush against the sidebar. It hangs off the canvas overlay
+    // (a fixed layer — the canvas image scrolls inside it), so it never
+    // scrolls away, never covers the sidebar, and never leaves the window.
+    //
+    // It starts below the chrome strip on purpose: the transparent top chrome
+    // spans that band and would swallow clicks on the card's own header (the
+    // eyedropper lives there). Same offset the docked tool bars use.
+    // Toggled by the toolbar color chip next to -/□/×.
+    color_status.set_tooltip_text(Some(&t("Colors")));
+    color_status.set_cursor_from_name(Some("pointer"));
+    color_floating_card.add_css_class("editor-color-floating-card");
+    color_floating_card.set_halign(gtk4::Align::End);
+    color_floating_card.set_valign(gtk4::Align::Start);
+    color_floating_card.set_margin_end(8);
+    color_floating_card.set_margin_top(EDITOR_TOP_CHROME_HEIGHT + 8);
+    color_floating_card.set_visible(false);
+    canvas_with_toolbar.add_overlay(&color_floating_card);
+    {
+        let card = color_floating_card.clone();
+        let chip_click = gtk4::GestureClick::new();
+        chip_click.connect_pressed(move |_, _, _, _| {
+            let next = !card.is_visible();
+            card.set_visible(next);
+        });
+        color_status.add_controller(chip_click);
+    }
+
+    // Wire the toolbar font/size popover lists (built dead in toolbar.rs) like the inspector lists.
+    {
+        let state_c = state.clone();
+        let drawing_area_c = drawing_area.clone();
+        let text_size_label_c = text_size_label.clone();
+        let inspector_list_c = text_size_list.clone();
+        let mut idx = 0usize;
+        let mut child_opt = toolbar_text_size_list.first_child();
+        while let Some(child) = child_opt {
+            child_opt = child.next_sibling();
+            let Ok(btn) = child.downcast::<Button>() else {
+                continue;
+            };
+            let size = TEXT_SIZE_OPTIONS.get(idx).copied().unwrap_or(24);
+            idx += 1;
+            let state_b = state_c.clone();
+            let drawing_area_b = drawing_area_c.clone();
+            let label_b = text_size_label_c.clone();
+            let list_b = inspector_list_c.clone();
+            btn.connect_clicked(move |b| {
+                if let Some(popover) = b.ancestor(Popover::static_type()) {
+                    popover.downcast::<Popover>().unwrap().popdown();
+                }
+                label_b.set_label(&format!("{}pt", size));
+                let mut st = state_b.lock().unwrap();
+                let changed = st.set_text_size(size as f64);
+                let has_active_text = st.active_text_input.is_some();
+                if !changed && st.active_text_input.is_none() && st.selected_action_index.is_none()
+                {
+                    st.text_size = size as f64;
+                }
+                drop(st);
+                sync_text_option_selection(
+                    &list_b,
+                    TEXT_SIZE_OPTIONS.iter().position(|c| *c == size),
+                );
+                if has_active_text {
+                    drawing_area_b.grab_focus();
+                }
+                drawing_area_b.queue_draw();
+            });
+        }
+    }
+    {
+        let state_c = state.clone();
+        let drawing_area_c = drawing_area.clone();
+        let font_family_label_c = font_family_label.clone();
+        let inspector_list_c = font_family_list.clone();
+        let mut idx = 0usize;
+        let mut child_opt = toolbar_font_family_list.first_child();
+        while let Some(child) = child_opt {
+            child_opt = child.next_sibling();
+            let Ok(btn) = child.downcast::<Button>() else {
+                continue;
+            };
+            let family = TEXT_FONT_FAMILIES.get(idx).copied().unwrap_or("Sans");
+            idx += 1;
+            let family_str = family.to_string();
+            let state_b = state_c.clone();
+            let drawing_area_b = drawing_area_c.clone();
+            let label_b = font_family_label_c.clone();
+            let list_b = inspector_list_c.clone();
+            btn.connect_clicked(move |b| {
+                if let Some(popover) = b.ancestor(Popover::static_type()) {
+                    popover.downcast::<Popover>().unwrap().popdown();
+                }
+                label_b.set_label(&family_str);
+                let mut st = state_b.lock().unwrap();
+                let changed = st.set_selected_text_font_family(family_str.clone());
+                let has_active_text = st.active_text_input.is_some();
+                if st.active_text_input.is_some() || !changed {
+                    st.text_font_family = family_str.clone();
+                }
+                drop(st);
+                sync_text_option_selection(
+                    &list_b,
+                    TEXT_FONT_FAMILIES
+                        .iter()
+                        .position(|c| *c == family_str.as_str()),
+                );
+                if has_active_text {
+                    drawing_area_b.grab_focus();
+                }
+                drawing_area_b.queue_draw();
+            });
+        }
+    }
+
     let sync_inspector_thickness_controls: Rc<dyn Fn()> = Rc::new({
         let state = state.clone();
-        let crop_ratio_list = crop_ratio_list.clone();
-        let crop_apply_btn = crop_apply_btn.clone();
-        let crop_width_value = crop_width_value.clone();
-        let crop_height_value = crop_height_value.clone();
         let pen_inspector_list = pen_inspector_list.clone();
         let arrow_style_list = arrow_style_list.clone();
         let arrow_thickness_list = arrow_thickness_list.clone();
@@ -1652,20 +1776,6 @@ fn setup_editor_window_full(
         let inverse_direction_toggle = inverse_direction_toggle.clone();
         move || {
             let st = state.lock().unwrap();
-            let selected_ratio = CropAspectRatio::ALL
-                .iter()
-                .position(|ratio| *ratio == st.crop_aspect_ratio)
-                .unwrap_or(0);
-            sync_crop_option_selection(&crop_ratio_list, selected_ratio);
-            if let Some(rect) = st.draft_crop_rect().or(st.crop_selection) {
-                crop_width_value.set_label(&rect.width.max(0).to_string());
-                crop_height_value.set_label(&rect.height.max(0).to_string());
-            } else {
-                crop_width_value.set_label("—");
-                crop_height_value.set_label("—");
-            }
-            crop_apply_btn
-                .set_sensitive(st.draft_crop_rect().is_some() || st.crop_selection.is_some());
             let selected_style_value = st.selected_arrow_style().unwrap_or(st.arrow_style);
             let selected_style = ArrowStyle::ALL
                 .iter()
@@ -1700,7 +1810,6 @@ fn setup_editor_window_full(
 
     let update_toolbar_for_tool_base = toolbar::build_toolbar_tool_updater(
         &toolbar_mode_stack,
-        &inspector_stack,
         &inspector_tabs,
         &background_tab_btn,
         &colors_tab_btn,
@@ -1712,16 +1821,24 @@ fn setup_editor_window_full(
         &arrow_style_group,
         &stroke_size_group,
         &canvas_scroller,
-        start_background_gradient_preview_loading.clone(),
     );
     let update_toolbar_for_tool: Rc<dyn Fn(Tool)> = Rc::new({
         let update_toolbar_for_tool_base = update_toolbar_for_tool_base.clone();
         let sync_inspector_thickness_controls = sync_inspector_thickness_controls.clone();
+        let inspector_stack = inspector_stack.clone();
+        let last_inspector = last_inspector.clone();
+        let in_motion = in_motion.clone();
         move |tool| {
             update_toolbar_for_tool_base(tool);
+            // Static mode keeps the Appearance panel docked: tool changes must
+            // not swap in the retired per-tool inspector docks.
+            if !in_motion.get() {
+                inspector_stack.set_visible_child_name("background");
+                *last_inspector.borrow_mut() = "background".to_string();
+            }
             if matches!(
                 tool,
-                Tool::Crop | Tool::Pen | Tool::Arrow | Tool::Line | Tool::Highlighter
+                Tool::Pen | Tool::Arrow | Tool::Line | Tool::Highlighter
             ) {
                 sync_inspector_thickness_controls();
             }
@@ -1762,7 +1879,6 @@ fn setup_editor_window_full(
             let surface = match state.lock().unwrap().selected_tool {
                 Tool::Background => Some("background"),
                 Tool::Select => Some("select"),
-                Tool::Crop => Some("crop"),
                 Tool::Pen => Some("pen"),
                 Tool::Arrow => Some("arrow"),
                 Tool::Line => Some("line"),
@@ -1786,7 +1902,6 @@ fn setup_editor_window_full(
             if matches!(
                 selected_tool,
                 Tool::Background
-                    | Tool::Crop
                     | Tool::Pen
                     | Tool::Arrow
                     | Tool::Line
@@ -1805,59 +1920,6 @@ fn setup_editor_window_full(
     });
 
     let canvas_padding = canvas::CANVAS_PADDING;
-
-    let update_crop_size_fields: Rc<dyn Fn()> = Rc::new({
-        let state = state.clone();
-        let crop_width_value = crop_width_value.clone();
-        let crop_height_value = crop_height_value.clone();
-        move || {
-            let st = state.lock().unwrap();
-            if let Some(rect) = st.draft_crop_rect().or(st.crop_selection) {
-                crop_width_value.set_label(&rect.width.max(0).to_string());
-                crop_height_value.set_label(&rect.height.max(0).to_string());
-            } else {
-                crop_width_value.set_label("—");
-                crop_height_value.set_label("—");
-            }
-        }
-    });
-
-    let mut crop_type_index = 0usize;
-    let mut crop_child_opt = crop_ratio_list.first_child();
-    while let Some(child) = crop_child_opt {
-        crop_child_opt = child.next_sibling();
-        let Ok(option_button) = child.downcast::<Button>() else {
-            continue;
-        };
-
-        let Some(&crop_type) = CropAspectRatio::ALL.get(crop_type_index) else {
-            break;
-        };
-        let selected_index = crop_type_index;
-        crop_type_index += 1;
-
-        let crop_ratio_list_option = crop_ratio_list.clone();
-        let state_crop_type_option = state.clone();
-        let drawing_area_crop_type_option = drawing_area.downgrade();
-        let update_crop_size_fields_option = update_crop_size_fields.clone();
-        let crop_apply_btn_option = crop_apply_btn.clone();
-        option_button.connect_clicked(move |_| {
-            {
-                let mut st = state_crop_type_option.lock().unwrap();
-                st.set_crop_aspect_ratio(crop_type);
-                if st.selected_tool == Tool::Crop {
-                    st.ensure_crop_selection_initialized();
-                }
-                crop_apply_btn_option
-                    .set_sensitive(st.draft_crop_rect().is_some() || st.crop_selection.is_some());
-            }
-            sync_crop_option_selection(&crop_ratio_list_option, selected_index);
-            update_crop_size_fields_option();
-            if let Some(area) = drawing_area_crop_type_option.upgrade() {
-                area.queue_draw();
-            }
-        });
-    }
 
     let (selected_text_size, selected_font_family) = {
         let st = state.lock().unwrap();
@@ -2039,12 +2101,14 @@ fn setup_editor_window_full(
         let state = state.clone();
         let drawing_area = drawing_area.clone();
         let obfuscate_method_list_sync = obfuscate_method_list.clone();
+        let rebuild_obfuscate_inspector = rebuild_effects_async.clone();
         btn.connect_clicked(move |_| {
             {
                 let mut st = state.lock().unwrap();
                 st.set_obfuscate_method(*method);
             }
             sync_obfuscate_option_selection(&obfuscate_method_list_sync, index);
+            rebuild_obfuscate_inspector();
             drawing_area.queue_draw();
         });
 
@@ -2058,7 +2122,7 @@ fn setup_editor_window_full(
     let eyedropper_rendered = eyedropper.rendered.clone();
 
     *sidebar_eyedropper_activation.borrow_mut() = Some(Rc::new({
-        let color_popover = color_popover.clone();
+        let color_floating_card = color_floating_card.clone();
         let state = state.clone();
         let eyedropper_mode = eyedropper_mode.clone();
         let eyedropper_from_sidebar = eyedropper_from_sidebar.clone();
@@ -2070,7 +2134,7 @@ fn setup_editor_window_full(
         move || {
             eyedropper_from_sidebar.set(true);
             color_picker::activate_eyedropper(
-                &color_popover,
+                &color_floating_card,
                 state.clone(),
                 eyedropper_mode.clone(),
                 eyedropper_point.clone(),
@@ -2160,6 +2224,9 @@ fn setup_editor_window_full(
         watermark_tab_btn: &watermark_tab_btn,
         state: &state,
         empty_drop_zone,
+        static_preview: &drawing_area,
+        static_appearance_slot: static_appearance_slot.clone(),
+        static_appearance_interact: Some(background_interact_forwarder.clone()),
     });
 
     if empty_drop_zone {
@@ -2183,12 +2250,13 @@ fn setup_editor_window_full(
         &zoom_label,
         &zoom_header_label,
         canvas_padding,
+        &docked_inset,
     );
 
     // Eyedropper
     color_picker::connect_eyedropper_activation(
         &eyedropper_btn,
-        &color_popover,
+        &color_floating_card,
         state.clone(),
         eyedropper_mode.clone(),
         eyedropper_point.clone(),
@@ -2216,10 +2284,9 @@ fn setup_editor_window_full(
         let obfuscate_method_list = obfuscate_method_list.clone();
         move || {
             // Extract all needed data BEFORE any GTK operations to avoid deadlock
-            let (selected_tool, mode, value, text_size, font_family, obfuscate_method) = {
+            let (mode, value, text_size, font_family, obfuscate_method) = {
                 let st = state.lock().unwrap();
                 (
-                    st.selected_tool,
                     st.active_size_control_mode(),
                     st.active_size_value().unwrap_or_default(),
                     st.text_size,
@@ -2250,14 +2317,6 @@ fn setup_editor_window_full(
             }
 
             // Now perform GTK operations WITHOUT holding the lock
-            if selected_tool == Tool::Highlighter {
-                size_group.set_visible(true);
-                size_group.add_css_class("size-group-inactive");
-                size_slider.set_tooltip_text(Some(&t("Use the Thickness panel for highlighter")));
-                size_slider.set_sensitive(false);
-                return;
-            }
-
             size_group.set_visible(true);
 
             let Some(mode) = mode else {
@@ -2319,6 +2378,23 @@ fn setup_editor_window_full(
         }
     });
     sync_size_control();
+    // Shared Background->static sync: Appearance edits Motion runtime; static
+    // preview/export read EditorState, so copy across each frame. No crop here.
+    // ponytail: one sync point, not per-callback dual-write.
+    {
+        let motion_session = motion_host.session();
+        let state_sync = state.clone();
+        drawing_area.add_tick_callback(move |_, _| {
+            let (appearance, frame) = {
+                let rt = motion_session.runtime.borrow();
+                (rt.motion.appearance.clone(), rt.motion.frame.clone())
+            };
+            if let Ok(mut st) = state_sync.try_lock() {
+                background_panel::sync_motion_appearance_to_static(&appearance, &frame, &mut st);
+            }
+            glib::ControlFlow::Continue
+        });
+    }
     let initial_tool = state.lock().unwrap().selected_tool;
     sync_select_inspector();
     update_toolbar_for_tool(initial_tool);
@@ -2333,30 +2409,68 @@ fn setup_editor_window_full(
         delete_selected_btn: &delete_selected_btn,
         canvas_padding,
         prefers_dark,
+        docked_inset: &docked_inset,
         caches: &render_caches,
         gradient_surfaces: &gradient_surfaces,
         wallpaper_cache: &wallpaper_cache,
+        motion_runtime: &motion_host.session().runtime,
     });
 
     // Order must match `tool_button_index` in types.rs (used by click handlers + shortcuts).
     let tool_buttons = vec![
-        crop_btn.clone(),        // 0 Crop
-        background_btn.clone(),  // 1 Background
-        select_btn.clone(),      // 2 Select
-        draw_btn.clone(),        // 3 Pen
-        box_btn.clone(),         // 4 Box
-        circle_btn.clone(),      // 5 Circle
-        arrow_btn.clone(),       // 6 Arrow
-        line_btn.clone(),        // 7 Line
-        text_btn.clone(),        // 8 Text
-        obfuscate_btn.clone(),   // 9 Obfuscate
-        number_btn.clone(),      // 10 Number
-        highlighter_btn.clone(), // 11 Highlighter
-        focus_btn.clone(),       // 12 Focus
+        background_btn.clone(),  // 0 Background
+        select_btn.clone(),      // 1 Select
+        draw_btn.clone(),        // 2 Pen
+        box_btn.clone(),         // 3 Box
+        circle_btn.clone(),      // 4 Circle
+        arrow_btn.clone(),       // 5 Arrow
+        line_btn.clone(),        // 6 Line
+        text_btn.clone(),        // 7 Text
+        obfuscate_btn.clone(),   // 8 Obfuscate
+        number_btn.clone(),      // 9 Number
+        highlighter_btn.clone(), // 10 Highlighter
+        focus_btn.clone(),       // 11 Focus
     ];
 
     // Highlight whatever tool preferences restored (Background is only the default).
     set_active_tool_button(&tool_buttons, tool_button_index(initial_tool));
+
+    // Appearance interaction arms Background: a Pen/Arrow/etc. left selected
+    // would otherwise draw when the user clicks empty canvas to inspect a
+    // background change. No toggle — always land on Background.
+    *background_auto_select_slot.borrow_mut() = Some(Rc::new({
+        let state = state.clone();
+        let tool_buttons = tool_buttons.clone();
+        let update_toolbar_for_tool = update_toolbar_for_tool.clone();
+        let sync_shared_colors = sync_shared_colors_for_active_tool.clone();
+        let sync_size_control = sync_size_control.clone();
+        let rebuild_effects_async = rebuild_effects_async.clone();
+        let drawing_area = drawing_area.clone();
+        let window = window.clone();
+        let in_motion = in_motion.clone();
+        move || {
+            if in_motion.get() {
+                return;
+            }
+            let needs_switch = state.lock().unwrap().selected_tool != Tool::Background;
+            if !needs_switch {
+                return;
+            }
+            let rebuild = state
+                .lock()
+                .unwrap()
+                .set_tool_without_rebuild(Tool::Background);
+            if rebuild {
+                rebuild_effects_async();
+            }
+            set_active_tool_button(&tool_buttons, tool_button_index(Tool::Background));
+            update_toolbar_for_tool(Tool::Background);
+            sync_shared_colors();
+            sync_size_control();
+            cursor::set_window_cursor_name(&window, Some("default"));
+            drawing_area.queue_draw();
+        }
+    }));
 
     events::wire_editor_events(events::EventContext {
         app: app.clone(),
@@ -2368,7 +2482,6 @@ fn setup_editor_window_full(
         drawing_area: drawing_area.clone(),
         tool_buttons: tool_buttons.clone(),
         select_btn: select_btn.clone(),
-        crop_btn: crop_btn.clone(),
         background_btn: background_btn.clone(),
         draw_btn: draw_btn.clone(),
         arrow_btn: arrow_btn.clone(),
@@ -2401,25 +2514,22 @@ fn setup_editor_window_full(
         color_buttons: color_buttons.clone(),
         color_picker_dot: color_picker_dot.clone(),
         color_class_names: color_class_names.clone(),
-        color_popover: color_popover.clone(),
         size_slider: size_slider.clone(),
         text_size_label: text_size_label.clone(),
         font_family_label: font_family_label.clone(),
         text_size_list: text_size_list.clone(),
         font_family_list: font_family_list.clone(),
-        apply_crop_btn: crop_apply_btn.clone(),
-        crop_reset_btn: crop_reset_btn.clone(),
         undo_btn: undo_btn.clone(),
         redo_btn: redo_btn.clone(),
         delete_selected_btn: delete_selected_btn.clone(),
         save_btn: save_btn.clone(),
         eyedropper: eyedropper.clone(),
         update_toolbar_for_tool: update_toolbar_for_tool.clone(),
-        update_crop_size_fields: update_crop_size_fields.clone(),
         update_canvas_content_size: update_canvas_content_size.clone(),
         sync_picker_for_active_tool: sync_shared_colors_for_active_tool.clone(),
         sync_picker_from_color: sync_picker_from_color.clone(),
         apply_picker_color_to_editor: apply_picker_color_to_editor.clone(),
+        set_background_fill: background_fill_slot.clone(),
         add_color_to_custom_slots: Rc::new({
             let custom_slot_colors = custom_slot_colors.clone();
             let refresh_custom_color_slots = refresh_custom_color_slots.clone();
@@ -2542,7 +2652,6 @@ mod tests {
         let inspectors_mod = include_str!("inspectors/mod.rs");
         let inspectors_shell = include_str!("inspectors/shell.rs");
         let inspectors_select = include_str!("inspectors/select.rs");
-        let inspectors_crop = include_str!("inspectors/crop.rs");
         let inspectors_stroke = include_str!("inspectors/stroke.rs");
         let inspectors_text = include_str!("inspectors/text.rs");
         let inspectors_number = include_str!("inspectors/number.rs");
@@ -2583,7 +2692,7 @@ mod tests {
             .next()
             .unwrap_or(canvas_render_src);
         format!(
-            "{mod_prod}\n{inspectors_prod}\n{inspectors_shell}\n{inspectors_select}\n{inspectors_crop}\n{inspectors_stroke}\n{inspectors_text}\n{inspectors_number}\n{inspectors_obfuscate}\n{background_assets_prod}\n{canvas_layout_prod}\n{effects_prod}\n{chrome_prod}\n{empty_state_prod}\n{canvas_render_prod}"
+            "{mod_prod}\n{inspectors_prod}\n{inspectors_shell}\n{inspectors_select}\n{inspectors_stroke}\n{inspectors_text}\n{inspectors_number}\n{inspectors_obfuscate}\n{background_assets_prod}\n{canvas_layout_prod}\n{effects_prod}\n{chrome_prod}\n{empty_state_prod}\n{canvas_render_prod}"
         )
     }
 
@@ -2617,6 +2726,32 @@ mod tests {
                 && colors_production_source.contains("apply_picker_color(DRAW_COLORS[index]);")
                 && colors_production_source.contains("apply_picker_color_click(color);"),
             "Toolbar color status should follow palette and My colors selections from the Colors panel",
+        );
+    }
+
+    #[test]
+    fn toolbar_color_chip_toggles_an_inside_left_picker_card() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let picker_source = include_str!("color_picker.rs");
+        let picker_production = picker_source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(picker_source);
+        assert!(
+            production_source.contains("canvas_with_toolbar.add_overlay(&color_floating_card);")
+                && production_source.contains("color_floating_card.set_visible(false);")
+                && production_source
+                    .contains("card.set_visible(next)")
+                && production_source.contains("color_floating_card.set_margin_end(8);")
+                && production_source
+                    .contains("color_floating_card.set_margin_top(EDITOR_TOP_CHROME_HEIGHT + 8);")
+                && production_source.contains("editor-color-floating-card")
+                && production_source.contains("workspace.append(&inspector);")
+                && picker_production.contains("pub floating_card: GtkBox")
+                && !picker_production.contains("set_popover(Some(&color_popover))")
+                && !production_source.contains("color_popover.set_parent(&color_status);"),
+            "The color chip next to -/□/× should toggle a picker card floating over the canvas right edge, never a popover that can leave the window"
         );
     }
 
@@ -2677,7 +2812,6 @@ mod tests {
                 && production_source.contains("inspector_stack.set_hhomogeneous(true);")
                 && production_source.contains("input.background_inspector.set_visible(true);")
                 && production_source.contains("select_inspector.set_visible(true);")
-                && production_source.contains("crop_inspector.set_visible(true);")
                 && production_source.contains("pen_inspector.set_visible(true);")
                 && production_source.contains("arrow_inspector.set_visible(true);")
                 && production_source.contains("line_inspector.set_visible(true);")
@@ -2688,7 +2822,6 @@ mod tests {
                 && production_source.contains("input.placeholder_inspector.set_visible(true);")
                 && production_source.contains("inspector_stack.add_named(input.background_inspector, Some(\"background\"));")
                 && production_source.contains("inspector_stack.add_named(&select_inspector, Some(\"select\"));")
-                && production_source.contains("inspector_stack.add_named(&crop_inspector, Some(\"crop\"));")
                 && production_source.contains("inspector_stack.add_named(&pen_inspector, Some(\"pen\"));")
                 && production_source.contains("inspector_stack.add_named(&arrow_inspector, Some(\"arrow\"));")
                 && production_source.contains("inspector_stack.add_named(&line_inspector, Some(\"line\"));")
@@ -2719,28 +2852,16 @@ mod tests {
     }
 
     #[test]
-    fn crop_pen_arrow_line_text_number_and_highlighter_route_to_tool_specific_inspector_tabs() {
+    fn static_tools_keep_the_appearance_inspector_docked() {
         let source = include_str!("mod.rs");
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            production_source.contains("Tool::Crop")
-                && production_source.contains("Tool::Select")
-                && production_source.contains("Tool::Pen")
-                && production_source.contains("\"select\"")
-                && production_source.contains("\"crop\"")
-                && production_source.contains("\"pen\"")
-                && production_source.contains("Tool::Arrow")
-                && production_source.contains("Tool::Line")
-                && production_source.contains("Tool::Text")
-                && production_source.contains("Tool::Number")
-                && production_source.contains("Tool::Highlighter")
-                && production_source.contains("\"arrow\"")
-                && production_source.contains("\"line\"")
-                && production_source.contains("\"text\"")
-                && production_source.contains("\"number\"")
-                && production_source.contains("\"highlighter\"")
-                && production_source.contains("\"colors\""),
-            "Inspector routing should expose Pen, Arrow, Line, Text, Number, and Highlighter primary panels alongside the shared Colors surface",
+            production_source.contains("if !in_motion.get() {")
+                && production_source
+                    .contains("inspector_stack.set_visible_child_name(\"background\");")
+                && production_source
+                    .contains("*last_inspector.borrow_mut() = \"background\".to_string();"),
+            "Static tool changes must pin the Appearance (Background) inspector and restore it after Motion",
         );
     }
 
@@ -2754,41 +2875,6 @@ mod tests {
                 && production_source.contains("selected_action_kind(&action)")
                 && !production_source.contains("Tool::Select => Some(\"placeholder\")"),
             "Select tool should render a real selection inspector instead of the generic placeholder",
-        );
-    }
-
-    #[test]
-    fn crop_inspector_includes_aspect_ratio_dimensions_and_actions_sections() {
-        let production_source = production_editor_window_source();
-        assert!(
-            production_source
-                .contains("let (crop_inspector, crop_inspector_content) = build_tool_inspector();")
-                && production_source.contains("\"Aspect Ratio\"")
-                && production_source.contains("\"Dimensions\"")
-                && production_source.contains("\"Actions\""),
-            "Crop inspector should render Aspect Ratio, Dimensions, and Actions sections",
-        );
-    }
-
-    #[test]
-    fn crop_inspector_reuses_existing_fixed_sidebar_width() {
-        let production_source = production_editor_window_source();
-        assert!(
-            production_source.contains("root.set_width_request(BACKGROUND_SIDEBAR_WIDTH);")
-                && !production_source.contains("CROP_SIDEBAR_WIDTH"),
-            "Crop inspector should reuse the shared fixed sidebar width instead of introducing a new width path",
-        );
-    }
-
-    #[test]
-    fn crop_dimensions_use_active_crop_rect_in_the_inspector() {
-        let source = include_str!("mod.rs");
-        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
-        assert!(
-            production_source.contains("st.draft_crop_rect().or(st.crop_selection)")
-                && production_source.contains("crop_width_value.set_label")
-                && production_source.contains("crop_height_value.set_label"),
-            "Crop dimensions should mirror the active draft or committed crop rect in the side inspector",
         );
     }
 
@@ -2820,7 +2906,9 @@ mod tests {
         let source = include_str!("mod.rs");
         let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            production_source.contains("fn build_arrow_thickness_preview(weight: super::pen_weight::PenWeight, light: bool) -> DrawingArea")
+            production_source.contains("pub(super) fn build_arrow_thickness_preview(")
+                && production_source.contains("weight: super::pen_weight::PenWeight,")
+                && production_source.contains("light: bool,")
                 && production_source.contains("let icon = build_arrow_thickness_preview(weight, !prefers_dark);")
                 && !production_source.contains("let icon = Image::from_icon_name(weight.icon_name());\n        icon.set_pixel_size(weight.icon_pixel_size());\n        let label_widget = Label::new(Some(&t(label)));"),
             "Arrow thickness inspector options should use dedicated stroke previews instead of stock symbolic icons",
@@ -3024,6 +3112,46 @@ mod tests {
         assert!(
             !handler.contains("save_edited_image"),
             "Image close must not flatten the PNG"
+        );
+    }
+
+    #[test]
+    fn floating_bars_live_on_the_canvas_overlay_and_dock_above_the_image() {
+        let source = include_str!("mod.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let click = include_str!("events/click.rs");
+        let click_production = click.split("#[cfg(test)]").next().unwrap_or(click);
+        assert!(
+            production.contains("let number_bar = number_bar::build_number_bar(&state, &drawing_area);")
+                && production.contains("canvas_overlay.add_overlay(&number_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&highlighter_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&arrow_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&text_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.method_bar);")
+                && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);")
+                && production.contains("canvas_overlay.add_overlay(&focus_bar.slider_bar);")
+                && production.contains("let docked_inset = super::ui_support::DockedBarInset::new();")
+                && production.contains("let dock_refs = floating_bar::DockRefs {")
+                && production.contains("scroller: canvas_scroller.clone(),")
+                && production.contains("number_bar::install_number_bar_tick(")
+                && production.contains("&dock_refs,")
+                && production.contains("&docked_inset,")
+                && production.contains("docked_inset: &docked_inset,"),
+            "Every docked bar belongs on the canvas overlay and reserves its band through the shared inset"
+        );
+        assert!(
+            production.contains(
+                "canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset)"
+            ) || include_str!("canvas_layout.rs").contains(
+                "canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset)"
+            ),
+            "The layout must add the docked inset so the image moves down instead of being covered"
+        );
+        assert!(
+            click_production
+                .contains("select_number_action_at_point_with_scale(image_point, t.scale)")
+                && click_production.contains("st.add_number_marker(image_point);"),
+            "The Number tool must reselect an existing marker before placing a new one"
         );
     }
 }

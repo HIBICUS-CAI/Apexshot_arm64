@@ -1,8 +1,9 @@
 # ApexShot Launch Announcements
 
-> **Note (May 2026):** The runtime click-overlay and keystroke-overlay features mentioned in
-> some of these historical announcements have since been removed. The webcam PiP, mic/speaker
-> audio monitoring, and recording controls remain available.
+> **Note (May 2026):** Several features named in these historical announcements have since
+> been removed: the runtime click and keystroke overlays, webcam PiP, GIF recording, area
+> recording, and the `record ui` entry point. Mic/speaker audio monitoring, the
+> pause/resume/stop controls, and full-screen recording remain available.
 
 ## Reddit - r/linux
 
@@ -21,7 +22,7 @@ ApexShot is an open-source screen capture and recording tool for Linux that I've
 What works today
 - Captures: full screen, area, window, crosshair
 - Editor: pen, highlighter, shapes, text, blur, crop, color picker, gradient backgrounds
-- Recording: VP9 / H.264 / GIF, optional webcam PiP, click overlay during recording
+- Recording: VP9 / H.264 with audio monitoring
 - OCR: Tesseract with multi-PSM voting (English by default; tessdata for other languages works)
 - QR detection on captured regions
 - Browser extension + native messaging host for full-page scroll capture
@@ -36,7 +37,6 @@ Tested today
 - Honest matrix in CONTRIBUTING.md, gaps included
 
 Known rough edges
-- Keystroke overlay during recording is gated behind a feature flag until the recorder side lands. UI shows a "Soon" badge instead of pretending to work.
 - Recent .deb hard-depended on `xclip` + `pulseaudio-utils` + `gstreamer1.0-pulseaudio`; that's been switched to apt alternatives (`wl-clipboard | xclip`, `pipewire-pulse | pulseaudio-utils`) so the next release installs cleanly on PipeWire/Wayland-only systems.
 
 Stack: Rust core, C++17/Qt5 overlay, GTK4 + gtk4-layer-shell, GStreamer, PipeWire. GPL-3.0.
@@ -61,7 +61,7 @@ I released ApexShot v0.2.25, an open-source screen capture and screen-recording 
 
 What it does
 - Screenshots: full screen, area, window, crosshair, with an annotation editor (pen, highlighter, shapes, text, blur, crop, color picker, gradient backgrounds)
-- Recording: VP9 / H.264 / GIF, optional webcam PiP, click overlay during recording
+- Recording: VP9 / H.264 with audio monitoring
 - OCR via Tesseract (multi-PSM voting), QR detection on captured regions
 - GNOME Shell extension for runtime overlays and area-selection mask
 - Chrome/Chromium extension + native messaging host for full-page scroll capture
@@ -76,7 +76,7 @@ I just finished a contributor-readiness pass:
 - CI lint gate (`cargo fmt --check` + clippy + `node --check` over the GNOME extension)
 - CONTRIBUTING.md with a subsystem map and a "where things live" table covering the Rust core, the Qt5 overlay, the GNOME extension, and the browser-side helpers
 
-The high-value contribution areas are listed in CONTRIBUTING.md — including the keystroke-overlay recorder side (UI is built and gated behind a feature flag, recorder side is the open work) and clearing the ~65-warning clippy backlog.
+The high-value contribution areas are listed in CONTRIBUTING.md — including clearing the ~65-warning clippy backlog.
 
 Stack: Rust core, C++17/Qt5 overlay, GTK4 + gtk4-layer-shell, GStreamer, PipeWire, Tesseract.
 
@@ -100,16 +100,14 @@ GitHub: https://github.com/apex-shot/apexshot
 I've been building ApexShot, a screen capture + recording tool for Linux. Most of it is a regular GTK4 / Rust app, but the parts that matter on GNOME live in the bundled Shell extension:
 
 GNOME-side bits
-- Runtime click overlay during recording (halo + pulse ring + filled marker, all `St.Widget` actors with proper Clutter signal lifecycle)
 - Area-selection mask managed by the shell so it survives focus/workspace changes
 - Recording-controls dock that follows the active monitor
-- Webcam PiP that's draggable on the stage (the recent fix for the "webcam sticks to cursor" bug uses stage-level pointer events)
 - Screenshot lock to keep a captured region pinned while you annotate
 - Coverage: GNOME Shell 45 / 46 / 47 / 48 / 49 (manifest declares all five)
 
 App-side bits
 - Captures: full screen, area, window, crosshair, with annotation editor
-- Recording: VP9 / H.264 / GIF, optional webcam PiP
+- Recording: VP9 / H.264
 - OCR (Tesseract multi-PSM voting), QR detection
 - Browser extension + native messaging host for full-page scroll capture on Chrome/Chromium
 - Daemon mode with system tray + global hotkeys
@@ -149,7 +147,7 @@ dependencies; raw dpkg leaves you to chase them.)
 
 What it does
 - Captures: full screen, area, window, crosshair, with annotation editor (pen, highlighter, shapes, text, blur, crop, color picker, gradient backgrounds)
-- Recording: VP9 / H.264 / GIF, optional webcam PiP, click overlay during recording
+- Recording: VP9 / H.264 with audio monitoring
 - OCR (Tesseract multi-PSM voting), QR detection
 - GNOME Shell extension for runtime overlays
 - Chrome/Chromium extension + native messaging host for full-page scroll capture
@@ -159,7 +157,6 @@ Tested today on Ubuntu 24.04 and 25.10, GNOME Wayland. X11 path works but is les
 
 Known rough edges (so you know going in)
 - The 0.2.25 .deb hard-depended on `xclip` + `pulseaudio-utils` + `gstreamer1.0-pulseaudio`. That's fixed in main (next release switches them to apt alternatives so PipeWire/Wayland-only setups install cleanly). If you hit it on 0.2.25, run `sudo apt install -y gstreamer1.0-pulseaudio pulseaudio-utils xclip && sudo dpkg --configure -a`.
-- Keystroke overlay during recording is feature-flagged off until the recorder side lands.
 
 GPL-3.0. Bug reports on the issue tracker are appreciated — the templates ask for distro / DE / display server up front so triage is fast.
 
@@ -186,7 +183,7 @@ Architecture worth talking about
 - **Capture backend tiering** (`src/backend/`): wlr-screencopy → grim → XDG Screenshot portal → ScreenCast portal. The Wayland path uses `ashpd` for portal calls and persists a `restore_token` to `~/.cache/apexshot/` so the user only sees the portal dialog once per source.
 - **Editor** (`src/capture/editor/`): GTK4 + Cairo. Drawing perf was a real bottleneck — the Pen / Highlighter draft path now skips Douglas–Peucker simplification on every redraw and only simplifies on stroke finalisation. Redraw throttle lives in a single `DRAG_REDRAW_INTERVAL_US` constant.
 - **Preview overlay** (`src/capture/preview_overlay.rs`): PNG decode runs on a background `std::thread` so the GTK main loop never blocks; the preview window appears immediately and the texture swaps in once decoded.
-- **Recording** (`src/recording/`): GStreamer pipelines (VP9 / H.264 / GIF) with PipeWire for audio source discovery via `pactl`.
+- **Recording** (`src/recording/`): GStreamer pipelines (VP9 / H.264) with PipeWire for audio source discovery via `pactl`.
 - **OCR** (`src/ocr/`): Tesseract LSTM run with multiple `--psm` candidates, highest-confidence result selected, with an early-exit threshold.
 - **Tray + hotkeys**: `ksni` for the system tray, custom hotkey daemon for global shortcuts.
 
@@ -211,14 +208,13 @@ Title: ApexShot: open-source screen capture, recording and OCR for Linux (Rust +
 
 Repo: https://github.com/apex-shot/apexshot
 
-I've been building ApexShot, a screen capture and screen-recording tool for Linux that tries to be the kind of all-in-one tool macOS users get from CleanShot X. Core is Rust (~380 unit tests), with a Qt5 C++ overlay for the interactive selector and a GNOME Shell extension for the runtime click overlay.
+I've been building ApexShot, a screen capture and screen-recording tool for Linux that tries to be the kind of all-in-one tool macOS users get from CleanShot X. Core is Rust (~380 unit tests), with a Qt5 C++ overlay for the interactive selector and a GNOME Shell extension for shell-managed recording overlays and always-on-top previews.
 
 What it does today
 - Area / window / full-screen / crosshair captures
-- Screen recording (VP9, H.264, GIF) with optional webcam PiP
+- Screen recording (VP9, H.264)
 - Built-in editor: pen, highlighter, shapes, blur, crop, color picker, background gradients
 - OCR (multi-PSM Tesseract voting) and QR detection on captures
-- Click overlay during recording (halo + pulse ring + marker)
 - Chrome/Chromium extension + native messaging host for full-page scroll capture
 
 How it captures
@@ -230,7 +226,6 @@ Tested today
 - The matrix and the gaps are documented in CONTRIBUTING.md
 
 Honest about the rough edges
-- Keystroke overlay during recording is gated behind a feature flag (`kKeystrokesFeatureAvailable`) until the recorder side lands. The UI shows a "Soon" badge instead of pretending to work.
 - ~65 pre-existing clippy warnings — CI surfaces them but doesn't block on `-D warnings` yet.
 
 I just finished a contributor-readiness pass: Code of Conduct, security policy, structured issue/PR templates, rustfmt + clang-format + editorconfig, a CI lint gate (`cargo fmt --check` + clippy + `node --check`), and a CONTRIBUTING.md with a subsystem map. If any of the rough edges sound interesting, the high-value areas are listed in CONTRIBUTING.md.
@@ -262,7 +257,7 @@ So I vibe-coded the thing I wished existed. It's called **ApexShot**.
 
 What it actually does today
 - Screenshots: full screen, area, window, crosshair — with a real annotation editor (pen, highlighter, shapes, text, blur, crop, color picker, gradient backgrounds)
-- Screen recording: VP9 / H.264 / GIF, with optional webcam PiP and a click overlay during recording
+- Screen recording: VP9 / H.264
 - OCR baked in (Tesseract, multi-PSM voting) — screenshot any text, it's on your clipboard
 - QR detection on whatever you capture
 - A little Chrome extension + native messaging host so full-page scroll capture actually works
@@ -276,7 +271,6 @@ Stack: Rust core (~380 unit tests, ~50k LOC), C++17/Qt5 for the interactive sele
 Honest about where it's at
 - It's alpha (v0.2.25). Tested mostly on GNOME 47–49 / Ubuntu 24.04 / 25.10 / Wayland.
 - Best-effort on KDE / Sway / X11 — works for me but I haven't beaten it up.
-- Keystroke overlay during recording is feature-flagged off until the recorder side lands. UI shows a "Soon" badge instead of pretending.
 
 Repo: https://github.com/apex-shot/apexshot
 Site: https://apexshot.org/
@@ -341,7 +335,7 @@ ShareX on Windows and CleanShot X on macOS exist and are great. The
 Linux equivalent didn't, so I spent the last several months building one.
 
 ApexShot does area / window / full-screen capture with an annotation
-editor, screen recording (VP9 / H.264 / GIF) with webcam PiP, OCR via
+editor, screen recording (VP9 / H.264), OCR via
 Tesseract, QR detection, and a GNOME Shell extension for the runtime
 overlays. The Wayland capture path is tiered (wlr-screencopy → grim →
 XDG Screenshot portal → ScreenCast portal) and persists the portal
@@ -435,8 +429,6 @@ e.g. src/backend/wayland_portal.rs or similar] is probably the one.
 Known rough edges:
 - Alpha. Primary testing is GNOME 47–49 / Ubuntu Wayland.
 - KDE / Sway / X11 paths exist but I have not beaten them up.
-- Keystroke overlay during recording is feature-flagged off until the
-  recorder side lands.
 ```
 
 ### HN posting hygiene checklist
@@ -464,7 +456,7 @@ I'd like to submit ApexShot for coverage on OMG! Ubuntu!. It's a screen capture 
 Key Features:
 - Multiple capture modes (full screen, area, window, crosshair)
 - Built-in annotation editor with arrows, shapes, text, blur, pixelate, and highlighter
-- Screen recording to MP4/GIF with audio monitoring and webcam PiP
+- Screen recording to MP4/WebM with audio monitoring
 - Dual-engine OCR (Tesseract + ocrs) for text extraction from screenshots
 - QR code detection and auto-copy
 - GNOME Shell extension for always-on-top previews and recording masks
@@ -487,7 +479,7 @@ I'd like to introduce ApexShot, an open-source screen capture tool for Linux tha
 
 Features:
 - Screenshots with annotation editor (arrows, shapes, text, blur, pixelate)
-- Screen recording to MP4/GIF with audio monitoring and webcam PiP
+- Screen recording to MP4/WebM with audio monitoring
 - Dual-engine OCR (Tesseract + ocrs) for text extraction
 - QR code detection and auto-copy
 - GNOME Shell extension for always-on-top previews and recording masks
@@ -520,7 +512,7 @@ GNOME Extension Features:
 
 Application Features:
 - Screenshots with full annotation editor (arrows, shapes, text, blur, pixelate)
-- Screen recording to MP4/GIF with audio monitoring and webcam PiP
+- Screen recording to MP4/WebM with audio monitoring
 - Dual-engine OCR (Tesseract + ocrs) for text extraction
 - QR code detection and auto-copy
 - Browser extension for full-page scroll capture
@@ -551,7 +543,7 @@ Tweet 2:
 What ApexShot does that your current screenshot tool doesn't:
 
 - Full annotation editor (arrows, shapes, text, blur, pixelate, highlighter)
-- Screen recording to MP4/GIF with audio monitoring and webcam PiP
+- Screen recording to MP4/WebM with audio monitoring
 - Dual-engine OCR — screenshot text, copy it instantly
 - QR code detection and auto-copy
 - GNOME Shell extension for always-on-top previews and recording masks
@@ -577,7 +569,7 @@ Linux users have been jealous of CleanShot X on macOS for years. So I built the 
 ApexShot is an all-in-one screen capture tool for Linux:
 
 - Screenshots with annotation editor (arrows, shapes, text, blur, pixelate)
-- Screen recording to MP4/GIF with audio monitoring and webcam PiP
+- Screen recording to MP4/WebM with audio monitoring
 - Dual-engine OCR (Tesseract + ocrs) — screenshot text, copy it instantly
 - QR code detection and auto-copy
 - GNOME Shell extension for always-on-top previews and recording masks
@@ -600,7 +592,7 @@ Linux users have watched macOS enjoy CleanShot X for years while cobbling togeth
 I've been building ApexShot, an open-source screen capture tool for Linux that brings the CleanShot X experience to the Linux desktop:
 
 - Full annotation editor (arrows, shapes, text, blur, pixelate, highlighter)
-- Screen recording to MP4/GIF with webcam PiP and audio monitoring
+- Screen recording to MP4/WebM with audio monitoring
 - Dual-engine OCR (Tesseract + ocrs) for text extraction
 - QR code detection and auto-copy
 - Deep GNOME Shell integration — always-on-top previews, recording masks, click animations
@@ -629,7 +621,7 @@ macOS has CleanShot X. Linux has been stuck with fragmented tools that each do o
 
 - Multiple capture modes (full screen, area, window, crosshair)
 - Annotation editor with arrows, shapes, text, blur, pixelate, and highlighter
-- Screen recording to MP4/GIF with audio monitoring and webcam PiP
+- Screen recording to MP4/WebM with audio monitoring
 - Dual-engine OCR (Tesseract + ocrs) for text extraction
 - QR code detection and auto-copy
 - GNOME Shell extension for always-on-top previews and recording masks

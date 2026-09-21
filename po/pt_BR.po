@@ -2247,6 +2247,9 @@ msgstr "Título"
 msgid "Drag on the preview to place the title"
 msgstr "Arraste na prévia para posicionar o título"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Clique ou arraste na imagem para posicionar a âncora de zoom; clique duas vezes para recentralizar"
+
 msgid "Anchor X"
 msgstr "Âncora X"
 msgid "Anchor Y"
@@ -2363,3 +2366,98 @@ msgstr "Base"
 
 msgid "Undo"
 msgstr "Desfazer"
+
+msgid "Bounce"
+msgstr "Rebote"
+
+msgid "Custom"
+msgstr "Personalizado"
+
+msgid "Gentle"
+msgstr "Suave"
+
+msgid "Bouncy"
+msgstr "Saltitante"
+
+msgid "Spring"
+msgstr "Mola"
+
+msgid "Theme"
+msgstr "Tema"
+
+msgid "Light"
+msgstr "Claro"
+
+msgid "Dark"
+msgstr "Escuro"
+
+msgid "System"
+msgstr "Sistema"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Equilibrado"
+
+msgid "Frame height in pixels"
+msgstr "Altura do quadro em pixels"
+
+msgid "Frame width in pixels"
+msgstr "Largura do quadro em pixels"
+
+msgid "Freehand"
+msgstr "Traço livre"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 com microfone e áudio do sistema se o desktop permitir"
+
+msgid "More frame sizes"
+msgstr "Mais tamanhos de quadro"
+
+msgid "Number of the selected marker"
+msgstr "Número do marcador selecionado"
+
+msgid "Number the next marker starts at"
+msgstr "Número em que o próximo marcador começa"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Qualidade da gravação"
+
+msgid "Text-aware"
+msgstr "Alinhado ao texto"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"
+
+msgid "Background color"
+msgstr "Cor de fundo"
+
+msgid "COLOR"
+msgstr "COR"
+
+msgid "Choose background color"
+msgstr "Escolher cor de fundo"
+
+msgid "WALLPAPER"
+msgstr "PAPEL DE PAREDE"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr ""
+"O papel de parede ou a cor preenche a tela atrás do vídeo na pré-visualização e na exportação"

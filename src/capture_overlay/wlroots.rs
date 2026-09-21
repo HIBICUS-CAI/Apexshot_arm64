@@ -55,10 +55,6 @@ fn recording_request_for_display(
         record_mono: config.rec_video_mono,
         open_editor: config.rec_video_open_editor,
         noise_suppression: config.rec_noise_suppression,
-        gif_fps: config.rec_gif_fps,
-        gif_quality: config.rec_gif_quality,
-        gif_size_idx: config.rec_gif_size_idx,
-        optimize_gif: config.rec_gif_optimize,
         fullscreen: true,
     }
 }

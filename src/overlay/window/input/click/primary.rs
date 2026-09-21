@@ -1,7 +1,7 @@
 //! Primary click gesture and post-state side effects.
 
 use super::{menu, toolbar, ClickEffect};
-use crate::overlay::api::SelectionResult;
+use crate::overlay::api::{OverlaySelection, SelectionResult};
 use crate::overlay::background::BackgroundFrame;
 use crate::overlay::state::SelectorState;
 use crate::overlay::window::audio::{set_mic_volume, set_speaker_volume};
@@ -76,6 +76,12 @@ pub(super) fn wire_primary_click(
             }
             ClickEffect::SendRecording(selection) => {
                 let _ = result_tx_click.send(Ok(selection));
+                if let Some(window) = window_weak.upgrade() {
+                    window.close();
+                }
+            }
+            ClickEffect::Cancel => {
+                let _ = result_tx_click.send(Ok(OverlaySelection::Area(None)));
                 if let Some(window) = window_weak.upgrade() {
                     window.close();
                 }

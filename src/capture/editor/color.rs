@@ -7,9 +7,14 @@ pub const STROKE_WIDTH: f64 = 4.0;
 pub const HIGHLIGHTER_ALPHA_SCALE: f64 = 0.42;
 pub const MIN_STROKE_SIZE: f64 = 1.0;
 pub const MAX_STROKE_SIZE: f64 = 24.0;
-pub const TEXT_SIZE: f64 = 65.0;
+pub const TEXT_SIZE: f64 = 32.0;
 pub const MIN_TEXT_SIZE: f64 = 10.0;
 pub const MAX_TEXT_SIZE: f64 = 120.0;
+/// The only sizes the text size dropdown offers. Auto-fit must snap to these
+/// so the label (e.g. 117pt) can never show a size the list doesn't have.
+pub const OFFERED_TEXT_SIZES: [f64; 12] = [
+    12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0, 32.0, 36.0, 48.0, 64.0, 72.0,
+];
 pub const MIN_OBFUSCATE_AMOUNT: f64 = 1.0;
 pub const MAX_OBFUSCATE_AMOUNT: f64 = 25.0;
 pub const DEFAULT_OBFUSCATE_AMOUNT: f64 = 13.0;
@@ -65,8 +70,26 @@ pub fn palette_index_for_color(color: DrawColor) -> usize {
         .unwrap_or(DEFAULT_COLOR_INDEX)
 }
 
+pub fn snap_text_size_to_offered(size: f64) -> f64 {
+    let clamped = size.clamp(MIN_TEXT_SIZE, MAX_TEXT_SIZE);
+    let mut best = OFFERED_TEXT_SIZES[0];
+    let mut best_dist = (clamped - best).abs();
+    for candidate in OFFERED_TEXT_SIZES.iter().skip(1) {
+        let dist = (clamped - candidate).abs();
+        // Tie-break upward so shrink-to-fit prefers the larger readable size.
+        if dist < best_dist - f64::EPSILON
+            || (dist - best_dist).abs() <= f64::EPSILON && *candidate > best
+        {
+            best = *candidate;
+            best_dist = dist;
+        }
+    }
+    best
+}
+
+#[allow(dead_code)]
 pub fn clamp_text_size(size: f64) -> f64 {
-    size.clamp(MIN_TEXT_SIZE, MAX_TEXT_SIZE)
+    snap_text_size_to_offered(size)
 }
 
 pub fn clamp_stroke_size(size: f64) -> f64 {
@@ -172,6 +195,7 @@ pub fn picker_dynamic_css(color: DrawColor) -> String {
     )
 }
 
+#[allow(dead_code)]
 pub fn custom_color_slots_css(colors: &[Option<DrawColor>]) -> String {
     let mut css = String::new();
 
@@ -264,6 +288,7 @@ pub fn save_persisted_custom_slot_colors(slots: &[Option<DrawColor>]) {
     let _ = std::fs::write(path, raw);
 }
 
+#[allow(dead_code)]
 pub fn move_custom_color_between_slots(
     slots: &mut [Option<DrawColor>],
     from_index: usize,

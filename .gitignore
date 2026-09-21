@@ -103,3 +103,8 @@ reinstall-dev-deb.sh
 # Agent local memory
 .agents/
 .kilo/
+.commandcode/
+
+# Python
+__pycache__/
+*.py[cod]

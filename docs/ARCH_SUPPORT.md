@@ -73,9 +73,9 @@ git push
 Recommended user path (README):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/install.sh | bash
+curl -fsSL https://apexshot.org/install | sh
 # or directly:
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash
+curl -fsSL https://apexshot.org/install/arch | bash
 ```
 
 `scripts/install-arch.sh` remains as a compatibility wrapper that execs `arch-install.sh`.

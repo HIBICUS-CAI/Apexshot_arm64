@@ -1,6 +1,7 @@
 impl VideoEditState {
-    /// Output frame size. Aspect-ratio picks (WebCut) set this canvas; the
-    /// source is letterboxed inside it instead of shrinking the frame.
+    /// Frame canvas. A Frame/aspect pick fixes this canvas, which is
+    /// also the export size; the source is fitted inside it. `Original` keeps
+    /// the source size so an unpicked frame exports untouched.
     pub fn canvas_dimensions(&self) -> (u32, u32) {
         let (src_w, src_h) = self.effective_source_dimensions();
         match self.dimension_preset {
@@ -15,13 +16,54 @@ impl VideoEditState {
         }
     }
 
-    pub fn target_dimensions(&self) -> (u32, u32) {
-        let (src_w, src_h) = self.effective_source_dimensions();
-        let (box_w, box_h) = self.canvas_dimensions();
-        match self.dimension_preset {
-            DimensionPreset::Original => (box_w, box_h),
-            _ => fit_dimensions(src_w, src_h, box_w, box_h),
+    /// True when a Frame pick fixes the canvas instead of keeping the source
+    /// size. A fixed frame holds its aspect: padding insets the video inside
+    /// the canvas rather than growing the output past the picked ratio.
+    pub fn has_fixed_frame(&self) -> bool {
+        self.dimension_preset != DimensionPreset::Original
+    }
+
+    /// Background surround in canvas pixels. Slider units are defined against
+    /// a 400px long edge like the image editor (padding 40 is ~10% per side),
+    /// floored while a fill is active so the video never sits edge-to-edge
+    /// against it. Zero when no fill is picked.
+    pub fn background_padding_px(&self) -> f64 {
+        if self.background.is_none() {
+            return 0.0;
         }
+        let (canvas_w, canvas_h) = self.canvas_dimensions();
+        let reference = canvas_w.max(canvas_h) as f64 / 400.0;
+        crate::capture::editor::types::effective_background_padding(self.background_padding, true)
+            * reference
+    }
+
+    /// Export size. A fixed Frame is the output exactly (16:9 exports
+    /// 1920x1080 whatever the recording is); `Original` has no ratio to hold,
+    /// so a fill grows the canvas around the source, matching Auto sizing in
+    /// other editors.
+    pub fn output_dimensions(&self) -> (u32, u32) {
+        let (base_w, base_h) = self.canvas_dimensions();
+        if self.background.is_none() || self.has_fixed_frame() {
+            return (base_w, base_h);
+        }
+        let pad = self.background_padding_px().round().max(0.0) as u32;
+        (
+            even_dimension(base_w + pad * 2),
+            even_dimension(base_h + pad * 2),
+        )
+    }
+
+    /// The video rect inside the output canvas: the source fitted with the
+    /// background padding as an inset, centered. This is the layer the preview
+    /// and the composite export both draw, so cursor math stays mapped to the
+    /// footage instead of the letterbox around it.
+    pub fn video_rect_dimensions(&self) -> (u32, u32) {
+        let (src_w, src_h) = self.effective_source_dimensions();
+        let (out_w, out_h) = self.output_dimensions();
+        let pad = self.background_padding_px().round().max(0.0) as u32;
+        let box_w = out_w.saturating_sub(pad * 2).max(MIN_DIMENSION);
+        let box_h = out_h.saturating_sub(pad * 2).max(MIN_DIMENSION);
+        contain_fit(src_w, src_h, box_w, box_h)
     }
 
     /// True when quality/dimensions/zoom/pad require a re-encode (stream-copy cannot apply them).

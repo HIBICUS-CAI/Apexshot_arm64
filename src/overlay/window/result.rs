@@ -43,10 +43,6 @@ pub(super) fn recording_request_from_state(
         record_mono: st.recording.record_mono,
         noise_suppression: st.recording.noise_suppression,
         open_editor: st.recording.open_editor,
-        gif_fps: st.recording.gif_fps.round().clamp(5.0, 60.0) as u8,
-        gif_quality: st.recording.gif_quality,
-        gif_size_idx: st.recording.gif_size_idx as u8,
-        optimize_gif: st.recording.optimize_gif,
         fullscreen: st.fullscreen_mode,
         ..RecordingRequest::default()
     }

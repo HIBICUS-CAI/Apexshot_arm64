@@ -12,6 +12,7 @@ const SETTINGS_CSS: &str = concat!(
     include_str!("css/08-recent-captures.css"),
     include_str!("css/09-noir-gallery.css"),
     include_str!("css/10-history-shell.css"),
+    include_str!("css/11-theme-picker.css"),
 );
 
 pub fn install_settings_css() {
@@ -57,6 +58,56 @@ pub fn traffic_light_button(color_class: &str, tooltip: &str) -> Button {
 #[cfg(test)]
 mod tests {
     use super::SETTINGS_CSS;
+
+    #[test]
+    fn settings_css_parses_without_gtk_errors() {
+        // CSS providers are GTK objects, so this runs on the test binary's
+        // shared GTK thread (see `crate::test_support`).
+        let Some((errors, bogus_errors)) = crate::test_support::with_gtk(|| {
+            let provider = gtk4::CssProvider::new();
+            let errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            {
+                let errors = std::rc::Rc::clone(&errors);
+                provider.connect_parsing_error(move |_, section, error| {
+                    errors
+                        .borrow_mut()
+                        .push(format!("{}: {}", section.to_str(), error.message()));
+                });
+            }
+            provider.load_from_data(SETTINGS_CSS);
+
+            // Harness sanity check: a bogus declaration must be reported,
+            // otherwise the assertion below could pass because the signal
+            // never fires.
+            let bogus = gtk4::CssProvider::new();
+            let bogus_errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            {
+                let bogus_errors = std::rc::Rc::clone(&bogus_errors);
+                bogus.connect_parsing_error(move |_, _, error| {
+                    bogus_errors.borrow_mut().push(error.message().to_string());
+                });
+            }
+            bogus.load_from_data(".bogus { definitely-not-a-property: 1; }");
+
+            // Bind before returning: the `Ref` guards have to drop before the
+            // `Rc`s they borrow from.
+            let parsed: Vec<String> = errors.borrow().clone();
+            let reported: Vec<String> = bogus_errors.borrow().clone();
+            (parsed, reported)
+        }) else {
+            eprintln!("skipping: no display available");
+            return;
+        };
+
+        assert!(
+            errors.is_empty(),
+            "settings CSS failed to parse: {errors:#?}"
+        );
+        assert!(
+            !bogus_errors.is_empty(),
+            "parsing-error signal is not firing; the CSS check is vacuous"
+        );
+    }
 
     #[test]
     fn settings_css_avoids_unsupported_gtk_properties() {

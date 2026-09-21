@@ -84,10 +84,14 @@ pub(super) fn install_timer(
         let playhead_clock = parts.timeline.playhead_clock.clone();
         let last_clock = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
         let in_motion = in_motion.clone();
+        let prefers_dark = session.prefers_dark;
         move || {
             if !in_motion.get() {
                 return glib::ControlFlow::Continue;
             }
+            // Finished background composites land here (hover, scrub, and
+            // playback all schedule through the same slot).
+            super::super::preview::poll_preview_results(&session_runtime, &preview, prefers_dark);
             let playing = session_runtime.borrow().playing;
             if playing {
                 let mut runtime = session_runtime.borrow_mut();

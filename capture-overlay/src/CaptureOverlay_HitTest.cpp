@@ -40,6 +40,10 @@ void CaptureOverlay::confirmSelection()
     m_hoveredCaptureCropMenuItem = -1;
     m_captureCropMenuPanelRect = QRectF();
     m_captureCropMenuItemRects.clear();
+    m_topBarCropMenuOpen = false;
+    m_hoveredTopBarCropItem = -1;
+    m_topBarCropMenuPanelRect = QRectF();
+    m_topBarCropMenuItemRects.clear();
     if (m_scrollCaptureTimer && m_scrollCaptureTimer->isActive()) {
         m_scrollCaptureTimer->stop();
     }
@@ -146,6 +150,10 @@ void CaptureOverlay::cancelSelection()
     m_hoveredCaptureCropMenuItem = -1;
     m_captureCropMenuPanelRect = QRectF();
     m_captureCropMenuItemRects.clear();
+    m_topBarCropMenuOpen = false;
+    m_hoveredTopBarCropItem = -1;
+    m_topBarCropMenuPanelRect = QRectF();
+    m_topBarCropMenuItemRects.clear();
     exitScrollMode();
     if (m_countdownActive) {
         m_countdownActive = false;
@@ -208,7 +216,7 @@ CaptureOverlay::RecordPanelTile CaptureOverlay::hitTestRecordingPanel(const QPoi
     static const RecordPanelTile tileOrder[] = {
         RecordPanelTile::Controls, RecordPanelTile::Size, RecordPanelTile::Crop,
         RecordPanelTile::Mic, RecordPanelTile::Speaker,
-        RecordPanelTile::RecordVideo, RecordPanelTile::RecordGif
+        RecordPanelTile::RecordVideo
     };
 
     for (int i = 0; i < (int)m_recTileRects.size() && i < 8; ++i) {
@@ -222,6 +230,28 @@ CaptureOverlay::RecordPanelTile CaptureOverlay::hitTestRecordingPanel(const QPoi
 
 void CaptureOverlay::updateCursor(const QPoint& pos)
 {
+    if (topBarVisible()) {
+        if (hitTestTopBarAspect(pos) >= 0 || hitTestTopBarButton(pos) != TopBarButton::None) {
+            setCursor(Qt::PointingHandCursor);
+            return;
+        }
+        if (m_topBarCropMenuOpen) {
+            for (int i = 0; i < m_topBarCropMenuItemRects.size(); ++i) {
+                if (m_topBarCropMenuItemRects[i].contains(pos)) {
+                    setCursor(Qt::PointingHandCursor);
+                    return;
+                }
+            }
+            if (m_topBarCropMenuPanelRect.contains(pos)) {
+                setCursor(Qt::ArrowCursor);
+                return;
+            }
+        }
+        if (pointInTopBar(pos)) {
+            setCursor(Qt::ArrowCursor);
+            return;
+        }
+    }
     if (!m_hasSelection) { setCursor(Qt::CrossCursor); return; }
 
     if (m_captureIntent == CaptureIntent::Scroll && m_scrollStage == ScrollStage::Capturing) {
@@ -262,27 +292,11 @@ void CaptureOverlay::updateCursor(const QPoint& pos)
         height(),
         m_captureIntent == CaptureIntent::Scroll
     );
-    if (m_captureCropMenuOpen) {
-        for (int i = 0; i < m_captureCropMenuItemRects.size(); ++i) {
-            if (m_captureCropMenuItemRects[i].contains(pos)) {
-                setCursor(Qt::PointingHandCursor);
-                return;
-            }
-        }
-    }
     for (int i = 0; i < NUM_TOOLS; ++i) {
         if (layout.toolCells[i].contains(pos)) {
             setCursor(Qt::PointingHandCursor);
             return;
         }
-    }
-    if (layout.cropCard.contains(pos)) {
-        setCursor(Qt::PointingHandCursor);
-        return;
-    }
-    if (layout.sizeCard.contains(pos)) {
-        setCursor(Qt::ArrowCursor);
-        return;
     }
 
     if (m_captureIntent == CaptureIntent::Scroll) {

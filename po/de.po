@@ -1499,7 +1499,7 @@ msgid "MP4 video"
 msgstr "MP4-Video"
 
 msgid "Manual"
-msgstr "Handbuch"
+msgstr "Manuell"
 
 msgid "Maximum resolution"
 msgstr "Maximale Auflösung"
@@ -2257,6 +2257,9 @@ msgstr "Titel"
 msgid "Drag on the preview to place the title"
 msgstr "Ziehe auf der Vorschau, um den Titel zu platzieren"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Klicke oder ziehe auf dem Bild, um den Zoom-Anker zu setzen; Doppelklick zum Zentrieren"
+
 msgid "Anchor X"
 msgstr "Anker X"
 msgid "Anchor Y"
@@ -2374,3 +2377,98 @@ msgstr "Unterlage"
 
 msgid "Undo"
 msgstr "Rückgängig"
+
+msgid "Bounce"
+msgstr "Federung"
+
+msgid "Custom"
+msgstr "Benutzerdefiniert"
+
+msgid "Gentle"
+msgstr "Sanft"
+
+msgid "Bouncy"
+msgstr "Federnd"
+
+msgid "Spring"
+msgstr "Feder"
+
+msgid "Theme"
+msgstr "Design"
+
+msgid "Light"
+msgstr "Hell"
+
+msgid "Dark"
+msgstr "Dunkel"
+
+msgid "System"
+msgstr "System"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Ausgewogen"
+
+msgid "Frame height in pixels"
+msgstr "Rahmenhöhe in Pixeln"
+
+msgid "Frame width in pixels"
+msgstr "Rahmenbreite in Pixeln"
+
+msgid "Freehand"
+msgstr "Freihand"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 mit Mikrofon und Systemton, wenn der Desktop es zulässt"
+
+msgid "More frame sizes"
+msgstr "Weitere Rahmengrößen"
+
+msgid "Number of the selected marker"
+msgstr "Nummer der ausgewählten Markierung"
+
+msgid "Number the next marker starts at"
+msgstr "Nummer, bei der die nächste Markierung beginnt"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Aufnahmequalität"
+
+msgid "Text-aware"
+msgstr "Textbezogen"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"
+
+msgid "Background color"
+msgstr "Hintergrundfarbe"
+
+msgid "COLOR"
+msgstr "FARBE"
+
+msgid "Choose background color"
+msgstr "Hintergrundfarbe wählen"
+
+msgid "WALLPAPER"
+msgstr "HINTERGRUNDBILD"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr ""
+"Hintergrundbild oder Farbe füllt die Fläche hinter dem Video in Vorschau und Export"

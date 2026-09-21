@@ -170,8 +170,8 @@ cargo run --release -- capture crosshair
 
 # Recording modes
 cargo run --release -- record screen
-cargo run --release -- record area
-cargo run --release -- record ui
+cargo run --release -- record screen
+cargo run --release -- record screen
 
 # OCR
 cargo run --release -- ocr /path/to/image.png
@@ -458,7 +458,7 @@ Wayland. Hyprland Wayland is also personally tested for the non-GNOME wlroots
 path.
 - [ ] `cargo run --release -- capture area` works
 - [ ] `cargo run --release -- capture screen` works
-- [ ] `cargo run --release -- record area` works (start + stop)
+- [ ] `cargo run --release -- record screen` works (start + stop)
   — **except on Fedora**, where recording must refuse with a notification
 - [ ] Annotation editor opens and all tools render correctly
 - [ ] Settings window opens and saves changes persist after restart

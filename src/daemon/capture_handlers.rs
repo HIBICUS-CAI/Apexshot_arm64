@@ -698,6 +698,13 @@ fn handle_interactive_capture_result(
         }
         Ok(AreaCapturePathResult::RecordingRequested(request)) => {
             if let Err(err) = run_overlay_recording_request_with_gtk(request, gtk_tx.clone()) {
+                if err
+                    .downcast_ref::<crate::recording::RecordError>()
+                    .is_some_and(|e| matches!(e, crate::recording::RecordError::Cancelled))
+                {
+                    eprintln!("[daemon] Recording cancelled by user.");
+                    return;
+                }
                 eprintln!("[daemon] Recording failed: {err}");
                 send_desktop_notification(&crate::i18n::t("Recording failed"), &err.to_string());
                 // Show notification for GNOME extension not installed

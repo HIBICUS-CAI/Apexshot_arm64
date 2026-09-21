@@ -43,16 +43,61 @@ pub(super) fn build_tool_section(
     });
     root.append(&cursor);
 
+    let background = ToggleButton::new();
+    background.add_css_class("recording-editor-tool-section-btn");
+    background.set_has_frame(false);
+    background.set_tooltip_text(Some(&t("Background")));
+    background.set_halign(Align::Center);
+    let bg_icon = Image::from_icon_name(icon_names::custom::IMAGE_ALT_SYMBOLIC);
+    bg_icon.set_pixel_size(18);
+    bg_icon.set_halign(Align::Center);
+    bg_icon.set_valign(Align::Center);
+    background.set_child(Some(&bg_icon));
+    background.connect_clicked({
+        let state = state.clone();
+        let on_change = on_change.clone();
+        move |button| {
+            state.lock().unwrap().selected_tool = EditorTool::Background;
+            button.set_active(true);
+            on_change();
+        }
+    });
+    root.append(&background);
+
     let refresh = {
         let cursor = cursor.clone();
+        let background = background.clone();
         Rc::new(move || {
             let tool = state.lock().unwrap().selected_tool;
+            // Timeline tool has no rail button; both rail buttons go inactive
+            // while timeline selections drive the right panel.
             cursor.set_active(tool == EditorTool::Cursor);
+            background.set_active(tool == EditorTool::Background);
         }) as Rc<dyn Fn()>
     };
 
     ToolSection {
         widget: root,
         refresh,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rail_exposes_background_next_to_cursor() {
+        let source = include_str!("tool_section.rs");
+        assert!(
+            source.contains("EditorTool::Background"),
+            "rail must be able to select the Background tool"
+        );
+        assert!(
+            source.contains("\"Background\""),
+            "rail needs a Background button next to Cursor"
+        );
+        assert!(
+            source.contains("IMAGE_ALT_SYMBOLIC"),
+            "Background rail button should reuse the image-editor backdrop icon"
+        );
     }
 }

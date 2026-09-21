@@ -53,7 +53,7 @@ pub(in crate::capture::editor::window) fn apply_editor_mode(
 }
 
 pub(in crate::capture::editor::window) fn annotations_need_snapshot(state: &EditorState) -> bool {
-    !state.actions.is_empty() || state.crop_selection.is_some()
+    !state.actions.is_empty()
 }
 
 #[derive(Clone, Copy)]

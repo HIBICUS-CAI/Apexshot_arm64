@@ -35,6 +35,9 @@ pub struct EditorPreferences {
     obfuscate_blur_amount: f64,
     focus_intensity: f64,
     arrow_style: ArrowStyle,
+    /// Persisted for file compatibility; never applied back to the editor
+    /// state. Padding comes from the image's own sidecar (0px for a fresh
+    /// image), not from the global preferences.
     background_padding: f64,
     background_shadow: f64,
     background_insert: f64,
@@ -64,7 +67,7 @@ impl Default for EditorPreferences {
             obfuscate_blur_amount: DEFAULT_OBFUSCATE_AMOUNT,
             focus_intensity: DEFAULT_FOCUS_INTENSITY,
             arrow_style: ArrowStyle::Standard,
-            background_padding: 24.0,
+            background_padding: 0.0,
             background_shadow: 15.0,
             background_insert: 0.0,
             auto_balance: false,
@@ -125,7 +128,9 @@ impl EditorPreferences {
         state.obfuscate_blur_amount = self.obfuscate_blur_amount;
         state.focus_intensity = self.focus_intensity;
         state.arrow_style = self.arrow_style;
-        state.background_padding = self.background_padding;
+        // The global prefs padding is never applied back: a fresh image opens
+        // at 0px and a reopened image restores its own sidecar padding.
+        state.background_padding = 0.0;
         state.background_shadow = self.background_shadow;
         state.background_insert = self.background_insert;
         state.auto_balance = self.auto_balance;
@@ -193,12 +198,29 @@ mod tests {
         assert_eq!(prefs.text_font_family, state.text_font_family);
         assert_eq!(prefs.obfuscate_method, state.obfuscate_method);
         assert_eq!(prefs.arrow_style, state.arrow_style);
+        assert!((prefs.background_padding - state.background_padding).abs() < f64::EPSILON);
         assert_eq!(prefs.background_alignment, state.background_alignment);
         assert_eq!(prefs.background_aspect_ratio, state.background_aspect_ratio);
         assert_eq!(prefs.highlighter_mode, state.highlighter_mode);
         assert_eq!(prefs.pen_weight, state.pen_weight);
         assert_eq!(prefs.numbering_style, state.numbering_style);
         assert_eq!(prefs.number_size, state.number_size);
+    }
+
+    #[test]
+    fn saved_padding_never_restores_into_the_next_editor_open() {
+        let mut state = EditorState::new(RgbaImage::new(10, 10));
+        let mut prefs = EditorPreferences {
+            background_padding: 96.0,
+            ..EditorPreferences::default()
+        };
+
+        prefs.apply_to_state(&mut state);
+        assert!((state.background_padding).abs() < f64::EPSILON);
+
+        prefs.background_padding = 60.0;
+        prefs.apply_to_state(&mut state);
+        assert!((state.background_padding).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -228,7 +250,10 @@ mod tests {
         assert_eq!(restored.text_font_family, "Monospace");
         assert_eq!(restored.obfuscate_method, ObfuscateMethod::Blur);
         assert_eq!(restored.arrow_style, ArrowStyle::Curved);
-        assert!((restored.background_padding - 40.0).abs() < f64::EPSILON);
+        // Extracted, but deliberately not applied back: the Background tool
+        // always opens at 0px.
+        assert!((prefs.background_padding - 40.0).abs() < f64::EPSILON);
+        assert!((restored.background_padding).abs() < f64::EPSILON);
         assert!((restored.background_corner_radius - 0.0).abs() < f64::EPSILON);
         assert_eq!(restored.pen_weight, PenWeight::Large);
         assert_eq!(restored.numbering_style, NumberingStyle::Uppercase);

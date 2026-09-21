@@ -6,6 +6,11 @@
 /// property being edited was timing.
 const CARD_MESH_DIVISIONS: usize = 8;
 
+/// Subframe mesh density for temporal accumulation. Subframes are averaged,
+/// so their individual mesh error is divided by the sample count; the coarser
+/// grid keeps the accumulation affordable without a visible difference.
+const MOTION_BLUR_MESH_DIVISIONS: usize = 4;
+
 /// Long-edge cap for the card texture the interactive preview samples from.
 /// The preview never draws the card larger than its scene panel, so sampling a
 /// multi-megapixel source down to that panel dominated scrub frame time.
@@ -123,7 +128,11 @@ pub(super) fn draw_motion_foreground(
     // Padding, zoom, and titles all lay out against the background's
     // rectangle so the card can never sit outside the scene it belongs to.
     let stage = if checkerboard {
-        MotionStage::preview(f64::from(width), f64::from(height), motion.frame.preset.aspect())
+        MotionStage::preview(
+            f64::from(width),
+            f64::from(height),
+            motion.frame.effective_aspect(),
+        )
     } else {
         MotionStage::frame(f64::from(width), f64::from(height))
     };
@@ -138,58 +147,93 @@ pub(super) fn draw_motion_foreground(
         stage.bounds_h,
     );
     context.clip();
-    // Shotbase's underlay shadow layer sits between the background scene and
+    // The underlay shadow layer sits between the background scene and
     // the animated card, so the card's own drop shadow still reads on top.
     paint_motion_scene_shadow(context, stage, motion, true);
     let current_transform = motion.sample(time);
     let current_anchor = motion.zoom_anchor_at(time);
+    // The editor preview draws a downscaled card texture into a panel-sized
+    // canvas. Cairo's Good filter convolves the source on every downscale,
+    // and that dominated scrub frame time (tens of milliseconds a frame);
+    // Bilinear keeps playback and scrubbing cheap. A paused still is not
+    // scrubbing, so it keeps the high-quality filter to match the Static
+    // canvas — annotations must not go soft just from entering Motion.
+    // Pressing play may pop sharpness slightly; that is cheaper than a
+    // permanently soft still. Export (checkerboard = false) always uses Good.
+    let card_filter = if checkerboard && live_preview {
+        Filter::Bilinear
+    } else {
+        Filter::Good
+    };
     // The card is drawn as a triangle mesh that approximates the perspective
     // warp. Its resolution must not depend on playhead scale: Ease edits
     // replay the segment, and a changing grid makes an otherwise smooth
     // timing curve look like a wave. Use the same stable density as export.
     let mesh_div = CARD_MESH_DIVISIONS;
-    // Cairo has no equivalent of Shotbase's full-quality CIMotionBlur and
-    // CIZoomBlur filters, so ApexShot uses this bounded temporal fallback.
-    // The recovered schema and bounds remain shared with the source app.
-    for sample in motion.motion_blur_settings.transform_trail(
-        f64::from(MOTION_EXPORT_FPS),
-        if live_preview {
-            MotionBlurBudgetMode::LivePreviewPlayback
-        } else {
-            MotionBlurBudgetMode::FullQuality
-        },
-    ) {
-        let sample_t = (time + sample.offset_seconds).max(0.0);
-        if sample.opacity > 0.001 {
-            let transform = motion.sample(sample_t);
-            let anchor = motion.zoom_anchor_at(sample_t);
-            if !motion_pose_differs(transform, current_transform, anchor, current_anchor) {
-                continue;
-            }
-            draw_transformed_card(
-                context,
-                surface,
-                stage,
-                transform,
-                anchor,
-                &motion.appearance,
-                sample.opacity,
-                mesh_div,
-                card_scale,
-            );
-        }
-    }
-    draw_transformed_card(
-        context,
+    // Rounding is independent of the pose; do it once per frame instead of
+    // once per accumulated subframe.
+    let surface_long = f64::from(surface.width().max(surface.height()).max(1));
+    let rounded = rounded_motion_surface(
         surface,
-        stage,
-        current_transform,
-        current_anchor,
-        &motion.appearance,
-        1.0,
-        mesh_div,
-        card_scale,
+        motion.appearance.border_radius * surface_long / 400.0,
     );
+    let card_surface = rounded.as_ref().unwrap_or(surface);
+    // True motion blur is the average of every instant of the exposure.
+    // Cairo has no CIMotionBlur/CIZoomBlur, so ApexShot reaches the same
+    // result with temporal accumulation: the card is rendered at a dense set
+    // of times across the exposure window and the subframes are averaged.
+    // The recovered schema and bounds remain shared with the source app.
+    let frame_rate = f64::from(MOTION_EXPORT_FPS);
+    let blur_settings = motion.motion_blur_settings.clamped();
+    let exposure = blur_settings.exposure_seconds(frame_rate);
+    let sample_offsets = if exposure > f64::EPSILON {
+        let exposure_start = (time - exposure).max(0.0);
+        let travel = card_corner_travel(
+            card_surface,
+            stage,
+            motion.sample(exposure_start),
+            motion.sample(time),
+            motion.zoom_anchor_at(exposure_start),
+            motion.zoom_anchor_at(time),
+            motion.appearance.effective_padding(),
+        );
+        blur_settings.temporal_offsets(
+            frame_rate,
+            travel,
+            if live_preview {
+                MotionBlurBudgetMode::LivePreviewPlayback
+            } else {
+                MotionBlurBudgetMode::FullQuality
+            },
+        )
+    } else {
+        Vec::new()
+    };
+    let blurred = sample_offsets.len() > 1
+        && paint_motion_blurred_card(
+            context,
+            width,
+            height,
+            card_surface,
+            stage,
+            motion,
+            &sample_offsets,
+            time,
+            card_filter,
+        );
+    if !blurred {
+        draw_transformed_card(
+            context,
+            card_surface,
+            stage,
+            current_transform,
+            current_anchor,
+            &motion.appearance,
+            1.0,
+            mesh_div,
+            card_filter,
+        );
+    }
     paint_motion_text(context, surface, stage, motion, time, card_scale);
     // The overlay shadow pass shades the card and titles; the watermark
     // stays the topmost layer.
@@ -203,23 +247,65 @@ pub(super) fn draw_motion_foreground(
     context.restore().ok();
 }
 
-/// A held camera pose is already identical to the sharp overlay. Skipping it
-/// preserves Shotbase's budgeted-preview behavior and avoids mesh work without
-/// changing the exported pixels.
-fn motion_pose_differs(
-    a: MotionTransform,
-    b: MotionTransform,
-    anchor_a: (f64, f64),
-    anchor_b: (f64, f64),
+/// Average the moving card across its exposure window. Each subframe is
+/// rendered opaque into a scratch buffer so mesh-clip seams never blend at
+/// partial alpha, then folded into a running average with weight 1/(k+1) —
+/// the classic accumulation-buffer temporal filter. Returns false when the
+/// offscreen buffers cannot be allocated so the caller can fall back to the
+/// sharp pose.
+fn paint_motion_blurred_card(
+    context: &Context,
+    width: i32,
+    height: i32,
+    surface: &ImageSurface,
+    stage: MotionStage,
+    motion: &MotionState,
+    sample_offsets: &[f64],
+    time: f64,
+    filter: Filter,
 ) -> bool {
-    const EPSILON: f64 = 0.0001;
-    (a.scale - b.scale).abs() > EPSILON
-        || (a.rotation_x - b.rotation_x).abs() > EPSILON
-        || (a.rotation_y - b.rotation_y).abs() > EPSILON
-        || (a.rotation_z - b.rotation_z).abs() > EPSILON
-        || (a.perspective - b.perspective).abs() > EPSILON
-        || (a.pos_x - b.pos_x).abs() > EPSILON
-        || (a.pos_y - b.pos_y).abs() > EPSILON
-        || (anchor_a.0 - anchor_b.0).abs() > EPSILON
-        || (anchor_a.1 - anchor_b.1).abs() > EPSILON
+    // ponytail: two fresh buffers per blurred frame; cache them in the Motion
+    // runtime if live playback ever drops frames to allocation churn.
+    let (Ok(accum), Ok(scratch)) = (
+        ImageSurface::create(Format::ARgb32, width.max(1), height.max(1)),
+        ImageSurface::create(Format::ARgb32, width.max(1), height.max(1)),
+    ) else {
+        return false;
+    };
+    let (Ok(accum_context), Ok(scratch_context)) = (Context::new(&accum), Context::new(&scratch))
+    else {
+        return false;
+    };
+    // Draw oldest first and let each subframe blend the running mean by
+    // 1/(k+1). A pixel the newest subframe alone covers is then attenuated by
+    // every earlier draw, keeping frontier edges at their true exposure
+    // fraction (1/N) instead of the first draw's full opacity.
+    for (index, offset) in sample_offsets.iter().rev().enumerate() {
+        let sample_t = (time + offset).max(0.0);
+        scratch_context.set_operator(Operator::Clear);
+        scratch_context.paint().ok();
+        scratch_context.set_operator(Operator::Over);
+        draw_transformed_card(
+            &scratch_context,
+            surface,
+            stage,
+            motion.sample(sample_t),
+            motion.zoom_anchor_at(sample_t),
+            &motion.appearance,
+            1.0,
+            MOTION_BLUR_MESH_DIVISIONS,
+            filter,
+        );
+        scratch.flush();
+        accum_context.set_source_surface(&scratch, 0.0, 0.0).ok();
+        // Running mean: after this paint the accumulation holds the average
+        // of every subframe drawn so far.
+        accum_context
+            .paint_with_alpha(1.0 / (index as f64 + 1.0))
+            .ok();
+    }
+    accum.flush();
+    context.set_source_surface(&accum, 0.0, 0.0).ok();
+    context.paint().ok();
+    true
 }

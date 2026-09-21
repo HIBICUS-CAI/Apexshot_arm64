@@ -97,8 +97,10 @@ pub fn action_bounds_with_padding(action: &AnnotationAction, padding: f64) -> Op
                 (bounds.rect.y + bounds.rect.height) as f64 + padding,
             )
         }
-        AnnotationAction::Number { position, .. } => {
-            let radius = 15.0 + padding; // NUMBER_RADIUS
+        AnnotationAction::Number { position, size, .. } => {
+            // Markers are drawn at their own size radius; the hit box follows it so
+            // reselecting a Large/ExtraLarge marker does not miss the circle.
+            let radius = size.radius() + padding;
             Rect::from_bounds(
                 position.x - radius,
                 position.y - radius,

@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        draw_motion_backdrop, draw_motion_foreground, draw_motion_frame, motion_pose_differs,
+        draw_motion_backdrop, draw_motion_foreground, draw_motion_frame,
         motion_text_contains_view_point, paint_card_shadow, paint_image_background,
         view_point_to_motion_text_position, CardLayout, MotionStage,
     };
     use crate::recording::editor::model::{
-        project_card_corners, MotionBackgroundFillType, MotionState, MotionTransform,
-        DEFAULT_MOTION_ZOOM,
+        project_card_corners, MotionBackgroundFillType, MotionEffectTransformTiming, MotionState,
+        MotionTransform, DEFAULT_MOTION_ZOOM,
     };
     use gtk4::cairo::{Context, Format, ImageSurface};
 
@@ -23,7 +23,7 @@ mod tests {
         assert_eq!(super::fit_stage_aspect(100.0, 50.0, None), (100.0, 50.0));
     }
 
-    /// Shotbase starts Motion with an empty track; tests add their own clip.
+    /// Motion starts with an empty track; tests add their own clip.
     fn motion_with_first_clip() -> MotionState {
         let mut motion = MotionState::default();
         motion
@@ -32,7 +32,7 @@ mod tests {
         motion
     }
 
-    /// Export-style layout: the full frame with Shotbase's default padding.
+    /// Export-style layout: the full frame with default padding.
     fn frame_layout(
         surface: &ImageSurface,
         transform: MotionTransform,
@@ -64,6 +64,52 @@ mod tests {
     }
 
     #[test]
+    fn flat_card_pose_draws_exactly_its_rect() {
+        let card = ImageSurface::create(Format::ARgb32, 100, 50).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 0.0, 0.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let motion = motion_with_first_clip();
+        let mut frame = ImageSurface::create(Format::ARgb32, 400, 300).unwrap();
+        {
+            let context = Context::new(&frame).unwrap();
+            // No rotation and no perspective take the single-rectangle path.
+            super::draw_transformed_card(
+                &context,
+                &card,
+                MotionStage::frame(400.0, 300.0),
+                MotionTransform::default(),
+                (0.5, 0.5),
+                &motion.appearance,
+                1.0,
+                8,
+                gtk4::cairo::Filter::Good,
+            );
+        }
+        frame.flush();
+
+        let stride = frame.stride() as usize;
+        let data = frame.data().unwrap();
+        let mut painted = 0usize;
+        for y in 0..300usize {
+            for x in 0..400usize {
+                let offset = y * stride + x * 4;
+                if data[offset + 2] > 200 && data[offset + 1] < 60 && data[offset] < 60 {
+                    painted += 1;
+                }
+            }
+        }
+        assert!(
+            (painted as i64 - 5000).abs() < 400,
+            "the flat card must cover its 100x50 rect exactly, painted {painted} px"
+        );
+    }
+
+    #[test]
     fn scene_fill_is_bounded_in_preview_and_full_frame_on_export() {
         let card = ImageSurface::create(Format::ARgb32, 8, 8).unwrap();
         let mut motion = MotionState::default();
@@ -92,7 +138,7 @@ mod tests {
         assert_ne!(&data[..4], &[153, 102, 51, 255]);
 
         // Exports have no editor canvas: the fill covers the whole frame and
-        // an unset fill is Shotbase's black scene. The radius belongs to the
+        // an unset fill is a black scene. The radius belongs to the
         // card, so the background corners stay filled regardless of it.
         motion.appearance.background_fill_type = MotionBackgroundFillType::None;
         motion.appearance.border_radius = 40.0;
@@ -165,12 +211,269 @@ mod tests {
 
         // A radius of half the card side rounds the corners away entirely:
         // the image corner is cut and the background shows through, while the
-        // card center stays image.
-        motion.appearance.border_radius = 32.0;
+        // card center stays image. Slider units are reference px against a
+        // 400px long edge, so a 64px card needs 128 to reach a 32px stage radius.
+        motion.appearance.border_radius = 128.0;
         let mut frame = render_appearance_frame(&card, &motion, false);
         let data = frame.data().unwrap();
         assert_eq!(&data[card_corner..card_corner + 4], &[0, 0, 0, 255]);
         assert_eq!(&data[card_center..card_center + 4], &[255, 255, 255, 255]);
+    }
+
+    /// Tilted frame outlines must keep the card's rounded corners. Regression:
+    /// mid-clip poses traced the sharp projected quad, so the Liquid/border
+    /// frame lost its radius while the clip played and snapped back after.
+    #[test]
+    fn tilted_frame_outline_keeps_the_cards_rounded_corners() {
+        let transform = MotionTransform {
+            rotation_y: 8.0,
+            perspective: 0.18,
+            ..MotionTransform::default()
+        };
+        let depth = crate::recording::editor::model::card_depth(100.0, 60.0, transform.perspective);
+        let outline =
+            super::projected_rounded_rect_points(100.0, 60.0, 20.0, transform, depth, 500.0, 300.0);
+        assert_eq!(outline.len(), 44);
+        assert!(
+            outline.iter().all(|(x, y)| x.is_finite() && y.is_finite()),
+            "tilted outline has non-finite points: {outline:?}"
+        );
+        // No outline point reaches the sharp quad corners: the radius cut
+        // keeps every projected quad corner well clear of the path.
+        let quad = project_card_corners(200.0, 120.0, 1.0, transform, 500.0, 300.0);
+        for (qx, qy) in quad {
+            let nearest = outline
+                .iter()
+                .map(|(x, y)| ((x - qx).powi(2) + (y - qy).powi(2)).sqrt())
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                nearest > 2.0,
+                "tilted outline should cut quad corner ({qx},{qy}), nearest point is {nearest}px away"
+            );
+        }
+    }
+
+    /// Tilted border follows the rounded card edge. Full-frame regression
+    /// for the playback bug: with a radius set, the tilted border must cut
+    /// the projected quad corner instead of stroking through it.
+    #[test]
+    fn tilted_border_stroke_cuts_the_quad_corner_when_radius_is_set() {
+        let card = ImageSurface::create(Format::ARgb32, 100, 50).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 0.0, 0.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+        let transform = MotionTransform {
+            rotation_y: 12.0,
+            perspective: 0.25,
+            ..MotionTransform::default()
+        };
+        let stage = MotionStage::frame(400.0, 300.0);
+        let fit = super::motion_canvas_fit(100.0, 50.0, 0.0, stage.bounds_w, stage.bounds_h);
+        let (cx, cy) = super::motion_card_center(100.0, 50.0, fit, stage, transform, (0.5, 0.5));
+        // Quad order is TL, TR, BR, BL.
+        let (qx, qy) = project_card_corners(100.0, 50.0, fit, transform, cx, cy)[1];
+        let px = qx.round() as i32;
+        let py = qy.round() as i32;
+        assert!(
+            px > 4 && px < 396 && py > 4 && py < 296,
+            "tilted quad corner ({qx},{qy}) should land inside the frame"
+        );
+        let render = |radius: f64| {
+            let mut motion = MotionState::default();
+            motion.appearance.background_padding = 0.0;
+            motion.appearance.background_fill_type = MotionBackgroundFillType::None;
+            motion.appearance.frame_style = crate::capture::editor::types::FrameStyle::Border;
+            motion.appearance.border_thickness = 6.0;
+            motion.appearance.border_fill_color = [1.0, 1.0, 1.0, 1.0];
+            motion.appearance.border_radius = radius;
+            motion.appearance.shadow_opacity = 0.0;
+            let mut frame = ImageSurface::create(Format::ARgb32, 400, 300).unwrap();
+            {
+                let context = Context::new(&frame).unwrap();
+                super::draw_transformed_card(
+                    &context,
+                    &card,
+                    stage,
+                    transform,
+                    (0.5, 0.5),
+                    &motion.appearance,
+                    1.0,
+                    8,
+                    gtk4::cairo::Filter::Good,
+                );
+            }
+            frame.flush();
+            let stride = frame.stride() as usize;
+            let data = frame.data().unwrap();
+            let offset = (py as usize) * stride + (px as usize) * 4;
+            [
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]
+        };
+        // Sharp frame strokes through the quad corner.
+        let sharp = render(0.0);
+        assert!(
+            sharp[0] > 200 && sharp[1] > 200 && sharp[2] > 200,
+            "radius 0 should stroke the tilted quad corner white, got {sharp:?}"
+        );
+        // Rounded frame cuts it: the quad corner shows the scene behind.
+        let rounded = render(120.0);
+        assert!(
+            rounded[0] < 100 && rounded[1] < 100 && rounded[2] < 100,
+            "radius should cut the tilted quad corner, got {rounded:?}"
+        );
+    }
+
+    /// Zooming the camera must scale the frame's corner radius together with
+    /// the image. Regression: the frame radius ignored `transform.scale`, so
+    /// at scale > 1 the band's corner curve stayed tighter than the texture's
+    /// rounded corner and a sliver of background showed between them.
+    #[test]
+    fn zoomed_frame_band_stays_glued_to_the_rounded_corner() {
+        const BORDER_RADIUS: f64 = 60.0;
+        const THICKNESS: f64 = 24.0;
+        const SCALE: f64 = 3.0;
+        let card = ImageSurface::create(Format::ARgb32, 100, 50).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 1.0, 1.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+        // Match the compositor: round the texture in source pixels, then let
+        // the mesh draw it at `fit * scale`.
+        let source_radius = BORDER_RADIUS * 100.0 / 400.0;
+        let rounded = super::rounded_motion_surface(&card, source_radius).expect("rounded card");
+
+        let transform = MotionTransform {
+            scale: SCALE,
+            ..MotionTransform::default()
+        };
+        let stage = MotionStage::frame(400.0, 300.0);
+        let fit = super::motion_canvas_fit(100.0, 50.0, 0.0, stage.bounds_w, stage.bounds_h);
+        let (cx, cy) = super::motion_card_center(100.0, 50.0, fit, stage, transform, (0.5, 0.5));
+        let hw = 100.0 * fit * SCALE / 2.0;
+        let hh = 50.0 * fit * SCALE / 2.0;
+        // On-screen corner radius of the texture: the source-pixel radius at
+        // the same `fit * scale` the mesh draws with.
+        let radius = source_radius * fit * SCALE;
+        // Top-right corner arc centre of the rounded image.
+        let arc_x = cx + hw - radius;
+        let arc_y = cy - hh + radius;
+
+        let mut motion = MotionState::default();
+        motion.appearance.background_padding = 0.0;
+        motion.appearance.background_fill_type = MotionBackgroundFillType::None;
+        motion.appearance.frame_style = crate::capture::editor::types::FrameStyle::Border;
+        motion.appearance.border_thickness = THICKNESS;
+        motion.appearance.border_fill_color = [1.0, 1.0, 1.0, 1.0];
+        motion.appearance.border_radius = BORDER_RADIUS;
+        motion.appearance.shadow_opacity = 0.0;
+        let mut frame = ImageSurface::create(Format::ARgb32, 400, 300).unwrap();
+        {
+            let context = Context::new(&frame).unwrap();
+            super::draw_transformed_card(
+                &context,
+                &rounded,
+                stage,
+                transform,
+                (0.5, 0.5),
+                &motion.appearance,
+                1.0,
+                8,
+                gtk4::cairo::Filter::Good,
+            );
+        }
+        frame.flush();
+        let stride = frame.stride() as usize;
+        let data = frame.data().unwrap();
+        let alpha_at = |x: f64, y: f64| -> u8 {
+            data[y.round() as usize * stride + x.round() as usize * 4 + 3]
+        };
+
+        // Walk rays across the corner arc from inside the image outwards. The
+        // image and its frame band must be contiguous, with no background run
+        // between them — that sliver is the reported bug.
+        for step in 0..=10 {
+            let angle_deg = 20.0 + 5.0 * step as f64;
+            let angle = angle_deg.to_radians();
+            let (dx, dy) = (angle.cos(), -angle.sin());
+            let mut samples = Vec::new();
+            let mut d = radius * 0.6;
+            while d <= radius * 1.9 {
+                samples.push(alpha_at(arc_x + dx * d, arc_y + dy * d));
+                d += 1.0;
+            }
+            // Everything past the outermost bright pixel is empty scene; only
+            // the span up to and including the band matters here.
+            let last_bright = samples
+                .iter()
+                .rposition(|alpha| *alpha > 128)
+                .unwrap_or(samples.len().saturating_sub(1));
+            let mut run = 0;
+            let mut worst = 0;
+            for alpha in &samples[..=last_bright] {
+                if *alpha < 24 {
+                    run += 1;
+                    // A single antialiased dip at the seam is fine; a
+                    // sustained transparent run is not.
+                    if run >= 2 {
+                        worst = worst.max(run);
+                    }
+                } else {
+                    run = 0;
+                }
+            }
+            assert!(
+                worst == 0,
+                "background sliver of {worst}px between image and frame band at {angle_deg:.0}°"
+            );
+        }
+        // Sanity: the zoomed corner is still cut, so the band did not simply
+        // swallow the quad corner.
+        let corner_alpha = alpha_at(cx + hw, cy - hh);
+        assert!(
+            corner_alpha < 32,
+            "zoomed quad corner should stay cut, got alpha {corner_alpha}"
+        );
+    }
+
+    #[test]
+    fn flat_projected_outline_matches_the_card_rect() {
+        // Unrotated pose: the projected outline is the card rect itself, so
+        // the mid-clip frame path agrees with the flat rounded-rect path.
+        let transform = MotionTransform::default();
+        let depth = crate::recording::editor::model::card_depth(100.0, 60.0, transform.perspective);
+        let outline =
+            super::projected_rounded_rect_points(100.0, 60.0, 20.0, transform, depth, 500.0, 300.0);
+        assert_eq!(outline.len(), 44);
+        // First point is the top edge where the TR corner leaves it.
+        let (x, y) = outline[0];
+        assert!(
+            (x - 580.0).abs() < 1.0 && (y - 240.0).abs() < 1.0,
+            "flat outline should start at the top edge (580,240), got ({x},{y})"
+        );
+        // Zero radius collapses to the sharp quad.
+        let sharp =
+            super::projected_rounded_rect_points(100.0, 60.0, 0.0, transform, depth, 500.0, 300.0);
+        assert_eq!(sharp.len(), 4);
+        let quad = project_card_corners(200.0, 120.0, 1.0, transform, 500.0, 300.0);
+        for (x, y) in &sharp {
+            let nearest = quad
+                .iter()
+                .map(|(qx, qy)| ((x - qx).powi(2) + (y - qy).powi(2)).sqrt())
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                nearest < 1e-6,
+                "zero-radius outline should match the quad, got ({x},{y})"
+            );
+        }
     }
 
     #[test]
@@ -257,8 +560,61 @@ mod tests {
     }
 
     #[test]
+    fn background_noise_grains_the_motion_backdrop_only() {
+        let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(0.35, 0.35, 0.35);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let render = |noise: f64| {
+            let mut motion = MotionState::default();
+            motion.appearance.background_padding = 0.0;
+            motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
+            motion.appearance.background_color = [0.08, 0.08, 0.08, 1.0];
+            motion.appearance.background_noise = noise;
+            motion.appearance.shadow_opacity = 0.0;
+            motion.scene_shadow.opacity = 0.0;
+            let frame = ImageSurface::create(Format::ARgb32, 128, 96).unwrap();
+            {
+                let context = Context::new(&frame).unwrap();
+                draw_motion_frame(
+                    &context, 128, 96, &card, &motion, None, None, 0.0, false, true, false, 1.0,
+                );
+            }
+            frame.flush();
+            frame
+        };
+        let sample = |surface: &mut ImageSurface, x: usize, y: usize| {
+            surface.data().unwrap()[(y * 128 + x) * 4]
+        };
+
+        // Padding 0 centers the 64px card in the 128x96 frame, so the corners
+        // are fill and the middle is card.
+        let mut flat = render(0.0);
+        let mut grainy = render(1.0);
+        assert_eq!(
+            sample(&mut flat, 4, 4),
+            sample(&mut flat, 6, 4),
+            "without noise the fill is flat"
+        );
+        // A single pixel can land on a faint speckle, so scan the fill band.
+        let grained = (0..16).any(|x| sample(&mut grainy, x, 4) != sample(&mut flat, x, 4));
+        assert!(grained, "the Motion backdrop fill must carry visible grain");
+        assert_eq!(
+            sample(&mut grainy, 64, 48),
+            sample(&mut flat, 64, 48),
+            "the card composites above the grain and stays clean"
+        );
+    }
+
+    #[test]
     fn scene_shadow_placement_splits_above_and_below_the_card() {
-        use crate::recording::editor::model::{MotionSceneShadowPreset, MotionSceneShadowPlacement};
+        use crate::recording::editor::model::{
+            MotionSceneShadowPlacement, MotionSceneShadowPreset,
+        };
 
         let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
         {
@@ -379,38 +735,157 @@ mod tests {
         assert_eq!(motion.selected, Some(0));
     }
 
+    /// A linear camera move whose exposure window covers real travel: the
+    /// discriminating case for temporal accumulation versus ghost trails.
+    fn fast_linear_motion() -> MotionState {
+        let mut motion = motion_with_first_clip();
+        motion.set_segment_range(0, 0.0, 1.0);
+        motion.set_transform_timing(MotionEffectTransformTiming {
+            transition_duration: 0.1,
+            easing_x1: 0.0,
+            easing_y1: 0.0,
+            easing_x2: 1.0,
+            easing_y2: 1.0,
+            ..MotionEffectTransformTiming::default()
+        });
+        motion.set_selected_end_scale(4.0);
+        motion.appearance.background_fill_type = MotionBackgroundFillType::None;
+        motion.appearance.background_padding = 0.0;
+        motion.set_motion_blur(1.0);
+        motion.motion_blur_settings.shutter_angle = 360.0;
+        motion
+    }
+
+    fn render_blur_frame(card: &ImageSurface, motion: &MotionState, time: f64) -> ImageSurface {
+        let frame = ImageSurface::create(Format::ARgb32, 200, 150).unwrap();
+        {
+            let context = Context::new(&frame).unwrap();
+            draw_motion_frame(
+                &context, 200, 150, card, motion, None, None, time, false, true, false, 1.0,
+            );
+        }
+        frame.flush();
+        frame
+    }
+
+    /// True motion blur averages the exposure, so a fast move leaves a
+    /// continuous gradient at the card's leading edge. The previous trail
+    /// implementation stacked a fully opaque copy of the current pose on top,
+    /// which is the "lagging" look users reported.
     #[test]
-    fn held_pose_does_not_spend_a_motion_blur_sample() {
-        let pose = MotionTransform::default();
-        assert!(!motion_pose_differs(pose, pose, (0.5, 0.5), (0.5, 0.5)));
-        assert!(motion_pose_differs(
-            MotionTransform {
-                scale: 1.001,
-                ..pose
-            },
-            pose,
-            (0.5, 0.5),
-            (0.5, 0.5),
-        ));
-        assert!(motion_pose_differs(pose, pose, (0.51, 0.5), (0.5, 0.5)));
+    fn motion_blur_smears_the_moving_card_instead_of_stacking_copies() {
+        let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 1.0, 1.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let motion = fast_linear_motion();
+        let time = 0.05;
+        let scale = motion.sample(time).scale;
+        assert!(
+            (scale - 2.5).abs() < 1e-6,
+            "linear move at half time: {scale}"
+        );
+
+        let layout = CardLayout::with_padding(
+            &card,
+            MotionStage::frame(200.0, 150.0),
+            motion.sample(time),
+            motion.zoom_anchor_at(time),
+            0.0,
+        );
+        let edge = layout.project(64.0, 32.0);
+        let probe_x = (edge.0 - 2.0).round() as usize;
+        let probe_y = edge.1.round() as usize;
+        let value_at = |data: &[u8], stride: usize, x: usize, y: usize| data[y * stride + x * 4];
+
+        let sharp = {
+            let mut sharp = motion.clone();
+            sharp.set_motion_blur(0.0);
+            render_blur_frame(&card, &sharp, time)
+        };
+        let mut blurred = render_blur_frame(&card, &motion, time);
+        let stride = blurred.stride() as usize;
+        let blurred_data = blurred.data().unwrap().to_vec();
+        let mut sharp = sharp;
+        let sharp_data = sharp.data().unwrap().to_vec();
+
+        assert_eq!(
+            value_at(&sharp_data, stride, probe_x, probe_y),
+            255,
+            "without blur the current pose is opaque at its leading edge"
+        );
+        let lead = value_at(&blurred_data, stride, probe_x, probe_y);
+        assert!(
+            (1..200).contains(&lead),
+            "the leading edge must be a partial exposure, got {lead}"
+        );
+
+        let row = edge.1.round() as usize;
+        let mut levels = (32..probe_x)
+            .map(|x| value_at(&blurred_data, stride, x, row))
+            .filter(|value| (1..255).contains(value))
+            .collect::<Vec<_>>();
+        levels.dedup();
+        assert!(
+            levels.len() >= 8,
+            "the smear must be continuous, saw {} levels",
+            levels.len()
+        );
+    }
+
+    /// A held pose has no travel during the exposure, so blur must leave the
+    /// frame identical to the sharp render — no lingering trail.
+    #[test]
+    fn motion_blur_leaves_held_poses_sharp() {
+        let card = ImageSurface::create(Format::ARgb32, 64, 64).unwrap();
+        {
+            let context = Context::new(&card).unwrap();
+            context.set_source_rgb(1.0, 1.0, 1.0);
+            context.paint().unwrap();
+        }
+        card.flush();
+
+        let mut motion = fast_linear_motion();
+        motion.set_transform_timing(MotionEffectTransformTiming {
+            transition_duration: 0.3,
+            easing_x1: 0.0,
+            easing_y1: 0.0,
+            easing_x2: 1.0,
+            easing_y2: 1.0,
+            ..MotionEffectTransformTiming::default()
+        });
+        let sharp = {
+            let mut sharp = motion.clone();
+            sharp.set_motion_blur(0.0);
+            sharp
+        };
+        for time in [0.0, 0.4] {
+            let mut blurred = render_blur_frame(&card, &motion, time);
+            let mut reference = render_blur_frame(&card, &sharp, time);
+            assert_eq!(
+                blurred.data().unwrap().to_vec(),
+                reference.data().unwrap().to_vec(),
+                "held pose at {time}s must not be blurred"
+            );
+        }
     }
 
     #[test]
     fn transition_playback_uses_the_same_card_mesh_as_the_still_preview() {
+        // Solid card: filter-invariant, so this pins the perspective mesh
+        // (geometry) rather than the resampling filter. The still preview
+        // intentionally uses Good (sharp, matches Static) while playback uses
+        // Bilinear (cheap); textured content may differ by a pixel, but the
+        // mesh must not change when pressing play.
         let card = ImageSurface::create(Format::ARgb32, 96, 64).unwrap();
         {
             let context = Context::new(&card).unwrap();
             context.set_source_rgb(1.0, 1.0, 1.0);
             context.paint().unwrap();
-            context.set_source_rgb(0.0, 0.0, 0.0);
-            for y in 0..8 {
-                for x in 0..12 {
-                    if (x + y) % 2 == 0 {
-                        context.rectangle((x * 8) as f64, (y * 8) as f64, 8.0, 8.0);
-                    }
-                }
-            }
-            context.fill().unwrap();
         }
         card.flush();
 
@@ -441,12 +916,24 @@ mod tests {
 
         let mut still = render(false);
         let mut playing = render(true);
-        let still_pixels = still.data().unwrap().to_vec();
-        let playing_pixels = playing.data().unwrap().to_vec();
         assert_eq!(
-            still_pixels,
-            playing_pixels,
-            "playing an Ease preview must not change the perspective mesh"
+            (still.width(), still.height()),
+            (playing.width(), playing.height())
+        );
+        // Center pixel pins the mesh (card position/geometry): it sits deep
+        // inside the solid card in both renders. Edge fringes may differ by a
+        // step because the still uses Good (sharp, matches Static) while
+        // playback uses Bilinear (cheap) — that filter split is intentional.
+        let center_pixel = |surface: &mut ImageSurface| {
+            surface.flush();
+            let stride = surface.stride() as usize;
+            let offset = 64usize * stride + 96usize * 4;
+            surface.data().unwrap()[offset..offset + 4].to_vec()
+        };
+        assert_eq!(
+            center_pixel(&mut still),
+            center_pixel(&mut playing),
+            "playing an Ease preview must not move the card mesh"
         );
     }
 
@@ -665,12 +1152,12 @@ mod tests {
     }
 
     #[test]
-    fn shotbase_transform_timing_defaults_drive_glide_motion() {
+    fn transform_timing_defaults_drive_glide_motion() {
         let mut motion = motion_with_first_clip();
         // Keep the clip longer than the 1.2s transition so the timing curve
         // is not clamped by the default one-second clip.
         motion.set_segment_range(0, 0.0, 2.0);
-        let timing = motion.transform_timing;
+        let timing = motion.segments[0].timing;
         assert!((timing.transition_duration - 1.2).abs() < f64::EPSILON);
         assert!((timing.easing_x1 - 0.25).abs() < f64::EPSILON);
         assert!((timing.easing_y1 - 1.0).abs() < f64::EPSILON);
@@ -678,29 +1165,28 @@ mod tests {
         assert!((timing.easing_y2 - 1.0).abs() < f64::EPSILON);
 
         let default_progress = motion.sample(0.6).scale;
-        motion.set_transform_timing(
-            crate::recording::editor::model::MotionEffectTransformTiming {
-                transition_duration: 1.2,
-                easing_x1: 0.0,
-                easing_y1: 0.0,
-                easing_x2: 1.0,
-                easing_y2: 1.0,
-            },
-        );
+        motion.set_transform_timing(MotionEffectTransformTiming {
+            transition_duration: 1.2,
+            easing_x1: 0.0,
+            easing_y1: 0.0,
+            easing_x2: 1.0,
+            easing_y2: 1.0,
+            ..MotionEffectTransformTiming::default()
+        });
         let linear_progress = motion.sample(0.6).scale;
         assert!(
             default_progress > linear_progress + 0.01,
-            "Shotbase's recovered Bézier should advance ahead of linear at mid-transition"
+            "The default Bézier should advance ahead of linear at mid-transition"
         );
         // linear progress at t=0.6 of a 1.2s transition is 0.5: scale 1 + (2-1)*0.5
         assert!((linear_progress - 1.5).abs() < 0.002);
     }
 
     #[test]
-    fn transition_ms_slider_drives_the_global_timing() {
+    fn transition_ms_slider_drives_the_selected_clips_timing() {
         let mut motion = motion_with_first_clip();
         motion.set_selected_transition_ms(300);
-        assert!((motion.transform_timing.transition_duration - 0.3).abs() < 1e-9);
+        assert!((motion.segments[0].timing.transition_duration - 0.3).abs() < 1e-9);
         // Inside the shortened window the move has already finished.
         let held = motion.sample(0.35);
         assert!((held.scale - DEFAULT_MOTION_ZOOM).abs() < 1e-6);
@@ -808,7 +1294,9 @@ mod tests {
     }
 
     #[test]
-    fn position_extremes_map_the_card_center_to_the_stage_edges() {
+    fn position_extremes_map_the_camera_to_the_stage_edges() {
+        // Camera framing: pad bottom-right shows bottom-right, so the card
+        // itself shifts to the opposite corner.
         let surface = ImageSurface::create(Format::ARgb32, 1600, 900).expect("surface");
         let layout = frame_layout(
             &surface,
@@ -816,6 +1304,20 @@ mod tests {
                 scale: 2.0,
                 pos_x: 1.0,
                 pos_y: 1.0,
+                ..MotionTransform::default()
+            },
+            (0.5, 0.5),
+        );
+
+        assert!((layout.cx - 0.0).abs() < 1e-6);
+        assert!((layout.cy - 0.0).abs() < 1e-6);
+
+        let layout = frame_layout(
+            &surface,
+            MotionTransform {
+                scale: 2.0,
+                pos_x: -1.0,
+                pos_y: -1.0,
                 ..MotionTransform::default()
             },
             (0.5, 0.5),
@@ -866,7 +1368,10 @@ mod tests {
             (motion.segments[first].end - motion.segments[first].start - 1.0).abs() < f64::EPSILON,
             "new clips are one second long"
         );
-        assert!(motion.add_segment_at(2.0).is_some(), "second clip in the gap");
+        assert!(
+            motion.add_segment_at(2.0).is_some(),
+            "second clip in the gap"
+        );
         assert_eq!(motion.segments.len(), 2);
 
         // The one-second gap takes a full clip even when the pointer is late
@@ -979,17 +1484,7 @@ mod tests {
             {
                 let context = Context::new(&frame).unwrap();
                 draw_motion_frame(
-                    &context,
-                    1280,
-                    800,
-                    surface,
-                    &motion,
-                    None,
-                    None,
-                    0.35,
-                    true,
-                    true,
-                    false,
+                    &context, 1280, 800, surface, &motion, None, None, 0.35, true, true, false,
                     card_scale,
                 );
             }

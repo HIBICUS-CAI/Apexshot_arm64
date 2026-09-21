@@ -82,7 +82,10 @@ pub(super) fn build_motion_watermark_panel(
                     return;
                 };
                 let path = path.to_string_lossy().into_owned();
-                let surface = super::super::motion_render::load_motion_background_surface(&path);
+                let surface = super::super::motion_render::load_motion_background_preview_surface(
+                    &path,
+                    super::super::background_panel::PREVIEW_BACKGROUND_MAX_EDGE,
+                );
                 let Some(surface) = surface else {
                     return;
                 };

@@ -111,7 +111,7 @@ void CaptureOverlay::paintEvent(QPaintEvent* event)
     }
 
     if (!m_hasSelection) {
-        // Hint text
+        // Hint text (kept below the top-center instruction bar).
         p.fillRect(widgetRect, QColor(0, 0, 0, 30));
         QFont f; f.setPointSize(13); p.setFont(f);
         QString hint = "Drag to select an area  •  ESC to cancel";
@@ -122,6 +122,8 @@ void CaptureOverlay::paintEvent(QPaintEvent* event)
         p.fillPath(pill, QColor(0,0,0,130));
         p.setPen(QColor(255,255,255,200));
         p.drawText(tr, Qt::AlignCenter, hint);
+        // Screen-fixed frame bar stays visible even before a selection exists.
+        drawTopInstructionBar(p, sw, sh);
         return;
     }
 
@@ -222,6 +224,12 @@ void CaptureOverlay::paintEvent(QPaintEvent* event)
         // Draw recording panel inside selection
         drawRecordingPanel(p, sx, sy, selW, selH);
     }
+
+    // ── Top-center instruction bar ──────────────────────────────────────────
+    // Painted last so it floats above dim/selection chrome. It is screen-fixed
+    // (top-center) and is excluded from the saved image by the freeze-crop /
+    // hide-before-capture path in main.cpp, so overlap with the drag is safe.
+    drawTopInstructionBar(p, sw, sh);
 
     // ── Visible countdown overlay ───────────────────────────────────────────
     if (m_countdownActive && m_countdownValue > 0) {

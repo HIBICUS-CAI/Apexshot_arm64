@@ -117,17 +117,8 @@ pub(crate) fn recording_tile_at(
         width: REC_ACTION_WIDTH,
         height: actions.height,
     };
-    let gif = RectF {
-        x: video.x + video.width + ACTION_CARD_GAP,
-        y: actions.y,
-        width: REC_ACTION_WIDTH,
-        height: actions.height,
-    };
     if video.contains(x, y) {
         return Some(RecordPanelTile::RecordVideo);
-    }
-    if gif.contains(x, y) {
-        return Some(RecordPanelTile::RecordGif);
     }
 
     None
@@ -309,17 +300,11 @@ mod tests {
         )
         .panel;
 
-        for (tab, drop_idx, option_count) in [
-            (SettingsTab::Video, 3, 3),
-            (SettingsTab::Video, 4, 4),
-            (SettingsTab::Gif, 6, 4),
-        ] {
+        for (tab, drop_idx, option_count) in
+            [(SettingsTab::Video, 3, 3), (SettingsTab::Video, 4, 4)]
+        {
             let popup_y = compute_dropdown_popup_y(panel.y, drop_idx, tab);
-            let popup_width = if matches!((tab, drop_idx), (SettingsTab::Gif, 6)) {
-                180.0
-            } else {
-                160.0
-            };
+            let popup_width = 160.0;
             let popup_x = panel.x + 408.0 - popup_width;
             for expected in 0..option_count {
                 assert_eq!(
@@ -393,11 +378,11 @@ pub(crate) fn settings_menu_hit_item(
 
     // Tab rects (always check, any tab)
     let tab_container_w = menu_w - 36.0;
-    let tab_w = (tab_container_w - 8.0) / 3.0;
+    let tab_w = (tab_container_w - 8.0) / 2.0;
     let tab_h = 30.0;
     let tab_start_x = menu_x + 22.0;
     let tab_y = menu_y + 54.0;
-    for i in 0..3 {
+    for i in 0..2 {
         let tr = RectF {
             x: tab_start_x + i as f64 * tab_w,
             y: tab_y,
@@ -480,48 +465,6 @@ pub(crate) fn settings_menu_hit_item(
                 return Some(7);
             }
         }
-        SettingsTab::Gif => {
-            if (RectF {
-                x: menu_x + 200.0,
-                y: menu_y + 116.0,
-                width: 208.0,
-                height: 44.0,
-            })
-            .contains(x, y)
-            {
-                return Some(3);
-            }
-            if (RectF {
-                x: menu_x + 160.0,
-                y: menu_y + 180.0,
-                width: 248.0,
-                height: 46.0,
-            })
-            .contains(x, y)
-            {
-                return Some(4);
-            }
-            if (RectF {
-                x: menu_x + 18.0,
-                y: menu_y + 242.0,
-                width: menu_w - 36.0,
-                height: 52.0,
-            })
-            .contains(x, y)
-            {
-                return Some(5);
-            }
-            if (RectF {
-                x: menu_x + 228.0,
-                y: menu_y + 311.0,
-                width: 180.0,
-                height: 30.0,
-            })
-            .contains(x, y)
-            {
-                return Some(6);
-            }
-        }
     }
 
     None
@@ -540,7 +483,7 @@ pub(crate) fn settings_dropdown_hit_item(
 ) -> Option<usize> {
     let option_count = match (tab, drop_idx) {
         (SettingsTab::Video, 3) => 3,
-        (SettingsTab::Video, 4) | (SettingsTab::Gif, 6) => 4,
+        (SettingsTab::Video, 4) => 4,
         _ => return None,
     };
     let settings = compute_settings_menu_layout(
@@ -550,11 +493,7 @@ pub(crate) fn settings_dropdown_hit_item(
         screen_width,
         screen_height,
     );
-    let popup_width = if matches!((tab, drop_idx), (SettingsTab::Gif, 6)) {
-        180.0
-    } else {
-        160.0
-    };
+    let popup_width = 160.0;
     let popup = RectF {
         x: settings.panel.x + 408.0 - popup_width,
         y: compute_dropdown_popup_y(settings.panel.y, drop_idx, tab),

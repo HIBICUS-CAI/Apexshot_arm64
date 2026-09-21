@@ -1492,7 +1492,7 @@ msgid "MP4 video"
 msgstr "Видео в формате MP4"
 
 msgid "Manual"
-msgstr "Руководство"
+msgstr "Вручную"
 
 msgid "Maximum resolution"
 msgstr "Максимальное разрешение"
@@ -2246,6 +2246,9 @@ msgstr "Заголовок"
 msgid "Drag on the preview to place the title"
 msgstr "Перетащите на предпросмотре, чтобы разместить заголовок"
 
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Щёлкните или перетащите на изображении, чтобы задать якорь масштаба; двойной щелчок — сброс к центру"
+
 msgid "Anchor X"
 msgstr "Якорь X"
 msgid "Anchor Y"
@@ -2363,3 +2366,97 @@ msgstr "Подложка"
 
 msgid "Undo"
 msgstr "Отменить"
+
+msgid "Bounce"
+msgstr "Отскок"
+
+msgid "Custom"
+msgstr "Свой"
+
+msgid "Gentle"
+msgstr "Мягкий"
+
+msgid "Bouncy"
+msgstr "Упругий"
+
+msgid "Spring"
+msgstr "Пружина"
+
+msgid "Theme"
+msgstr "Тема"
+
+msgid "Light"
+msgstr "Светлая"
+
+msgid "Dark"
+msgstr "Тёмная"
+
+msgid "System"
+msgstr "Системная"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Сбалансированный"
+
+msgid "Frame height in pixels"
+msgstr "Высота кадра в пикселях"
+
+msgid "Frame width in pixels"
+msgstr "Ширина кадра в пикселях"
+
+msgid "Freehand"
+msgstr "От руки"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 с микрофоном и системным звуком, если рабочий стол позволяет"
+
+msgid "More frame sizes"
+msgstr "Другие размеры кадра"
+
+msgid "Number of the selected marker"
+msgstr "Номер выбранного маркера"
+
+msgid "Number the next marker starts at"
+msgstr "Номер, с которого начинается следующий маркер"
+
+msgid "Pinterest"
+msgstr "Пинтерест"
+
+msgid "Recording quality"
+msgstr "Качество записи"
+
+msgid "Text-aware"
+msgstr "По тексту"
+
+msgid "Twitter"
+msgstr "Твиттер"
+
+msgid "Ultra"
+msgstr "Ультра"
+
+msgid "Background color"
+msgstr "Цвет фона"
+
+msgid "COLOR"
+msgstr "ЦВЕТ"
+
+msgid "Choose background color"
+msgstr "Выбрать цвет фона"
+
+msgid "WALLPAPER"
+msgstr "ОБОИ"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "Обои или цвет заполняют область за видео в предпросмотре и при экспорте"

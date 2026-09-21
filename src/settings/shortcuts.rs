@@ -569,7 +569,6 @@ mod tests {
         prelude::{ButtonExt, WidgetExt},
         Box as GtkBox, Button, Label, Widget,
     };
-    use std::sync::Once;
 
     #[test]
     fn compose_shortcut_label_formats_common_combinations() {
@@ -605,45 +604,44 @@ mod tests {
 
     #[test]
     fn shortcuts_section_hides_removed_general_rows_and_keeps_supported_ones() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        static GTK_AVAILABLE: AtomicBool = AtomicBool::new(false);
-        static GTK_INIT: Once = Once::new();
-        GTK_INIT.call_once(|| {
-            GTK_AVAILABLE.store(gtk4::init().is_ok(), Ordering::Relaxed);
-        });
+        // GTK widgets may only be built and read on the thread that initialized
+        // GTK, so the section is built on the test binary's shared GTK thread
+        // (see `crate::test_support`).
+        let Some(labels) = crate::test_support::with_gtk(|| {
+            let config = AppConfig::default();
+            let widgets = build_shortcuts_section(&config);
 
-        if !GTK_AVAILABLE.load(Ordering::Relaxed) {
+            fn collect_labels(widget: Widget, labels: &mut Vec<String>) {
+                if let Ok(button) = widget.clone().downcast::<Button>() {
+                    if let Some(label) = button.label() {
+                        labels.push(label.to_string());
+                    }
+                }
+                if let Ok(label) = widget.clone().downcast::<Label>() {
+                    labels.push(label.text().to_string());
+                }
+                if let Ok(container) = widget.clone().downcast::<GtkBox>() {
+                    let mut nested: Option<Widget> = container.first_child();
+                    while let Some(nested_widget) = nested {
+                        collect_labels(nested_widget.clone(), labels);
+                        nested = nested_widget.next_sibling();
+                    }
+                }
+            }
+
+            let mut child: Option<Widget> = widgets.section.first_child();
+            let mut labels = Vec::new();
+
+            while let Some(widget) = child {
+                collect_labels(widget.clone(), &mut labels);
+                child = widget.next_sibling();
+            }
+
+            labels
+        }) else {
             eprintln!("Skipping: GTK not available (no display server)");
             return;
-        }
-
-        let config = AppConfig::default();
-        let widgets = build_shortcuts_section(&config);
-        fn collect_labels(widget: Widget, labels: &mut Vec<String>) {
-            if let Ok(button) = widget.clone().downcast::<Button>() {
-                if let Some(label) = button.label() {
-                    labels.push(label.to_string());
-                }
-            }
-            if let Ok(label) = widget.clone().downcast::<Label>() {
-                labels.push(label.text().to_string());
-            }
-            if let Ok(container) = widget.clone().downcast::<GtkBox>() {
-                let mut nested: Option<Widget> = container.first_child();
-                while let Some(nested_widget) = nested {
-                    collect_labels(nested_widget.clone(), labels);
-                    nested = nested_widget.next_sibling();
-                }
-            }
-        }
-
-        let mut child: Option<Widget> = widgets.section.first_child();
-        let mut labels = Vec::new();
-
-        while let Some(widget) = child {
-            collect_labels(widget.clone(), &mut labels);
-            child = widget.next_sibling();
-        }
+        };
 
         assert!(!labels
             .iter()

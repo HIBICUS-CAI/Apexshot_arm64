@@ -1,7 +1,9 @@
 use gtk4::prelude::*;
+use gtk4::ToggleButton;
 
-use crate::recording::editor::model::MotionEffectTransformTiming;
+use crate::recording::editor::model::MotionTimingKind;
 
+use super::super::widgets::{ease_preset_timing, spring_preset_timing};
 use super::super::{MotionModeParts, MotionSession};
 use super::{Redraw, RequestLivePreview, RequestTransitionPreview};
 
@@ -71,27 +73,15 @@ pub(super) fn install(
         }
     });
 
-    for (axis, slider, value_label) in [
-        (
-            0_u8,
-            parts.transform.zoom_anchor_x_slider.clone(),
-            parts.transform.zoom_anchor_x_value.clone(),
-        ),
-        (
-            1_u8,
-            parts.transform.zoom_anchor_y_slider.clone(),
-            parts.transform.zoom_anchor_y_value.clone(),
-        ),
-    ] {
+    parts.transform.anchor_pad.connect_value_changed({
         let session = session.runtime.clone();
         let request_transition_preview = request_transition_preview.clone();
         let request_live_preview = request_live_preview.clone();
         let syncing = parts.shared.inspector_syncing.clone();
-        slider.connect_value_changed(move |slider| {
+        move |x, y| {
             if syncing.get() {
                 return;
             }
-            let value = slider.value();
             let segment_start = {
                 let runtime = session.borrow();
                 runtime
@@ -99,28 +89,17 @@ pub(super) fn install(
                     .selected_segment()
                     .map(|segment| segment.start)
             };
-            let mut runtime = session.borrow_mut();
-            runtime.begin_motion_edit();
-            let (mut x, mut y) = runtime
-                .motion
-                .selected_segment()
-                .map_or((0.5, 0.5), |segment| {
-                    (segment.zoom_anchor_x, segment.zoom_anchor_y)
-                });
-            if axis == 0 {
-                x = value;
-            } else {
-                y = value;
+            {
+                let mut runtime = session.borrow_mut();
+                runtime.begin_motion_edit();
+                runtime.motion.set_selected_zoom_anchor(x, y);
             }
-            runtime.motion.set_selected_zoom_anchor(x, y);
-            drop(runtime);
-            value_label.set_label(&format!("{:.0}%", value * 100.0));
             match segment_start {
                 Some(start) => request_transition_preview(start),
                 None => request_live_preview(),
             }
-        });
-    }
+        }
+    });
 
     parts.transform.yaw_slider.connect_value_changed({
         let session = session.runtime.clone();
@@ -409,7 +388,7 @@ pub(super) fn install(
             };
             let mut runtime = session.borrow_mut();
             runtime.begin_motion_edit();
-            let mut timing = runtime.motion.transform_timing;
+            let mut timing = runtime.motion.selected_transform_timing();
             match axis {
                 0 => timing.easing_x1 = value,
                 1 => timing.easing_y1 = value,
@@ -426,11 +405,72 @@ pub(super) fn install(
         });
     }
 
-    parts.transform.reset_timing_btn.connect_clicked({
-        let session = session.runtime.clone();
+    for (kind, button) in &parts.transform.timing_kind_buttons {
+        let kind = *kind;
+        button.connect_clicked({
+            let session = session.runtime.clone();
+            let redraw = redraw.clone();
+            let request_transition_preview = request_transition_preview.clone();
+            let request_live_preview = request_live_preview.clone();
+            let custom_timing_btn = parts.transform.custom_timing_btn.clone();
+            move |_| {
+                let segment_start = {
+                    let runtime = session.borrow();
+                    runtime
+                        .motion
+                        .selected_segment()
+                        .map(|segment| segment.start)
+                };
+                {
+                    let mut runtime = session.borrow_mut();
+                    runtime.begin_motion_edit();
+                    // Each family button applies the curve its icon previews
+                    // (S for Ease, Gentle for Spring). Clicked, not toggled,
+                    // so re-clicking an active family still converges the
+                    // curve — e.g. a default clip onto the S.
+                    let current = runtime.motion.selected_transform_timing();
+                    let timing = match kind {
+                        MotionTimingKind::Ease => {
+                            let mut preset = ease_preset_timing(0, current);
+                            preset.kind = MotionTimingKind::Ease;
+                            preset
+                        }
+                        MotionTimingKind::Spring => spring_preset_timing(1, current),
+                    };
+                    runtime.motion.set_transform_timing(timing);
+                }
+                custom_timing_btn.set_active(false);
+                redraw();
+                match segment_start {
+                    Some(start) => request_transition_preview(start),
+                    None => request_live_preview(),
+                }
+            }
+        });
+    }
+
+    parts.transform.custom_timing_btn.connect_toggled({
         let redraw = redraw.clone();
+        let syncing = parts.shared.inspector_syncing.clone();
+        move |_: &ToggleButton| {
+            if syncing.get() {
+                return;
+            }
+            redraw();
+        }
+    });
+
+    parts.transform.spring_bounce_slider.connect_value_changed({
+        let session = session.runtime.clone();
+        let value_label = parts.transform.spring_bounce_value.clone();
         let request_transition_preview = request_transition_preview.clone();
-        move |_| {
+        let request_live_preview = request_live_preview.clone();
+        let syncing = parts.shared.inspector_syncing.clone();
+        move |slider| {
+            if syncing.get() {
+                return;
+            }
+            let value = slider.value();
             let segment_start = {
                 let runtime = session.borrow();
                 runtime
@@ -441,13 +481,14 @@ pub(super) fn install(
             {
                 let mut runtime = session.borrow_mut();
                 runtime.begin_motion_edit();
-                runtime
-                    .motion
-                    .set_transform_timing(MotionEffectTransformTiming::default());
+                let mut timing = runtime.motion.selected_transform_timing();
+                timing.spring_bounce = value;
+                runtime.motion.set_transform_timing(timing);
             }
+            value_label.set_label(&format!("{:.0}%", value * 100.0));
             match segment_start {
                 Some(start) => request_transition_preview(start),
-                None => redraw(),
+                None => request_live_preview(),
             }
         }
     });

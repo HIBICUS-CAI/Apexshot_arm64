@@ -54,9 +54,6 @@ pub enum RecordError {
 
     #[error("No suitable video encoder found. Please install gst-plugins-good/ugly/bad.")]
     NoEncoderFound,
-
-    #[error("GIF encoding error: {0}")]
-    GifError(String),
 }
 
 pub use audio::{list_audio_inputs, list_audio_outputs};
@@ -75,7 +72,7 @@ pub(crate) fn run_audio_level_monitor(
 pub use controls::{
     persist_overlay_recording_request_state, prepare_overlay_recording_request,
     run_overlay_recording_request, run_overlay_recording_request_with_gtk,
-    run_recording_with_controls, run_recording_with_native_controls,
+    run_recording_with_controls, run_recording_with_native_controls, run_standalone_countdown,
     PreparedOverlayRecordingRequest,
 };
 
@@ -147,6 +144,8 @@ pub struct RecordingConfig {
     // Video tab settings
     pub max_resolution: Option<(u32, u32)>,
     pub fps: u32,
+    /// x264 CRF from Settings → quality tier (16–23 recording range).
+    pub crf: u32,
     pub mono_audio: bool,
     pub mic_enabled: bool,
     pub speaker_enabled: bool,
@@ -154,10 +153,6 @@ pub struct RecordingConfig {
     pub speaker_source: Option<String>,
     /// webrtcdsp noise suppression on the mic branch (GStreamer audio path).
     pub noise_suppression: bool,
-    // GIF-specific settings
-    pub gif_quality: f64,
-    pub gif_optimize: bool,
-    pub gif_max_width: Option<u32>,
 }
 
 /// Directory for new recordings: Settings `video_export_location`, else XDG Videos.
@@ -219,15 +214,13 @@ impl Default for RecordingConfig {
             hidpi: true,
             max_resolution: None,
             fps: 30,
+            crf: 20,
             mono_audio: false,
             mic_enabled: false,
             speaker_enabled: false,
             mic_source: None,
             speaker_source: None,
             noise_suppression: false,
-            gif_quality: 0.75,
-            gif_optimize: true,
-            gif_max_width: Some(800),
         }
     }
 }
@@ -256,9 +249,17 @@ impl RecordingConfig {
             _ => 30,
         };
         let max_resolution = match app_config.rec_video_max_res {
-            0 => None,
+            0 => None, // Original — native size, no rescaling at all
             1 => Some((1920, 1080)),
             2 => Some((1280, 720)),
+            // Appended after the original three so saved configs keep their
+            // meaning. A target at or above the capture size leaves the frame
+            // untouched (no rescale = no quality loss); smaller targets are
+            // downscaled with lanczos in RGB space plus CRF compensation.
+            3 => Some((2560, 1440)),
+            4 => Some((1600, 900)),
+            5 => Some((854, 480)),
+            6 => Some((3840, 2160)),
             _ => None,
         };
 
@@ -269,26 +270,40 @@ impl RecordingConfig {
             x: None,
             y: None,
             cursor: app_config.rec_cursor,
-            pointer_track: extension != "gif" && crate::gnome_shell::should_use_pointer_track(),
+            pointer_track: crate::gnome_shell::should_use_pointer_track(),
             hidpi: app_config.rec_hidpi,
             max_resolution,
             fps,
+            crf: crf_for_quality(app_config.rec_video_quality),
             mono_audio: app_config.rec_video_mono,
             mic_enabled: false,
             speaker_enabled: false,
             mic_source: None,
             speaker_source: None,
             noise_suppression: app_config.rec_noise_suppression,
-            gif_quality: app_config.rec_gif_quality,
-            gif_optimize: app_config.rec_gif_optimize,
-            gif_max_width: match app_config.rec_gif_size_idx {
-                0 => Some(800),
-                1 => Some(640),
-                2 => Some(480),
-                _ => None,
-            },
         }
     }
+}
+
+/// x264 CRF for a Settings quality tier, inside the recommended 16–23
+/// recording range (sharpest tier = 16). Lower is sharper at file-size cost.
+pub fn crf_for_quality(tier: u8) -> u32 {
+    match tier {
+        0 => 23, // Balanced
+        2 => 16, // Ultra
+        _ => 20, // High (default)
+    }
+}
+
+/// Resolution compensation for CRF: smaller outputs get a lower CRF so they
+/// don't turn to mush — up to -10 below 2000px diagonal. Applied to the tier
+/// base at encode time.
+pub fn crf_resolution_reduction(width: u32, height: u32) -> u32 {
+    const CUTOFF: f64 = 2000.0;
+    let diagonal = ((u64::from(width) * u64::from(width) + u64::from(height) * u64::from(height))
+        as f64)
+        .sqrt();
+    ((1.0 - diagonal.min(CUTOFF) / CUTOFF) * 10.0) as u32
 }
 
 fn command_exists(name: &str) -> bool {
@@ -342,16 +357,9 @@ async fn start_recording_with_commands(
         if wf_recorder::should_use_wf_recorder(&config) {
             return wf_recorder::record_with_wf_recorder(config, command_rx).await;
         }
-        if config.output_path.extension().is_some_and(|e| e == "gif") {
-            return wf_recorder::record_gif_with_wf_recorder(config, command_rx).await;
-        }
         return Err(RecordError::UnsupportedBackend(
             "wlroots recording with this output format is not supported".into(),
         ));
-    }
-
-    if config.output_path.extension().is_some_and(|e| e == "gif") {
-        return backend::record_gif_rust_with_commands(config, command_rx).await;
     }
 
     let built = backend::prepare_recording_backend(config).await?;
@@ -475,6 +483,64 @@ mod tests {
             PathBuf::from("/mnt/media/apexshot/Clip 2026-07-12 11-00-49.mp4")
         );
         assert!(!path.to_string_lossy().contains("output.mp4"));
+    }
+
+    #[test]
+    fn quality_tier_maps_to_crf_range() {
+        assert_eq!(crf_for_quality(0), 23);
+        assert_eq!(crf_for_quality(1), 20);
+        assert_eq!(crf_for_quality(2), 16);
+        assert_eq!(crf_for_quality(9), 20);
+        // Full-HD and above keep the base CRF; smaller outputs get a bonus.
+        assert_eq!(crf_resolution_reduction(1920, 1080), 0);
+        assert_eq!(crf_resolution_reduction(1920, 1200), 0);
+        assert_eq!(crf_resolution_reduction(1280, 720), 2);
+        assert_eq!(crf_resolution_reduction(640, 480), 6);
+        let app = AppConfig {
+            rec_video_quality: 2,
+            ..AppConfig::default()
+        };
+        let config = RecordingConfig::from_app_config_at(
+            &app,
+            "mp4",
+            chrono::Utc
+                .with_ymd_and_hms(2026, 7, 12, 11, 0, 49)
+                .unwrap(),
+        );
+        assert_eq!(config.crf, 16);
+    }
+
+    #[test]
+    fn resolution_setting_maps_to_every_option_and_never_upscales() {
+        let at = chrono::Utc
+            .with_ymd_and_hms(2026, 7, 12, 11, 0, 49)
+            .unwrap();
+        let resolution_for = |idx: u8| {
+            let app = AppConfig {
+                rec_video_max_res: idx,
+                ..AppConfig::default()
+            };
+            RecordingConfig::from_app_config_at(&app, "mp4", at).max_resolution
+        };
+        // Saved configs from before the extra options keep their meaning.
+        assert_eq!(resolution_for(0), None);
+        assert_eq!(resolution_for(1), Some((1920, 1080)));
+        assert_eq!(resolution_for(2), Some((1280, 720)));
+        assert_eq!(resolution_for(3), Some((2560, 1440)));
+        assert_eq!(resolution_for(4), Some((1600, 900)));
+        assert_eq!(resolution_for(5), Some((854, 480)));
+        assert_eq!(resolution_for(6), Some((3840, 2160)));
+        assert_eq!(resolution_for(99), None);
+        // A target at or above the capture size must leave frames untouched —
+        // choosing a bigger option never costs quality.
+        assert_eq!(
+            super::backend::fit_within_max_resolution(1920, 1200, resolution_for(3)),
+            (1920, 1200)
+        );
+        assert_eq!(
+            super::backend::fit_within_max_resolution(1920, 1200, resolution_for(6)),
+            (1920, 1200)
+        );
     }
 
     #[test]

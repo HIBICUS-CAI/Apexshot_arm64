@@ -39,6 +39,9 @@ static const QColor TB_WARM_RIM(255, 212, 178, 152);
 static const QColor TB_HOVER_FILL(255, 255, 255, 22);
 static const QColor TB_HOVER_RIM(255, 255, 255, 86);
 static const QColor TB_ACTIVE_TEXT(255, 229, 206, 255);
+// Lift the bottom chrome above the app dock so the toolbar and the ESC hint
+// stay visible on docked desktops.
+static const double BOTTOM_LIFT = 76.0;
 
 static void tbRoundedPath(QPainterPath& path, double x, double y, double w, double h, double r) {
     r = std::min(r, std::min(w/2.0, h/2.0));
@@ -123,7 +126,7 @@ QRectF WindowPickerOverlay::toolbarItemRect(int i) const
 {
     double panelW = TB_ITEM_W * TB_NUM;
     double panelX = (width() - panelW) / 2.0;
-    double panelY = height() - TB_H - 24.0;
+    double panelY = height() - TB_H - 24.0 - BOTTOM_LIFT;
     m_toolbarRect = QRectF(panelX, panelY, panelW, TB_H);
     return QRectF(panelX + i * TB_ITEM_W, panelY, TB_ITEM_W, TB_H);
 }
@@ -132,7 +135,7 @@ void WindowPickerOverlay::drawToolbar(QPainter& p)
 {
     const double panelW = TB_ITEM_W * TB_NUM;
     const double panelX = (width() - panelW) / 2.0;
-    const double panelY = height() - TB_H - 24.0;
+    const double panelY = height() - TB_H - 24.0 - BOTTOM_LIFT;
     m_toolbarRect = QRectF(panelX, panelY, panelW, TB_H);
 
     drawTbFrostedPanel(p, panelX, panelY, panelW, TB_H, TB_RADIUS);
@@ -459,7 +462,7 @@ static QRect pickerDisplayArea(int width, int height)
 {
     // Keep room for title at the top and hint + toolbar at the bottom.
     const int topInset = 84;
-    const int bottomInset = 120;
+    const int bottomInset = 120 + static_cast<int>(BOTTOM_LIFT);
     const int usableHeight = std::max(120, height - topInset - bottomInset);
     return QRect(0, topInset, width, usableHeight);
 }
@@ -625,7 +628,7 @@ void WindowPickerOverlay::paintEvent(QPaintEvent* event)
     QFontMetrics hfm(hintFont);
     int hw = hfm.horizontalAdvance(hint) + 28;
     int hx = (width() - hw) / 2;
-    int hy = height() - 40;
+    int hy = height() - 40 - static_cast<int>(BOTTOM_LIFT);
     QPainterPath hpill;
     hpill.addRoundedRect(QRectF(hx, hy, hw, 28), 10, 10);
     p.fillPath(hpill, QColor(0, 0, 0, 140));

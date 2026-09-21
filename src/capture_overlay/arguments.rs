@@ -102,14 +102,6 @@ fn build_area_init_args(config: &crate::config::AppConfig) -> Vec<String> {
     } else {
         "--no-open-editor".into()
     });
-    extra_args.push(format!("--gif-fps={}", config.rec_gif_fps));
-    extra_args.push(format!("--gif-quality={:.4}", config.rec_gif_quality));
-    extra_args.push(format!("--gif-size={}", config.rec_gif_size_idx));
-    if config.rec_gif_optimize {
-        extra_args.push("--gif-optimize".into());
-    } else {
-        extra_args.push("--no-gif-optimize".into());
-    }
 
     extra_args
 }

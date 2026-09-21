@@ -3,6 +3,7 @@ use crate::i18n::t;
 use gtk4::{prelude::*, Align, Box as GtkBox, CheckButton, Label, Orientation};
 
 use super::select::{language_combo, SettingsSelect};
+use super::theme_picker::ThemePicker;
 
 pub struct GeneralSettingsWidgets {
     pub section: GtkBox,
@@ -10,6 +11,7 @@ pub struct GeneralSettingsWidgets {
     pub play_sounds_check: CheckButton,
     pub shutter_sound_input: SettingsSelect,
     pub show_icon_check: CheckButton,
+    pub theme_input: ThemePicker,
     pub ui_language_input: SettingsSelect,
 }
 
@@ -42,6 +44,27 @@ pub fn build_general_section(config: &AppConfig) -> GeneralSettingsWidgets {
         frame.set_margin_end(4);
         frame
     };
+
+    // --- Appearance Group ---
+    let appearance_title = Label::new(Some(&t("Appearance")));
+    appearance_title.add_css_class("settings-group-title");
+    appearance_title.set_xalign(0.0);
+    appearance_title.set_halign(Align::Start);
+    appearance_title.set_margin_bottom(8);
+    section.append(&appearance_title);
+
+    let appearance_frame = build_frame();
+    let theme_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    theme_hbox.set_hexpand(true);
+    theme_hbox.set_valign(Align::Center);
+    let theme_option = Label::new(Some(&t("Theme")));
+    theme_option.set_xalign(0.0);
+    theme_option.set_hexpand(true);
+    let theme_input = ThemePicker::new(&config.ui_theme);
+    theme_hbox.append(&theme_option);
+    theme_hbox.append(theme_input.widget());
+    appearance_frame.append(&build_row!(&theme_hbox, false));
+    section.append(&appearance_frame);
 
     // --- Startup Group ---
     let language_title = Label::new(Some(&t("Language")));
@@ -163,6 +186,7 @@ pub fn build_general_section(config: &AppConfig) -> GeneralSettingsWidgets {
         play_sounds_check,
         shutter_sound_input,
         show_icon_check,
+        theme_input,
         ui_language_input,
     }
 }

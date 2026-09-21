@@ -42,7 +42,7 @@ body:
       multiple: true
       options:
         - Capture (screenshots, crosshair, area, window, OCR)
-        - Recording (video, GIF, audio, webcam)
+        - Recording (video, audio)
         - Editor / annotations
         - GNOME extension (runtime overlays, mask, controls)
         - Browser extension / native messaging host

@@ -6,6 +6,8 @@ pub const DEFAULT_PREVIEW_AUTO_CLOSE_SECONDS: u32 = 12;
 pub const MIN_PREVIEW_AUTO_CLOSE_SECONDS: u32 = 3;
 pub const MAX_PREVIEW_AUTO_CLOSE_SECONDS: u32 = 120;
 pub const DEFAULT_SHUTTER_SOUND: &str = "Camera";
+/// UI color theme. `system` follows the desktop; `light` and `dark` force it.
+pub const DEFAULT_UI_THEME: &str = "system";
 
 /// Public ApexShot Cloud API. Used for normal installs when no override is set.
 /// Self-hosters / local dev can override via config `cloud_backend_url` or
@@ -62,15 +64,12 @@ pub struct AppConfig {
     pub rec_video_format: u8,
     pub rec_video_max_res: u8,
     pub rec_video_fps: u8,
+    /// 0 = Balanced (CRF 23), 1 = High (CRF 20), 2 = Ultra (CRF 17).
+    pub rec_video_quality: u8,
     pub rec_video_mono: bool,
     pub rec_video_open_editor: bool,
     /// webrtcdsp noise suppression on the recording mic (GStreamer audio path).
     pub rec_noise_suppression: bool,
-    // Recording GIF tab settings
-    pub rec_gif_fps: u8,
-    pub rec_gif_quality: f64,
-    pub rec_gif_size_idx: u8,
-    pub rec_gif_optimize: bool,
     pub rec_mic: bool,
     pub rec_speaker: bool,
     // Quick Access settings
@@ -165,6 +164,9 @@ pub struct AppConfig {
     /// Anonymous usage heartbeat (daemon). Opt out in Settings or via
     /// `APEXSHOT_TELEMETRY=0`. Default on to match install-script telemetry.
     pub telemetry_enabled: bool,
+    /// UI color theme: `system` follows the desktop, `light` and `dark` force
+    /// it. Window builders read this before probing GTK / desktop settings.
+    pub ui_theme: String,
     /// UI language. `system` follows the desktop locale; otherwise a catalog
     /// code such as `es` or `pt_BR`.
     pub ui_language: String,
@@ -207,13 +209,10 @@ impl Default for AppConfig {
             rec_video_format: 0,  // 0 = MP4
             rec_video_max_res: 0, // 0 = Original
             rec_video_fps: 1,     // 1 = 30fps
+            rec_video_quality: 1, // 1 = High
             rec_video_mono: false,
             rec_video_open_editor: false,
             rec_noise_suppression: false,
-            rec_gif_fps: 50,
-            rec_gif_quality: 0.75,
-            rec_gif_size_idx: 0,
-            rec_gif_optimize: true,
             rec_mic: false,
             rec_speaker: false,
             quick_access_position: "Left".to_string(),
@@ -292,6 +291,7 @@ impl Default for AppConfig {
             adv_filename_use_utc: false,
             // Flatpak: off until the user explicitly opts in (plan §10.3 / §9.4).
             telemetry_enabled: !cfg!(feature = "flatpak"),
+            ui_theme: DEFAULT_UI_THEME.to_string(),
             ui_language: crate::i18n::SYSTEM_LANGUAGE.to_string(),
         }
     }
@@ -325,9 +325,6 @@ impl AppConfig {
             self.after_capture_show_quick_access = DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS;
         }
         self.rec_video_format = self.rec_video_format.min(1);
-        self.rec_gif_fps = self.rec_gif_fps.clamp(5, 60);
-        self.rec_gif_quality = self.rec_gif_quality.clamp(0.0, 1.0);
-        self.rec_gif_size_idx = self.rec_gif_size_idx.min(3);
         self.quick_access_overlay_size =
             sanitize_quick_access_overlay_size(self.quick_access_overlay_size);
         self.quick_access_position = match self.quick_access_position.as_str() {
@@ -365,8 +362,20 @@ impl AppConfig {
         self.xbackbone_api_token = self.xbackbone_api_token.trim().to_string();
         // Tiers are compared case-insensitively; normalise once on the way in.
         self.cloud_plan_tier = self.cloud_plan_tier.trim().to_lowercase();
+        self.ui_theme = sanitize_ui_theme(&self.ui_theme);
         self.ui_language = crate::i18n::sanitize_ui_language(&self.ui_language);
         self
+    }
+
+    /// Explicit theme preference: `Some(true)` forces dark, `Some(false)`
+    /// forces light, `None` follows the desktop. Window builders check this
+    /// before probing GTK / gsettings.
+    pub fn forced_dark_theme(&self) -> Option<bool> {
+        match self.ui_theme.as_str() {
+            "dark" => Some(true),
+            "light" => Some(false),
+            _ => None,
+        }
     }
 
     pub fn video_editor_export_dir(&self, fallback: &std::path::Path) -> PathBuf {
@@ -395,6 +404,14 @@ impl AppConfig {
         }
         self.last_video_export_dir = next;
         true
+    }
+}
+
+fn sanitize_ui_theme(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "light" => "light".to_string(),
+        "dark" => "dark".to_string(),
+        _ => DEFAULT_UI_THEME.to_string(),
     }
 }
 
@@ -713,6 +730,38 @@ mod tests {
     fn default_screenshot_timer_is_off() {
         let cfg = AppConfig::default();
         assert_eq!(cfg.screenshot_timer_interval, 0);
+    }
+
+    #[test]
+    fn default_ui_theme_follows_the_system() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.ui_theme, DEFAULT_UI_THEME);
+        assert_eq!(cfg.forced_dark_theme(), None);
+    }
+
+    #[test]
+    fn sanitize_ui_theme_keeps_known_values_and_falls_back_to_system() {
+        let dark = AppConfig {
+            ui_theme: "Dark".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(dark.ui_theme, "dark");
+        assert_eq!(dark.forced_dark_theme(), Some(true));
+
+        let light = AppConfig {
+            ui_theme: "light".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(light.forced_dark_theme(), Some(false));
+
+        let unknown = AppConfig {
+            ui_theme: "sepia".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(unknown.ui_theme, DEFAULT_UI_THEME);
     }
 
     #[test]

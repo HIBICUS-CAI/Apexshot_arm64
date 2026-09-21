@@ -25,13 +25,13 @@ fn paint_backdrop(
         Some(motion_preview_scene_rect(
             f64::from(width),
             f64::from(height),
-            motion.frame.preset.aspect(),
+            motion.frame.effective_aspect(),
         ))
     } else {
         None
     };
     // The preview shows the plain checkerboard until a fill is chosen;
-    // Shotbase's black scene for an unset fill only applies to exports.
+    // the black scene for an unset fill only applies to exports.
     if checkerboard
         && matches!(
             appearance.background_fill_type,
@@ -46,7 +46,7 @@ fn paint_backdrop(
         context.clip();
     }
     match appearance.background_fill_type {
-        // Shotbase's explicit Motion-mode rule: None is a black scene, not
+        // Explicit Motion-mode rule: None is a black scene, not
         // the editor's transparent checkerboard.
         MotionBackgroundFillType::None => {
             context.set_source_rgb(0.0, 0.0, 0.0);
@@ -93,12 +93,36 @@ fn paint_backdrop(
             }
         }
     }
-    paint_background_noise(context, width, height, appearance.background_noise);
+    // Same grain field as the static canvas and the static export, so the
+    // Background tool reads identically in both editors.
+    crate::capture::editor::render::paint_background_noise(
+        context,
+        0.0,
+        0.0,
+        f64::from(width),
+        f64::from(height),
+        appearance.background_noise,
+    );
     context.restore().ok();
 }
 
 pub(super) fn load_motion_background_surface(path: &str) -> Option<ImageSurface> {
     let image = image::open(path).ok()?.into_rgba8();
+    crate::capture::editor::render::rgba_image_to_surface(&image)
+}
+
+/// Preview-sized sibling of [`load_motion_background_surface`]. The Motion
+/// runtime and the inspector only ever draw backgrounds at screen resolution,
+/// so they decode bounded (JPEG via DCT scale) and leave full resolution to
+/// the export path.
+pub(super) fn load_motion_background_preview_surface(
+    path: &str,
+    max_edge: u32,
+) -> Option<ImageSurface> {
+    let image = crate::capture::editor::window::background_panel::load_background_preview_image(
+        std::path::Path::new(path),
+        max_edge,
+    )?;
     crate::capture::editor::render::rgba_image_to_surface(&image)
 }
 
@@ -237,24 +261,4 @@ fn paint_cover_fit(
     context.source().set_filter(filter);
     context.paint().ok();
     context.restore().ok();
-}
-
-fn paint_background_noise(context: &Context, width: i32, height: i32, amount: f64) {
-    let amount = amount.clamp(0.0, 1.0);
-    if amount <= 0.001 {
-        return;
-    }
-    // Fixed pseudo-noise keeps every frame stable (and therefore exportable)
-    // rather than shimmering as the Motion playhead advances.
-    let step = 4;
-    for y in (0..height.max(0)).step_by(step) {
-        for x in (0..width.max(0)).step_by(step) {
-            let hash =
-                ((x as u32).wrapping_mul(73_856_093)) ^ ((y as u32).wrapping_mul(19_349_663));
-            let light = if hash & 1 == 0 { 1.0 } else { 0.0 };
-            context.set_source_rgba(light, light, light, amount * 0.045);
-            context.rectangle(f64::from(x), f64::from(y), step as f64, step as f64);
-            context.fill().ok();
-        }
-    }
 }

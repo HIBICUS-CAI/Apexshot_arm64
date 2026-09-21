@@ -46,7 +46,11 @@
             }
 
             .recording-editor-video {
-                background: #000000;
+                /* The canvas behind the video (fill or black scene) paints the
+                   letterbox; the widget is exactly the video rect, so its own
+                   background must stay transparent for fills to show through
+                   the rounded corners. */
+                background: transparent;
                 border-radius: 4px;
                 border: none;
                 box-shadow: none;

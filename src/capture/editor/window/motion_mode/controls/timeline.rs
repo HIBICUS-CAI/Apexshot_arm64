@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use super::super::{MotionHoverTrack, MotionModeParts, MotionRuntime, MotionSession};
-use super::Redraw;
+use super::{Redraw, RequestTextTransitionPreview, RequestTransitionPreview};
 
 /// Whether a board-relative pointer height falls inside `lane`.
 /// The lane allocation is parent-relative, so it must be translated into
@@ -42,12 +42,15 @@ pub(super) fn install(
     redraw_playhead: Redraw,
     redraw_motion_track: Redraw,
     redraw_text_track: Redraw,
+    request_transition_preview: RequestTransitionPreview,
+    request_text_transition_preview: RequestTextTransitionPreview,
 ) {
     let ruler_click = GestureClick::new();
     ruler_click.set_button(1);
     ruler_click.connect_pressed({
         let session = session.runtime.clone();
         let redraw_playhead = redraw_playhead.clone();
+        let preview = parts.shell.preview.clone();
         move |gesture, _, x, _| {
             let width = gesture
                 .widget()
@@ -58,17 +61,56 @@ pub(super) fn install(
             runtime.motion.playhead = ((x / width) * duration).clamp(0.0, duration);
             drop(runtime);
             redraw_playhead();
+            preview.queue_draw();
         }
     });
     parts.timeline.ruler.add_controller(ruler_click);
 
-    // The ruler is a scrub surface: dragging anywhere moves the playhead,
-    // rather than requiring a pixel-perfect hit on the thin playhead line.
+    // The ruler is the scrub surface: pressing it jumps the playhead and
+    // dragging keeps it under the pointer, exactly like the video editor
+    // card. The playhead itself is paint-only, so no widget follows the drag.
     let ruler_drag = GestureDrag::new();
     ruler_drag.set_button(1);
+    ruler_drag.connect_drag_begin({
+        let session = session.runtime.clone();
+        let dragging = parts.timeline.playhead_dragging.clone();
+        let hover_playhead = parts.timeline.hover_playhead.clone();
+        let motion_track = parts.timeline.motion_track.clone();
+        let text_track = parts.timeline.text_track.clone();
+        let preview = parts.shell.preview.clone();
+        let redraw_playhead = redraw_playhead.clone();
+        move |_, _, _| {
+            // A scrub owns the playhead: holding it pauses playback, and the
+            // parked hover read-out is dropped so it cannot keep driving the
+            // preview while the drag is in flight.
+            let had_hover = {
+                let mut runtime = session.borrow_mut();
+                runtime.playing = false;
+                runtime.last_tick = None;
+                runtime.preview_end = None;
+                // Scrub compositing stays inline (live) so the card tracks
+                // the pointer: the paused worker path would keep blitting
+                // the pre-drag frame while the playhead moves.
+                runtime.live_preview = true;
+                let had = runtime.hover_time.is_some() || runtime.hover_track.is_some();
+                runtime.hover_time = None;
+                runtime.hover_track = None;
+                had
+            };
+            dragging.set(true);
+            if had_hover {
+                hover_playhead.queue_draw();
+                motion_track.queue_draw();
+                text_track.queue_draw();
+                preview.queue_draw();
+            }
+            redraw_playhead();
+        }
+    });
     ruler_drag.connect_drag_update({
         let session = session.runtime.clone();
         let redraw_playhead = redraw_playhead.clone();
+        let preview = parts.shell.preview.clone();
         move |gesture, offset_x, _| {
             let Some((start_x, _)) = gesture.start_point() else {
                 return;
@@ -84,8 +126,31 @@ pub(super) fn install(
                 return;
             }
             runtime.motion.playhead = next;
+            runtime.live_preview = true;
             drop(runtime);
             redraw_playhead();
+            preview.queue_draw();
+        }
+    });
+    ruler_drag.connect_drag_end({
+        let session = session.runtime.clone();
+        let dragging = parts.timeline.playhead_dragging.clone();
+        let hovered = parts.timeline.playhead_hovered.clone();
+        let preview = parts.shell.preview.clone();
+        let redraw_playhead = redraw_playhead.clone();
+        move |_, _, _| {
+            dragging.set(false);
+            // Pointer grabs suppress board motion events, so the pre-drag
+            // hover value can survive a drag that ends away from the head and
+            // leave the clock pill stuck open. Collapse until motion proves
+            // the pointer is back on the capsule.
+            hovered.set(false);
+            // Drop back to paused quality: the next paint schedules the
+            // sharp (Good-filter) worker for the landed frame.
+            session.borrow_mut().live_preview = false;
+            redraw_playhead();
+            // Release always lands the exact frame.
+            preview.queue_draw();
         }
     });
     parts.timeline.ruler.add_controller(ruler_drag);
@@ -119,6 +184,7 @@ pub(super) fn install(
     track_click.connect_released({
         let session = session.runtime.clone();
         let redraw = redraw.clone();
+        let request_transition_preview = request_transition_preview.clone();
         let motion_track_dragged = motion_track_dragged.clone();
         move |gesture, _n_press, x, _| {
             if motion_track_dragged.replace(false) {
@@ -128,29 +194,36 @@ pub(super) fn install(
                 .widget()
                 .map(|widget| widget.allocated_width().max(1) as f64)
                 .unwrap_or(1.0);
-            let mut runtime = session.borrow_mut();
-            runtime.source_selected = false;
-            let duration = runtime.motion.duration.max(0.001);
-            let raw_time = ((x / width) * duration).clamp(0.0, duration);
-            // Selection tests the real pointer position: snapping it first
-            // could land on the next clip's edge and select it while the user
-            // clicked in the empty gap before it.
-            if let Some(index) = runtime.motion.segment_index_at(raw_time) {
-                runtime.motion.selected = Some(index);
-                runtime.motion.selected_text = None;
-            } else {
-                let time =
-                    runtime
-                        .motion
-                        .snap_effect_time(raw_time, (10.0 / width) * duration, None);
-                runtime.begin_motion_edit();
-                if runtime.motion.add_segment_at(time).is_none() {
-                    runtime.motion.selected = None;
+            let new_clip_start = {
+                let mut runtime = session.borrow_mut();
+                runtime.source_selected = false;
+                let duration = runtime.motion.duration.max(0.001);
+                let raw_time = ((x / width) * duration).clamp(0.0, duration);
+                // Selection tests the real pointer position: snapping it first
+                // could land on the next clip's edge and select it while the user
+                // clicked in the empty gap before it.
+                if let Some(index) = runtime.motion.segment_index_at(raw_time) {
+                    runtime.motion.selected = Some(index);
+                    runtime.motion.selected_text = None;
+                    None
+                } else {
+                    let time =
+                        runtime
+                            .motion
+                            .snap_effect_time(raw_time, (10.0 / width) * duration, None);
+                    runtime.begin_motion_edit();
+                    let added = runtime.motion.add_segment_at(time);
+                    runtime.motion.selected_text = None;
+                    added.and_then(|index| runtime.motion.segments.get(index).map(|s| s.start))
                 }
-                runtime.motion.selected_text = None;
-            }
-            drop(runtime);
+            };
+            // A new clip starts on its identity frame, so leaving the playhead
+            // where it was would keep the preview static. Replay the new move
+            // immediately (same as editing a transform) so the motion is visible.
             redraw();
+            if let Some(start) = new_clip_start {
+                request_transition_preview(start);
+            }
         }
     });
     parts.timeline.motion_track.add_controller(track_click);
@@ -306,6 +379,7 @@ pub(super) fn install(
     text_click.connect_released({
         let session = session.runtime.clone();
         let redraw = redraw.clone();
+        let request_text_transition_preview = request_text_transition_preview.clone();
         let text_track_dragged = text_track_dragged.clone();
         move |gesture, _n_press, x, _| {
             if text_track_dragged.replace(false) {
@@ -315,26 +389,37 @@ pub(super) fn install(
                 .widget()
                 .map(|widget| widget.allocated_width().max(1) as f64)
                 .unwrap_or(1.0);
-            let mut runtime = session.borrow_mut();
-            runtime.source_selected = false;
-            let duration = runtime.motion.duration.max(0.001);
-            let raw_time = ((x / width) * duration).clamp(0.0, duration);
-            // Same single-click rule as the motion lane.
-            if let Some(index) = runtime.motion.text_index_at(raw_time) {
-                runtime.motion.selected_text = Some(index);
-                runtime.motion.selected = None;
-            } else {
-                let time = runtime
-                    .motion
-                    .snap_text_time(raw_time, (10.0 / width) * duration, None);
-                runtime.begin_motion_edit();
-                if runtime.motion.add_text_at(time).is_none() {
-                    runtime.motion.selected_text = None;
+            let new_text = {
+                let mut runtime = session.borrow_mut();
+                runtime.source_selected = false;
+                let duration = runtime.motion.duration.max(0.001);
+                let raw_time = ((x / width) * duration).clamp(0.0, duration);
+                // Same single-click rule as the motion lane.
+                if let Some(index) = runtime.motion.text_index_at(raw_time) {
+                    runtime.motion.selected_text = Some(index);
+                    runtime.motion.selected = None;
+                    None
+                } else {
+                    let time =
+                        runtime
+                            .motion
+                            .snap_text_time(raw_time, (10.0 / width) * duration, None);
+                    runtime.begin_motion_edit();
+                    let added = runtime.motion.add_text_at(time);
+                    runtime.motion.selected = None;
+                    added.and_then(|index| {
+                        runtime
+                            .motion
+                            .text_segments
+                            .get(index)
+                            .map(|s| (s.start, s.typewriter_time))
+                    })
                 }
-                runtime.motion.selected = None;
-            }
-            drop(runtime);
+            };
             redraw();
+            if let Some((start, typewriter_time)) = new_text {
+                request_text_transition_preview(start, typewriter_time);
+            }
         }
     });
     parts.timeline.text_track.add_controller(text_click);
@@ -481,103 +566,12 @@ pub(super) fn install(
     parts.timeline.text_track.add_controller(text_drag);
     install_track_end_cursor(&parts.timeline.text_track, session.runtime.clone(), true);
 
-    // The playhead only moves by dragging its handle. The handle's allocation
-    // is frozen for the duration of the drag (see motion_timeline.rs), so the
-    // board position captured at drag begin plus the gesture offset tracks the
-    // pointer exactly instead of chasing a layout that changes under it.
-    let playhead_drag = GestureDrag::new();
-    playhead_drag.set_button(1);
-    let playhead_start_x = Rc::new(Cell::new(0.0f64));
-    // Board width is stable for the duration of a drag; resolving the Overlay
-    // ancestor per motion event walks GObjects on the hot path for no gain.
-    let playhead_board_w = Rc::new(Cell::new(1.0f64));
-    playhead_drag.connect_drag_begin({
-        let session = session.runtime.clone();
-        let handle = parts.timeline.playhead_handle.clone();
-        let start_x = playhead_start_x.clone();
-        let board_w = playhead_board_w.clone();
-        let dragging = parts.timeline.playhead_dragging.clone();
-        let hover_playhead = parts.timeline.hover_playhead.clone();
-        let motion_track = parts.timeline.motion_track.clone();
-        let text_track = parts.timeline.text_track.clone();
-        let preview = parts.shell.preview.clone();
-        move |gesture, x, _| {
-            // Holding the handle pauses playback; otherwise the timer keeps
-            // advancing the playhead the drag is trying to reposition.
-            // A stale hover would otherwise keep driving the preview (hover
-            // scrub wins while idle), so drop it: the drag owns the preview
-            // until release.
-            let had_hover = {
-                let mut runtime = session.borrow_mut();
-                runtime.playing = false;
-                runtime.last_tick = None;
-                runtime.preview_end = None;
-                let had = runtime.hover_time.is_some() || runtime.hover_track.is_some();
-                runtime.hover_time = None;
-                runtime.hover_track = None;
-                had
-            };
-            start_x.set(handle.allocation().x() as f64 + x);
-            board_w.set(
-                gesture
-                    .widget()
-                    .and_then(|widget| widget.ancestor(Overlay::static_type()))
-                    .map(|board| board.allocated_width().max(1) as f64)
-                    .unwrap_or(1.0),
-            );
-            dragging.set(true);
-            if had_hover {
-                hover_playhead.queue_draw();
-                motion_track.queue_draw();
-                text_track.queue_draw();
-                preview.queue_draw();
-            }
-        }
-    });
-    playhead_drag.connect_drag_update({
-        let session = session.runtime.clone();
-        let redraw_playhead = redraw_playhead.clone();
-        let start_x = playhead_start_x.clone();
-        let board_w = playhead_board_w.clone();
-        move |_, offset_x, _| {
-            let width = board_w.get().max(1.0);
-            let pointer_board_x = start_x.get() + offset_x;
-            let mut runtime = session.borrow_mut();
-            let duration = runtime.motion.duration.max(0.001);
-            let next = (pointer_board_x / width * duration).clamp(0.0, duration);
-            // Shoving against either end emits events with an identical
-            // clamped value; skip the redraw entirely instead of re-queuing
-            // a preview render that would paint the same frame.
-            if (next - runtime.motion.playhead).abs() < f64::EPSILON {
-                return;
-            }
-            runtime.motion.playhead = next;
-            drop(runtime);
-            redraw_playhead();
-        }
-    });
-    playhead_drag.connect_drag_end({
-        let dragging = parts.timeline.playhead_dragging.clone();
-        let hovered = parts.timeline.playhead_hovered.clone();
-        let redraw_playhead = redraw_playhead.clone();
-        move |_, _, _| {
-            dragging.set(false);
-            // Pointer grabs suppress board motion events, so the pre-drag
-            // hover value can survive a drag that ends away from the head and
-            // leave the clock pill stuck open. Collapse until motion proves
-            // the pointer is back on the capsule.
-            hovered.set(false);
-            redraw_playhead();
-        }
-    });
-    parts.timeline.playhead_handle.add_controller(playhead_drag);
-
-    // The handle strip is only as wide as the idle capsule, so hover is
-    // tracked on the whole board: only the capsule head expands into the clock
-    // pill, so the stem and lanes below it stay inert.
+    // Hover is tracked on the whole board: only the capsule head expands into
+    // the clock pill, so the stem and lanes below it stay inert. Hit-testing
+    // uses the drawn head's model-space x, never a widget allocation.
     if let Some(board) = parts
         .timeline
-        .playhead_handle
+        .playhead_overlay
         .ancestor(Overlay::static_type())
     {
         let hover = EventControllerMotion::new();
@@ -598,7 +592,7 @@ pub(super) fn install(
                 // Hover time is directionless: scrubbing right-to-left drives
                 // the same hover frame as left-to-right, so clips also play
                 // backwards under the red line.
-                let (near, was_previewing, is_previewing) = {
+                let (near, was_previewing, is_previewing, prev_track, next_track) = {
                     let mut runtime = session.borrow_mut();
                     let was = super::super::preview::hover_preview_frame(
                         &runtime.motion,
@@ -607,6 +601,7 @@ pub(super) fn install(
                         runtime.playing,
                     )
                     .is_some();
+                    let prev_track = runtime.hover_track;
                     let duration = runtime.motion.duration.max(0.001);
                     runtime.hover_time = Some((x / width).clamp(0.0, 1.0) * duration);
                     let line_x = (runtime.motion.playhead / duration).clamp(0.0, 1.0) * width;
@@ -619,6 +614,7 @@ pub(super) fn install(
                         }
                         _ => None,
                     };
+                    let next_track = runtime.hover_track;
                     let is = super::super::preview::hover_preview_frame(
                         &runtime.motion,
                         runtime.hover_time,
@@ -635,20 +631,47 @@ pub(super) fn install(
                         ),
                         was,
                         is,
+                        prev_track,
+                        next_track,
                     )
                 };
-                // The add ghost is anchored to hover_time, so the lanes must
-                // repaint on every motion, not just when the lane changes.
+                // Like the video editor card: the hover line repaints every
+                // motion, but each lane only repaints while the pointer is
+                // over it (the add ghost follows the line) or on the change
+                // that shows/clears it. Hovering the ruler repaints one
+                // overlay instead of the whole timeline.
                 hover_playhead.queue_draw();
-                motion_track.queue_draw();
-                text_track.queue_draw();
+                if prev_track != next_track {
+                    if prev_track == Some(MotionHoverTrack::Motion)
+                        || next_track == Some(MotionHoverTrack::Motion)
+                    {
+                        motion_track.queue_draw();
+                    }
+                    if prev_track == Some(MotionHoverTrack::Text)
+                        || next_track == Some(MotionHoverTrack::Text)
+                    {
+                        text_track.queue_draw();
+                    }
+                } else if next_track == Some(MotionHoverTrack::Motion) {
+                    motion_track.queue_draw();
+                } else if next_track == Some(MotionHoverTrack::Text) {
+                    text_track.queue_draw();
+                }
                 // Hover scrub drives the preview (red line), never the
-                // playhead. Repaint when entering, scrubbing inside, or
-                // leaving a lane so the preview snaps back to the playhead.
+                // playhead. The paint is a cheap blit of the latest
+                // background-thread frame, so it follows every motion.
                 if was_previewing || is_previewing {
                     preview.queue_draw();
                 }
                 if hovered.replace(near) != near {
+                    // The cursor follows the drawn head, so grabbing it works
+                    // from the ruler without a positioned handle widget.
+                    if let Some(widget) = controller.widget() {
+                        let cursor = near
+                            .then(|| gdk::Cursor::from_name("ew-resize", None))
+                            .flatten();
+                        widget.set_cursor(cursor.as_ref());
+                    }
                     redraw_playhead();
                 }
             }
@@ -661,7 +684,7 @@ pub(super) fn install(
             let text_track = parts.timeline.text_track.clone();
             let preview = parts.shell.preview.clone();
             let redraw_playhead = redraw_playhead.clone();
-            move |_| {
+            move |controller| {
                 let (lane_changed, was_previewing) = {
                     let mut runtime = session.borrow_mut();
                     let was = super::super::preview::hover_preview_frame(
@@ -687,6 +710,9 @@ pub(super) fn install(
                 if was_previewing {
                     preview.queue_draw();
                 }
+                if let Some(widget) = controller.widget() {
+                    widget.set_cursor(None);
+                }
                 if hovered.replace(false) {
                     redraw_playhead();
                 }
@@ -695,47 +721,50 @@ pub(super) fn install(
         board.add_controller(hover);
     }
 
-    let handle_pointer = EventControllerMotion::new();
-    handle_pointer.connect_enter(move |controller, _, _| {
-        if let Some(widget) = controller.widget() {
-            widget.set_cursor(gdk::Cursor::from_name("ew-resize", None).as_ref());
-        }
-    });
-    handle_pointer.connect_leave(|controller| {
-        if let Some(widget) = controller.widget() {
-            widget.set_cursor(None);
-        }
-    });
-    parts
-        .timeline
-        .playhead_handle
-        .add_controller(handle_pointer);
-
     parts.timeline.add_btn.connect_clicked({
         let session = session.runtime.clone();
         let redraw = redraw.clone();
+        let request_transition_preview = request_transition_preview.clone();
         move |_| {
-            let mut runtime = session.borrow_mut();
-            let playhead = runtime.motion.playhead;
-            runtime.source_selected = false;
-            runtime.begin_motion_edit();
-            let _ = runtime.motion.add_segment_at(playhead);
-            drop(runtime);
+            let new_clip_start = {
+                let mut runtime = session.borrow_mut();
+                let playhead = runtime.motion.playhead;
+                runtime.source_selected = false;
+                runtime.begin_motion_edit();
+                runtime
+                    .motion
+                    .add_segment_at(playhead)
+                    .and_then(|index| runtime.motion.segments.get(index).map(|s| s.start))
+            };
             redraw();
+            if let Some(start) = new_clip_start {
+                request_transition_preview(start);
+            }
         }
     });
 
     parts.timeline.add_text_btn.connect_clicked({
         let session = session.runtime.clone();
         let redraw = redraw.clone();
+        let request_text_transition_preview = request_text_transition_preview.clone();
         move |_| {
-            let mut runtime = session.borrow_mut();
-            let playhead = runtime.motion.playhead;
-            runtime.source_selected = false;
-            runtime.begin_motion_edit();
-            let _ = runtime.motion.add_text_at(playhead);
-            drop(runtime);
+            let new_text = {
+                let mut runtime = session.borrow_mut();
+                let playhead = runtime.motion.playhead;
+                runtime.source_selected = false;
+                runtime.begin_motion_edit();
+                runtime.motion.add_text_at(playhead).and_then(|index| {
+                    runtime
+                        .motion
+                        .text_segments
+                        .get(index)
+                        .map(|s| (s.start, s.typewriter_time))
+                })
+            };
             redraw();
+            if let Some((start, typewriter_time)) = new_text {
+                request_text_transition_preview(start, typewriter_time);
+            }
         }
     });
 }
@@ -759,22 +788,7 @@ fn install_track_end_cursor(
             let duration = runtime.motion.duration.max(0.001);
             let time = ((x / width) * duration).clamp(0.0, duration);
             let edge_seconds = (8.0 / width) * duration;
-            let segments = if text_track {
-                runtime
-                    .motion
-                    .text_segments
-                    .iter()
-                    .map(|segment| (segment.start, segment.end))
-                    .collect::<Vec<_>>()
-            } else {
-                runtime
-                    .motion
-                    .segments
-                    .iter()
-                    .map(|segment| (segment.start, segment.end))
-                    .collect::<Vec<_>>()
-            };
-            segments.iter().find_map(|(start, end)| {
+            let edge_at = |start: f64, end: f64| {
                 if (time - end).abs() <= edge_seconds {
                     Some("e-resize")
                 } else if (time - start).abs() <= edge_seconds {
@@ -782,7 +796,20 @@ fn install_track_end_cursor(
                 } else {
                     None
                 }
-            })
+            };
+            if text_track {
+                runtime
+                    .motion
+                    .text_segments
+                    .iter()
+                    .find_map(|segment| edge_at(segment.start, segment.end))
+            } else {
+                runtime
+                    .motion
+                    .segments
+                    .iter()
+                    .find_map(|segment| edge_at(segment.start, segment.end))
+            }
         };
         if let Some(widget) = controller.widget() {
             widget.set_cursor(

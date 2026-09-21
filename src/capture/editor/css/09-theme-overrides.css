@@ -233,6 +233,15 @@
             }
 
             /* Toolbar color status chip */
+            .editor-root.editor-theme-light .editor-toolbar-color-status {
+                background: alpha(#111827, 0.16);
+            }
+            .editor-root.editor-theme-light .editor-toolbar-color-status:hover {
+                background: alpha(#111827, 0.22);
+            }
+            .editor-root.editor-theme-light .editor-toolbar-color-status:active {
+                background: alpha(#111827, 0.28);
+            }
             .editor-root.editor-theme-light .editor-toolbar-color-status-swatch {
                 border-color: alpha(#111827, 0.22);
             }

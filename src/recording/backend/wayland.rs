@@ -125,6 +125,8 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
         None => (format.width.max(2) & !1, format.height.max(2) & !1),
     };
     let fps = config.fps.max(1);
+    // Native SPA bytes — no channel swap (see PipeWireCapture::pix_fmt).
+    let pix_fmt = capture.pix_fmt();
 
     // Start audio only after the video capture stream is negotiated. This
     // keeps the encoded audio timeline aligned with the first video frame.
@@ -135,7 +137,12 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
     };
 
     // Build ffmpeg command
-    let use_vaapi = super::wf_recorder::should_use_vaapi();
+    // Encoder preference: NVENC CQP > VAAPI QP > x264 CRF. All auto when HW present.
+    let use_nvenc = super::wf_recorder::should_use_nvenc()
+        && encoder_name != "libvpx-vp9"
+        && encoder_name != "libvpx"
+        && encoder_name != "libtheora";
+    let use_vaapi = !use_nvenc && super::wf_recorder::should_use_vaapi();
     let mut ffmpeg_cmd = Command::new("ffmpeg");
     ffmpeg_cmd
         .arg("-y")
@@ -147,7 +154,7 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
         .arg("-f")
         .arg("rawvideo")
         .arg("-pix_fmt")
-        .arg("rgba")
+        .arg(pix_fmt)
         .arg("-s")
         .arg(format!("{}x{}", input_width, input_height))
         .arg("-framerate")
@@ -198,13 +205,88 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
         }
     }
 
-    if use_vaapi {
+    // One line describing the actual video path (encoder + quality + sizes).
+    // Without this every "blurry recording" report is blind guessing.
+    let mut video_desc = String::from("unknown");
+
+    if use_nvenc {
+        // NVENC recording settings: RC=CQP, profile high.
+        let filter = wayland_video_filter(config.max_resolution);
+        let (fit_w, fit_h) =
+            super::fit_within_max_resolution(input_width, input_height, config.max_resolution);
+        let cqp = config
+            .crf
+            .saturating_sub(super::crf_resolution_reduction(fit_w, fit_h));
+        ffmpeg_cmd
+            .arg("-vf")
+            .arg(filter)
+            .arg("-c:v")
+            .arg("h264_nvenc")
+            .arg("-rc")
+            .arg("constqp")
+            .arg("-qp")
+            .arg(cqp.to_string())
+            .arg("-profile:v")
+            .arg("high")
+            .arg("-preset")
+            .arg("p5")
+            .arg("-tune")
+            .arg("hq")
+            .arg("-multipass")
+            .arg("qres")
+            // Lookahead (8 frames) with adaptive I/B frames; without it motion
+            // re-allocates bits less smoothly.
+            .arg("-rc-lookahead")
+            .arg("8")
+            .arg("-spatial-aq")
+            .arg("1")
+            .arg("-temporal-aq")
+            .arg("1")
+            .arg("-bf")
+            .arg("2")
+            .arg("-g")
+            .arg((fps * 2).to_string())
+            // Match the bt709 conversion in the filter; untagged NVENC output
+            // makes players guess, which can wash the image out.
+            .arg("-color_range")
+            .arg("tv")
+            .arg("-colorspace")
+            .arg("bt709")
+            .arg("-color_primaries")
+            .arg("bt709")
+            .arg("-color_trc")
+            .arg("bt709")
+            // ffmpeg's nvenc wrapper drops transfer/primaries from the VUI.
+            // Players then guess wrong and lift blacks (cloudy playback), so
+            // rewrite the H.264 VUI so all four fields are tagged bt709/tv.
+            .arg("-bsf:v")
+            .arg("h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1");
+        video_desc = format!("h264_nvenc CQP{cqp} preset=p5 tune=hq multipass=qres AQ");
+    } else if use_vaapi {
         let (vaapi_width, vaapi_height) =
             fit_within_max_resolution(input_width, input_height, config.max_resolution);
-        let vaapi_args = super::wf_recorder::ffmpeg_vaapi_args(vaapi_width, vaapi_height);
+        // Tier-derived QP like the other encoders (was a fixed 20/24).
+        let qp = config
+            .crf
+            .saturating_sub(super::crf_resolution_reduction(vaapi_width, vaapi_height));
+        let vaapi_args = super::wf_recorder::ffmpeg_vaapi_args(vaapi_width, vaapi_height, qp);
+        video_desc = format!("h264_vaapi CQP qp{qp} {vaapi_width}x{vaapi_height} profile=high");
         for arg in &vaapi_args {
             ffmpeg_cmd.arg(arg);
         }
+        ffmpeg_cmd.arg("-g").arg((fps * 2).to_string());
+        ffmpeg_cmd
+            .arg("-color_range")
+            .arg("tv")
+            .arg("-colorspace")
+            .arg("bt709")
+            .arg("-color_primaries")
+            .arg("bt709")
+            .arg("-color_trc")
+            .arg("bt709")
+            // Same VUI fix as NVENC: vaapi does not emit transfer/primaries.
+            .arg("-bsf:v")
+            .arg("h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1");
     } else {
         // Convert desktop RGBA (full-range RGB) to standard limited-range
         // YUV420P for broad MP4/player compatibility. Tagging H.264 as full
@@ -226,7 +308,25 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
         // Sane defaults for screen recording.
         if encoder_name == "libx264" {
             ffmpeg_cmd.arg("-preset").arg("veryfast");
-            ffmpeg_cmd.arg("-crf").arg("23");
+            ffmpeg_cmd.arg("-profile:v").arg("high");
+            ffmpeg_cmd.arg("-g").arg((fps * 2).to_string());
+            ffmpeg_cmd.arg("-bf").arg("2");
+            // Resolution-compensated CRF: the tier base minus the output-size
+            // reduction, so capped resolutions stay sharp.
+            let (fit_w, fit_h) =
+                super::fit_within_max_resolution(input_width, input_height, config.max_resolution);
+            let crf = config
+                .crf
+                .saturating_sub(super::crf_resolution_reduction(fit_w, fit_h));
+            ffmpeg_cmd.arg("-crf").arg(crf.to_string());
+            video_desc = format!("libx264 CRF{crf} preset=veryfast profile=high");
+            // x264 sets VUI color metadata from its own params, ignoring
+            // ffmpeg's -color_* output options — pass them explicitly so the
+            // transfer/primaries tags actually land in the file. Strict
+            // players otherwise guess, which can wash the image out.
+            ffmpeg_cmd
+                .arg("-x264-params")
+                .arg("colorprim=bt709:transfer=iec61966-2-1:colormatrix=bt709");
         } else if encoder_name == "libopenh264" {
             // Fedora ffmpeg-free ships OpenH264 (no libx264). CRF is not
             // supported; use a solid CBR-ish bitrate for desktop capture.
@@ -234,11 +334,15 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             ffmpeg_cmd.arg("-maxrate").arg("10M");
             ffmpeg_cmd.arg("-bufsize").arg("16M");
             ffmpeg_cmd.arg("-allow_skip_frames").arg("0");
+            video_desc = String::from("libopenh264 CBR 8M");
         } else if encoder_name == "libvpx-vp9" || encoder_name == "libvpx" {
+            // File-recording quality, not streaming realtime: deadline good,
+            // cpu-used 2, CQ 20 (was realtime/6/CRF 32 = blurry).
             ffmpeg_cmd.arg("-b:v").arg("0");
-            ffmpeg_cmd.arg("-crf").arg("32");
-            ffmpeg_cmd.arg("-deadline").arg("realtime");
-            ffmpeg_cmd.arg("-cpu-used").arg("6");
+            ffmpeg_cmd.arg("-crf").arg("20");
+            ffmpeg_cmd.arg("-deadline").arg("good");
+            ffmpeg_cmd.arg("-cpu-used").arg("2");
+            video_desc = format!("{encoder_name} CQ20 deadline=good cpu-used=2");
         }
         if !encoder_props.is_empty() {
             for prop in encoder_props.split_whitespace() {
@@ -288,6 +392,15 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
         .arg("cfr")
         .arg("-r")
         .arg(fps.to_string());
+
+    if final_path.extension().is_some_and(|e| e == "mp4") {
+        ffmpeg_cmd.arg("-movflags").arg("+faststart");
+    }
+
+    eprintln!(
+        "[recording] video: {video_desc} | pipe {input_width}x{input_height} {pix_fmt} @ {fps}fps -> {}",
+        final_path.display()
+    );
 
     ffmpeg_cmd.arg(&final_path);
     ffmpeg_cmd.stdin(Stdio::piped());
@@ -340,6 +453,8 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
     let mut frames_written = 0u64;
     let frame_interval = std::time::Duration::from_secs_f64(1.0 / fps as f64);
     let mut next_frame_at: Option<std::time::Instant> = None;
+    let mut dropped_frames = 0u64;
+    let mut last_drop_log = std::time::Instant::now();
     let mut first_written_at: Option<std::time::Instant> = None;
     let mut last_pixels: Option<Vec<u8>> = None;
     let mut paused = false;
@@ -411,6 +526,17 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
             continue;
         }
 
+        // Gate acquisition on cadence (one frame per tick): acquiring
+        // and converting a full RGBA frame on every 1ms spin burns hundreds
+        // of MiB/s of copies for frames that are overwritten before use.
+        let now = std::time::Instant::now();
+        if let Some(deadline) = next_frame_at {
+            if now < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                continue;
+            }
+        }
+
         // Keep the latest PipeWire frame, but write to ffmpeg on our own clock.
         // Some compositors only deliver changed frames; without duplicates a
         // 16s mostly-static recording can encode as a 4s video at 30fps.
@@ -474,6 +600,38 @@ pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
         if now < deadline {
             std::thread::sleep(std::time::Duration::from_millis(1));
             continue;
+        }
+
+        // The encoder can't keep up with cadence (big frames, slower machines).
+        // Bursting to catch up only extends the delay behind realtime, so drop
+        // the backlog instead: wall-clock timestamps keep duration and A/V
+        // correct while motion degrades to a lower effective fps, smoothly.
+        if now.saturating_duration_since(deadline) > frame_interval * 2 {
+            dropped_frames += 1;
+            if last_drop_log.elapsed() > std::time::Duration::from_secs(5) {
+                eprintln!(
+                    "[recording] encoder lagging; dropped {dropped_frames} backlog frame(s) to stay realtime"
+                );
+                dropped_frames = 0;
+                last_drop_log = std::time::Instant::now();
+            }
+            next_frame_at = Some(now + frame_interval);
+            continue;
+        }
+
+        // Debug: APEXSHOT_DUMP_FRAME=/tmp/frame keeps the first fed frame for
+        // capture-vs-encode diagnosis (raw bytes + .info with WxH/pixfmt).
+        if frames_written == 0 {
+            if let Ok(path) = std::env::var("APEXSHOT_DUMP_FRAME") {
+                if !path.is_empty() {
+                    let _ = std::fs::write(&path, pixels);
+                    let _ = std::fs::write(
+                        format!("{path}.info"),
+                        format!("{input_width}x{input_height} {pix_fmt} fps={fps} {video_desc}"),
+                    );
+                    eprintln!("[recording] dumped first frame to {path}");
+                }
+            }
         }
 
         // A nonblocking pipe keeps stop/discard responsive even if ffmpeg

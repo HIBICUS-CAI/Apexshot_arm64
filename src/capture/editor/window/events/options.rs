@@ -11,6 +11,7 @@ use gtk4::{
     prelude::*, ApplicationWindow, Box as GtkBox, Button, CheckButton, DrawingArea, Entry, Image,
     Popover, Scale,
 };
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -111,7 +112,7 @@ pub(super) struct ToolOptionsParts<'a> {
     pub color_buttons: &'a [Button],
     pub color_picker_dot: &'a GtkBox,
     pub color_class_names: &'a [&'static str],
-    pub color_popover: &'a Popover,
+    pub set_picker_panel_visibility: &'a Rc<dyn Fn(bool)>,
     pub size_slider: &'a Scale,
 }
 
@@ -125,6 +126,7 @@ pub(super) fn wire_tool_options(
     sync_picker_for_active_tool: &Rc<dyn Fn()>,
     sync_size_control: &Rc<dyn Fn()>,
     rebuild_effects_async: &Rc<dyn Fn()>,
+    set_background_fill: &Rc<RefCell<Option<Rc<dyn Fn(DrawColor)>>>>,
 ) {
     let ToolOptionsParts {
         pen_weight_button,
@@ -147,7 +149,7 @@ pub(super) fn wire_tool_options(
         color_buttons,
         color_picker_dot,
         color_class_names,
-        color_popover,
+        set_picker_panel_visibility,
         size_slider,
     } = parts;
 
@@ -224,11 +226,17 @@ pub(super) fn wire_tool_options(
             button.connect_clicked(move |b| {
                 {
                     let mut st = state_for_weight.lock().unwrap();
-                    st.set_pen_weight(weight);
                     let is_highlighter = st.selected_tool == Tool::Highlighter;
                     let is_pen = st.selected_tool == Tool::Pen;
                     if is_highlighter {
-                        st.set_highlighter_mode(HighlighterMode::Freehand);
+                        // Same path as the floating highlighter bar: leave text-aware
+                        // sizing, apply the preset to the selected stroke, and keep it
+                        // as the brush for the next stroke.
+                        st.set_highlighter_weight(weight);
+                    } else {
+                        // Same path as the floating pen bar: remember the brush weight
+                        // and resize the selected stroke with it.
+                        st.set_pen_weight_and_apply(weight);
                     }
                     drop(st);
 
@@ -501,7 +509,7 @@ pub(super) fn wire_tool_options(
         let number_start_entry = number_start_entry.clone();
         move || {
             let st = state.lock().unwrap();
-            number_start_entry.set_text(&st.numbering_style.format(st.numbering_start));
+            number_start_entry.set_text(&st.active_number_start_display());
         }
     });
 
@@ -539,11 +547,7 @@ pub(super) fn wire_tool_options(
         let number_options_list_sync = number_options_list.clone();
 
         button.connect_clicked(move |_| {
-            {
-                let mut st = state_style.lock().unwrap();
-                st.numbering_style = style;
-                st.next_number = st.numbering_start;
-            }
+            state_style.lock().unwrap().set_numbering_style(style);
             sync_number_option_selection(
                 &number_options_list_sync,
                 style_idx - 1,
@@ -564,8 +568,8 @@ pub(super) fn wire_tool_options(
         move |_| {
             {
                 let mut st = state.lock().unwrap();
-                st.numbering_start = st.numbering_start.saturating_add(1);
-                st.next_number = st.numbering_start;
+                let next = st.active_number_start().saturating_add(1);
+                st.set_active_number_start(next);
             }
             refresh_number_start_display_inc();
         }
@@ -577,9 +581,9 @@ pub(super) fn wire_tool_options(
         move |_| {
             {
                 let mut st = state.lock().unwrap();
-                if st.numbering_start > 1 {
-                    st.numbering_start -= 1;
-                    st.next_number = st.numbering_start;
+                let current = st.active_number_start();
+                if current > 1 {
+                    st.set_active_number_start(current - 1);
                 }
             }
             refresh_number_start_display_dec();
@@ -614,10 +618,7 @@ pub(super) fn wire_tool_options(
         let number_size_list_sync = number_size_list.clone();
 
         button.connect_clicked(move |b| {
-            {
-                let mut st = state_size.lock().unwrap();
-                st.number_size = size;
-            }
+            state_size.lock().unwrap().set_number_size(size);
 
             sync_number_option_selection(
                 &number_size_list_sync,
@@ -645,25 +646,36 @@ pub(super) fn wire_tool_options(
 
     for (index, button) in color_buttons.iter().enumerate() {
         let state_color = state.clone();
+        let set_background_fill_sw = set_background_fill.clone();
         let drawing_area_color = drawing_area.downgrade();
         let color_buttons_group = color_buttons.to_vec();
         let color_picker_dot_group = color_picker_dot.clone();
         let color_class_names_group = color_class_names.to_vec();
-        let color_popover_group = color_popover.clone();
+        let set_picker_visible_group = set_picker_panel_visibility.clone();
         let sync_picker_from_color_group = sync_picker_from_color.clone();
         let sync_picker_for_active_tool_group = sync_picker_for_active_tool.clone();
         button.connect_clicked(move |_| {
+            // Background is owned by the shared Motion runtime; a direct
+            // EditorState write would be reverted by the tick sync.
             let (has_active_text, switched_background) = {
                 let mut st = state_color.lock().unwrap();
                 let has_active_text = st.active_text_input.is_some();
                 let mut switched_background = false;
-                if st.selected_tool == Tool::Crop {
-                    st.set_crop_background_color(DRAW_COLORS[index]);
-                } else if st.selected_tool == Tool::Background {
-                    st.background_style = BackgroundStyle::PlainColor(DRAW_COLORS[index]);
+                let background_fill = if st.selected_tool == Tool::Background {
                     switched_background = true;
+                    Some(DRAW_COLORS[index])
                 } else {
                     st.set_color_index(index);
+                    None
+                };
+                drop(st);
+                if let Some(fill_color) = background_fill {
+                    if let Some(setter) = set_background_fill_sw.borrow().as_ref() {
+                        setter(fill_color);
+                    } else {
+                        state_color.lock().unwrap().background_style =
+                            BackgroundStyle::PlainColor(fill_color);
+                    }
                 }
                 (has_active_text, switched_background)
             };
@@ -679,7 +691,7 @@ pub(super) fn wire_tool_options(
                 &color_class_names_group,
                 index,
             );
-            color_popover_group.popdown();
+            set_picker_visible_group(false);
             if let Some(area) = drawing_area_color.upgrade() {
                 if has_active_text {
                     area.grab_focus();
@@ -712,24 +724,24 @@ mod tests {
     #[test]
     fn tool_options_cover_weight_style_numbering_palette_and_size() {
         let source = include_str!("options.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
-            source.contains("st.set_pen_weight(weight)")
-                && source.contains("st.set_highlighter_mode(HighlighterMode::TextAware)")
-                && source.contains("st.set_highlighter_mode(HighlighterMode::Freehand)")
-                && source.contains("st.set_obfuscate_method(method)")
-                && source.contains("rebuild_effects_async_obfuscate_method()")
-                && source.contains("st.set_arrow_style(style)")
-                && source.contains("st.set_selected_arrow_style(style)")
-                && source.contains("st.set_stroke_size(size)")
-                && source.contains("st.inverse_arrow_direction = next")
-                && source.contains("st.reverse_selected_arrow_action()")
-                && source.contains("st.numbering_style = style")
-                && source.contains("st.numbering_start = st.numbering_start.saturating_add(1)")
-                && source.contains("st.number_size = size")
-                && source.contains("st.set_color_index(index)")
-                && source.contains("st.set_crop_background_color(DRAW_COLORS[index])")
-                && source.contains("BackgroundStyle::PlainColor(DRAW_COLORS[index])")
-                && source.contains("set_active_size_without_rebuild(value)"),
+            production.contains("st.set_pen_weight_and_apply(weight)")
+                && production.contains("st.set_highlighter_mode(HighlighterMode::TextAware)")
+                && production.contains("st.set_obfuscate_method(method)")
+                && production.contains("rebuild_effects_async_obfuscate_method()")
+                && production.contains("st.set_arrow_style(style)")
+                && production.contains("st.set_stroke_size(size)")
+                && production.contains("st.inverse_arrow_direction = next")
+                && production.contains("st.reverse_selected_arrow_action()")
+                && production.contains("set_numbering_style(style)")
+                && production.contains("set_number_size(size)")
+                && production.contains("st.set_color_index(index)")
+                && !production.contains("set_crop_background_color")
+                && production.contains("Some(DRAW_COLORS[index])")
+                && production.contains("BackgroundStyle::PlainColor(fill_color)")
+                && production.contains("set_background_fill_sw")
+                && production.contains("set_active_size_without_rebuild(value)"),
             "tool options must retain weight, style, direction, numbering, palette, size, and obfuscate policies"
         );
     }

@@ -61,36 +61,12 @@
                 background: alpha(black, 0.10);
             }
 
-            button.editor-motion-wallpaper-show-all {
-                min-width: 56px;
-                min-height: 56px;
-                border-radius: 12px;
-                padding: 0;
-                background: alpha(white, 0.16);
-                border: 1px solid alpha(white, 0.10);
-                color: rgba(255, 255, 255, 0.90);
-                font-size: 20px;
-                font-weight: 700;
-            }
-
-            button.editor-motion-wallpaper-show-all:hover {
-                background: alpha(white, 0.24);
-                color: #ffffff;
-            }
-
             .editor-motion-wallpaper-stack-glyph {
                 padding: 0;
                 background: transparent;
                 color: #ffffff;
                 font-size: 26px;
                 font-weight: 700;
-            }
-
-            button.editor-background-alignment-button.active-alignment-option {
-                background: alpha(white, 0.10);
-                border: none;
-                border-radius: 5px;
-                box-shadow: inset 0 0 0 1px #b05c38;
             }
 
             button.editor-background-gradient-button {
@@ -107,28 +83,33 @@
                 box-shadow: inset 0 0 0 2px #b05c38;
             }
 
-            .text-entry-overlay {
-                background: transparent;
-                border: none;
-                outline: none;
-            }
-
             button.editor-background-gradient-button.editor-background-preview-size-regular {
                 min-width: 56px;
                 min-height: 56px;
                 border-radius: 12px;
             }
 
-            button.editor-background-gradient-button.editor-background-preview-size-medium {
-                min-width: 48px;
-                min-height: 48px;
-                border-radius: 11px;
+            /* Frame style tiles are chromeless: the preview itself is the
+             * tile, with no surrounding box. Only the active ring remains. */
+            button.editor-frame-style-tile {
+                padding: 0;
+                background: transparent;
+                background-color: transparent;
+                border: 1px solid transparent;
+                border-radius: 12px;
+                box-shadow: none;
             }
 
-            button.editor-background-gradient-button.editor-background-preview-size-compact {
-                min-width: 44px;
-                min-height: 44px;
-                border-radius: 10px;
+            button.editor-frame-style-tile:hover {
+                border-color: alpha(white, 0.16);
+                box-shadow: none;
+            }
+
+            button.editor-frame-style-tile.active-background-option {
+                border: 1px solid transparent;
+                background: transparent;
+                background-color: transparent;
+                box-shadow: inset 0 0 0 2px #b05c38;
             }
 
             button.editor-background-gradient-button:hover {
@@ -150,175 +131,160 @@
                 box-shadow: 0 0 0 1px #c06540;
             }
 
-            button.editor-background-add-button {
-                padding: 0;
-                background-color: alpha(white, 0.02);
-                border: 1px dashed alpha(white, 0.22);
-                color: rgba(255, 255, 255, 0.78);
-                box-shadow: none;
-                transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-            }
-
-            button.editor-background-add-button.editor-background-preview-size-regular {
-                min-width: 56px;
-                min-height: 56px;
-                border-radius: 12px;
-            }
-
-            button.editor-background-add-button.editor-background-preview-size-medium {
-                min-width: 48px;
-                min-height: 48px;
-                border-radius: 11px;
-            }
-
-            button.editor-background-add-button.editor-background-preview-size-compact {
-                min-width: 44px;
-                min-height: 44px;
-                border-radius: 10px;
-            }
-
-            button.editor-background-add-button:hover {
-                background-color: alpha(white, 0.06);
-                border-color: alpha(white, 0.32);
-                color: #ffffff;
-            }
-
-            button.editor-background-add-button:active {
-                background-color: alpha(white, 0.04);
-                border-color: alpha(white, 0.38);
-            }
-
-            .editor-background-add-label {
-                font-weight: 500;
-            }
-
-            .editor-background-add-label.editor-background-preview-size-regular {
-                font-size: 22px;
-            }
-
-            .editor-background-add-label.editor-background-preview-size-medium {
-                font-size: 19px;
-            }
-
-            .editor-background-add-label.editor-background-preview-size-compact {
-                font-size: 17px;
-            }
-
-            button.editor-background-blurred-button {
-                background-image: linear-gradient(135deg, alpha(white, 0.16) 0%, alpha(white, 0.06) 100%);
-                border: 1px solid alpha(white, 0.10);
-            }
-
-            button.editor-background-blurred-button.active-background-option {
-                border: 1px solid transparent;
-                background-color: alpha(white, 0.10);
-                box-shadow: inset 0 0 0 2px #b05c38;
-            }
-
-            /* Blur intensity visual indicators */
-            button.editor-background-blurred-button.blur-light {
-                background: linear-gradient(135deg, rgba(220, 220, 220, 0.5) 0%, rgba(200, 200, 200, 0.3) 100%);
-            }
-
-            button.editor-background-blurred-button.blur-medium {
-                background: linear-gradient(135deg, rgba(160, 160, 160, 0.6) 0%, rgba(130, 130, 130, 0.5) 100%);
-            }
-
-            button.editor-background-blurred-button.blur-heavy {
-                background: linear-gradient(135deg, rgba(90, 90, 90, 0.7) 0%, rgba(60, 60, 60, 0.6) 100%);
-            }
-
-            .editor-blur-intensity-label {
-                font-size: 14px;
-                font-weight: bold;
-                color: rgba(255, 255, 255, 0.9);
-                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-            }
-
-            button.editor-background-plain-color-button {
-                min-width: 18px;
-                min-height: 18px;
-                padding: 0;
-                border-radius: 999px;
-                border: 1px solid alpha(white, 0.16);
-                box-shadow: none;
-                transition: box-shadow 120ms ease, border-color 120ms ease;
-            }
-
-            button.editor-background-plain-color-button:hover {
-                border-color: alpha(white, 0.32);
-            }
-
-            button.editor-background-plain-color-button:active {
-                border-color: alpha(white, 0.42);
-            }
-
-            button.editor-background-plain-color-button.active-background-option {
-                border-color: transparent;
-                box-shadow: 0 0 0 2px #b05c38;
-            }
-
-            button.editor-background-plain-color-button.editor-background-plain-color-1 { background: #ffffff; }
-            button.editor-background-plain-color-button.editor-background-plain-color-2 { background: #e5e7eb; }
-            button.editor-background-plain-color-button.editor-background-plain-color-3 { background: #9ca3af; }
-            button.editor-background-plain-color-button.editor-background-plain-color-4 { background: #111827; }
-            button.editor-background-plain-color-button.editor-background-plain-color-5 { background: #ef4444; }
-            button.editor-background-plain-color-button.editor-background-plain-color-6 { background: #f97316; }
-            button.editor-background-plain-color-button.editor-background-plain-color-7 { background: #facc15; }
-            button.editor-background-plain-color-button.editor-background-plain-color-8 { background: #22c55e; }
-            button.editor-background-plain-color-button.editor-background-plain-color-9 { background: #14b8a6; }
-            button.editor-background-plain-color-button.editor-background-plain-color-10 { background: #06b6d4; }
-            button.editor-background-plain-color-button.editor-background-plain-color-11 { background: #3b82f6; }
-            button.editor-background-plain-color-button.editor-background-plain-color-12 { background: #6366f1; }
-            button.editor-background-plain-color-button.editor-background-plain-color-13 { background: #8b5cf6; }
-            button.editor-background-plain-color-button.editor-background-plain-color-14 { background: #a855f7; }
-            button.editor-background-plain-color-button.editor-background-plain-color-15 { background: #ec4899; }
-            button.editor-background-plain-color-button.editor-background-plain-color-16 { background: #f43f5e; }
-            button.editor-background-plain-color-button.editor-background-plain-color-17 { background: #92400e; }
-            button.editor-background-plain-color-button.editor-background-plain-color-18 { background: #0f766e; }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-1 {
-                background-image: linear-gradient(135deg, #4f46e5 0%, #9333ea 55%, #ec4899 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-2 {
-                background-image: linear-gradient(135deg, #0f172a 0%, #1d4ed8 48%, #38bdf8 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-3 {
-                background-image: linear-gradient(135deg, #f97316 0%, #fb7185 52%, #a855f7 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-4 {
-                background-image: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #99f6e4 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-5 {
-                background-image: linear-gradient(135deg, #111827 0%, #374151 45%, #f59e0b 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-6 {
-                background-image: linear-gradient(135deg, #7c2d12 0%, #ea580c 50%, #fdba74 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-7 {
-                background-image: linear-gradient(135deg, #052e16 0%, #16a34a 50%, #bbf7d0 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-8 {
-                background-image: linear-gradient(135deg, #172554 0%, #2563eb 55%, #c4b5fd 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-9 {
-                background-image: linear-gradient(135deg, #4a044e 0%, #c026d3 48%, #f9a8d4 100%);
-            }
-
-            button.editor-background-gradient-button.editor-background-gradient-preview-10 {
-                background-image: linear-gradient(135deg, #3f3f46 0%, #71717a 40%, #e4e4e7 100%);
-            }
-
             .editor-canvas {
                 border-radius: 0;
                 background-color: transparent;
                 border: none;
+            }
+
+            /* Frame picker: collapsed W/H plus expandable ratio grid.
+             * Borderless filled controls mirror the hex-entry/slider style:
+             * filled troughs, no outer borders, subtle inset focus ring.
+             * Selection paints on the diagram draw itself, never on the
+             * button chrome. Grids stay 3-column homogeneous with capped
+             * tiles so expanding never widens the fixed sidebar. */
+            .editor-frame-dim-row {
+                min-width: 0;
+            }
+
+            .editor-frame-dim-pill {
+                min-width: 0;
+                min-height: 32px;
+                padding: 0 10px;
+                border-radius: 8px;
+                background: alpha(white, 0.08);
+                border: none;
+                box-shadow: none;
+                outline: none;
+            }
+
+            .editor-frame-dim-pill:focus-within {
+                background: alpha(white, 0.11);
+                box-shadow: inset 0 0 0 1px #c06540;
+            }
+
+            .editor-frame-dim-unit {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.52);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            entry.editor-frame-dim-entry,
+            entry.editor-frame-dim-entry:focus,
+            entry.editor-frame-dim-entry:hover,
+            entry.editor-frame-dim-entry:active,
+            entry.editor-frame-dim-entry:focus-visible {
+                min-width: 0;
+                min-height: 0;
+                padding: 0;
+                background: transparent;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 12px;
+            }
+
+            entry.editor-frame-dim-entry:focus {
+                color: #ffffff;
+            }
+
+            entry.editor-frame-dim-entry selection {
+                background: alpha(#c06540, 0.55);
+                color: #ffffff;
+            }
+
+            button.editor-frame-expand-button,
+            button.editor-frame-expand-button:focus,
+            button.editor-frame-expand-button:focus-visible {
+                min-width: 28px;
+                min-height: 28px;
+                padding: 0;
+                border-radius: 8px;
+                background: alpha(white, 0.08);
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 14px;
+            }
+
+            button.editor-frame-expand-button:hover {
+                background: alpha(white, 0.11);
+                color: #ffffff;
+                border: none;
+                box-shadow: none;
+                outline: none;
+            }
+
+            .editor-frame-expanded {
+                min-width: 0;
+            }
+
+            .editor-frame-grid {
+                min-width: 0;
+            }
+
+            button.editor-frame-tile,
+            button.editor-frame-tile:focus,
+            button.editor-frame-tile:focus-visible,
+            button.editor-frame-tile:hover,
+            button.editor-frame-tile:active,
+            button.editor-frame-tile.active-background-option,
+            button.editor-frame-tile.active-background-option:hover {
+                min-width: 0;
+                min-height: 0;
+                padding: 4px 2px;
+                background: transparent;
+                background-image: none;
+                border: none;
+                border-radius: 10px;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+            }
+
+            button.editor-frame-tile:hover {
+                background: alpha(white, 0.05);
+            }
+
+            .editor-frame-tile-cell {
+                min-width: 0;
+                outline: none;
+            }
+
+            .editor-frame-tile-shape {
+                min-width: 0;
+                outline: none;
+            }
+
+            .editor-frame-tile-label {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.78);
+                font-size: 10px;
+                font-weight: 600;
+            }
+
+            .editor-frame-tile-sublabel {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.48);
+                font-size: 10px;
+            }
+
+            .editor-frame-subheader {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.86);
+                font-size: 13px;
+                font-weight: 700;
+            }
+
+            .editor-frame-separator {
+                min-width: 0;
+                background: alpha(white, 0.10);
+                min-height: 1px;
             }

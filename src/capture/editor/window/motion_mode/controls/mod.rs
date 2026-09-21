@@ -41,22 +41,14 @@ pub(in crate::capture::editor::window) fn wire_motion_controls(
         let playhead_overlay = parts.timeline.playhead_overlay.clone();
         let playhead_clock = parts.timeline.playhead_clock.clone();
         let play_btn = parts.timeline.play_btn.clone();
-        let handle = parts.timeline.playhead_handle.clone();
-        let dragging = parts.timeline.playhead_dragging.clone();
-        let hovered = parts.timeline.playhead_hovered.clone();
         let pause_text = t("Pause");
         let play_text = t("Play");
         let last_clock = Rc::new(RefCell::new(String::new()));
         let last_playing = Rc::new(Cell::new(None::<bool>));
         Rc::new(move || {
-            let (playhead, playing, is_dragging, is_hovered) = {
+            let (playhead, playing) = {
                 let runtime = session.borrow();
-                (
-                    runtime.motion.playhead,
-                    runtime.playing,
-                    dragging.get(),
-                    hovered.get(),
-                )
+                (runtime.motion.playhead, runtime.playing)
             };
             // Clock + ruler tick at 1Hz; the playhead line itself moves every
             // event via the overlay draw below.
@@ -80,15 +72,11 @@ pub(in crate::capture::editor::window) fn wire_motion_controls(
                     }));
                 }
             }
-            if !is_dragging {
-                let board_w = playhead_overlay.allocated_width().max(1) as f64;
-                super::super::motion_timeline::sync_playhead_handle(
-                    &handle,
-                    &session,
-                    board_w,
-                    is_dragging || is_hovered,
-                );
-            }
+            // Draw-only path: the playhead is a static overlay painted from
+            // model state, so nothing here moves a widget or runs layout.
+            // The preview paint itself is cheap (it blits the latest
+            // background-thread composite), so it can follow every event
+            // without holding up the playhead line.
             preview.queue_draw();
             playhead_overlay.queue_draw();
         })
@@ -185,6 +173,8 @@ pub(in crate::capture::editor::window) fn wire_motion_controls(
         redraw_playhead,
         redraw_motion_track,
         redraw_text_track,
+        request_transition_preview.clone(),
+        request_text_transition_preview.clone(),
     );
 
     text::install(
@@ -307,6 +297,6 @@ mod tests {
         let (start, end) = motion_transition_preview_range(&motion, 0.0);
         assert!((start - motion.segments[0].start).abs() < f64::EPSILON);
         assert!((end - motion.segments[0].end).abs() < f64::EPSILON);
-        assert!(end > motion.transform_timing.transition_duration);
+        assert!(end > motion.segments[0].timing.transition_duration);
     }
 }

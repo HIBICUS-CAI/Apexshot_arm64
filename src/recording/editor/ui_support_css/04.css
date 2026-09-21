@@ -449,7 +449,7 @@
             }
 
             .editor-theme-light .recording-editor-video {
-                background: #111111;
+                background: transparent;
             }
 
             .editor-theme-light .recording-editor-empty-workspace {

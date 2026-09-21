@@ -2,9 +2,10 @@ use gtk4::{Box as GtkBox, Button, DrawingArea, Entry, Label, Overlay, ToggleButt
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::recording::editor::model::{MotionTextAnimation, MotionTextScope};
+use crate::recording::editor::model::{MotionTextAnimation, MotionTextScope, MotionTimingKind};
 use crate::recording::editor::window::tool_sidebar::FillSlider;
 
+use super::anchor_pad::MotionAnchorPad;
 use super::position_pad::MotionPositionPad;
 
 pub(in crate::capture::editor::window) struct MotionModeParts {
@@ -43,7 +44,6 @@ pub(in crate::capture::editor::window) struct MotionTimelineParts {
     pub motion_track: DrawingArea,
     pub text_track: DrawingArea,
     pub playhead_overlay: DrawingArea,
-    pub playhead_handle: DrawingArea,
     pub hover_playhead: DrawingArea,
     pub playhead_dragging: Rc<Cell<bool>>,
     pub playhead_hovered: Rc<Cell<bool>>,
@@ -62,8 +62,6 @@ pub(in crate::capture::editor::window) struct MotionSharedControlParts {
     pub blur_value: Label,
     pub blur_shutter_slider: FillSlider,
     pub blur_shutter_value: Label,
-    pub blur_trail_slider: FillSlider,
-    pub blur_trail_value: Label,
     pub clip_hint: Label,
     pub delete_btn: Button,
     pub inspector_syncing: Rc<Cell<bool>>,
@@ -87,10 +85,7 @@ pub(in crate::capture::editor::window) struct MotionTransformControlParts {
     pub scale_slider: FillSlider,
     pub intensity_slider: FillSlider,
     pub intensity_value: Label,
-    pub zoom_anchor_x_slider: FillSlider,
-    pub zoom_anchor_x_value: Label,
-    pub zoom_anchor_y_slider: FillSlider,
-    pub zoom_anchor_y_value: Label,
+    pub anchor_pad: MotionAnchorPad,
     pub yaw_slider: FillSlider,
     pub yaw_value: Label,
     pub pitch_slider: FillSlider,
@@ -106,6 +101,12 @@ pub(in crate::capture::editor::window) struct MotionTransformControlParts {
     pub pos_y_value: Label,
     pub ease_slider: FillSlider,
     pub ease_value: Label,
+    pub timing_kind_buttons: Vec<(MotionTimingKind, ToggleButton)>,
+    pub custom_timing_btn: ToggleButton,
+    pub custom_easing_rows: GtkBox,
+    pub custom_spring_rows: GtkBox,
+    pub spring_bounce_slider: FillSlider,
+    pub spring_bounce_value: Label,
     pub easing_x1_slider: FillSlider,
     pub easing_x1_value: Label,
     pub easing_y1_slider: FillSlider,
@@ -114,5 +115,4 @@ pub(in crate::capture::editor::window) struct MotionTransformControlParts {
     pub easing_x2_value: Label,
     pub easing_y2_slider: FillSlider,
     pub easing_y2_value: Label,
-    pub reset_timing_btn: Button,
 }

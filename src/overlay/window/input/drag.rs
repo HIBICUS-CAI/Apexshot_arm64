@@ -6,8 +6,9 @@ use super::super::super::geometry::{
     active_aspect_ratio, apply_aspect_to_selection, clamp_point_to_bounds, current_selection_rect,
     detect_resize_handle, is_inside_selection, update_selection_for_drag,
 };
-use super::super::super::hit_testing::{toolbar_hit_at, toolbar_item_at};
-use super::super::super::icons::TOOLBAR_AREA_INDEX;
+use super::super::super::hit_testing::{
+    point_in_top_bar, toolbar_hit_at, toolbar_item_at, top_bar_crop_menu_contains, top_bar_visible,
+};
 use super::super::super::layout::ToolbarHit;
 use super::super::super::recording::hit_testing::recording_tile_at;
 use super::super::super::state::{DragMode, OverlayMode, SelectorState};
@@ -65,12 +66,25 @@ pub(in crate::overlay::window) fn wire_selection_drag(
                 st.initial_rect = None;
                 st.is_dragging = true;
                 st.completed = false;
-                st.active_tool_index = TOOLBAR_AREA_INDEX;
                 drop(st);
 
                 if let Some(drawing_area) = drawing_area_weak.upgrade() {
                     drawing_area.queue_draw();
                 }
+                return;
+            }
+
+            // The screen-fixed top bar owns presses starting inside it or its
+            // open dropdown — they never start a drag. Drags started elsewhere
+            // may still pass underneath the bar.
+            if top_bar_visible(&st)
+                && (point_in_top_bar(&st, screen_width as f64, start_x, start_y)
+                    || top_bar_crop_menu_contains(&st, screen_width as f64, start_x, start_y))
+            {
+                st.is_dragging = false;
+                st.drag_mode = None;
+                st.initial_rect = None;
+                drop(st);
                 return;
             }
 
@@ -142,7 +156,7 @@ pub(in crate::overlay::window) fn wire_selection_drag(
             // Any open menu owns this pointer press. The click handler may
             // close the menu or update a slider, but area move/resize/new
             // selection must not also start underneath it.
-            if st.capture_crop_menu_open
+            if st.top_bar_crop_menu_open
                 || st.recording.crop_menu_open
                 || st.recording.settings_menu_open
                 || st.recording.mic_volume_popup_open
@@ -202,9 +216,6 @@ pub(in crate::overlay::window) fn wire_selection_drag(
                     st.is_dragging = true;
                 }
                 st.fullscreen_mode = false;
-                if !st.recording.panel_open {
-                    st.active_tool_index = TOOLBAR_AREA_INDEX;
-                }
             } else {
                 st.is_dragging = true;
             }
@@ -223,7 +234,7 @@ pub(in crate::overlay::window) fn wire_selection_drag(
         drawing_area_weak,
         move |_gesture, x, y| {
             let mut st = state_drag.lock().unwrap();
-            if st.recording.gif_slider_dragging.is_some() || st.recording.volume_slider_dragging {
+            if st.recording.volume_slider_dragging {
                 drop(st);
                 return;
             }
@@ -258,19 +269,14 @@ pub(in crate::overlay::window) fn wire_selection_drag(
         background_drag,
         move |_gesture, x, y| {
             let mut st = state_drag.lock().unwrap();
-            if st.recording.gif_slider_dragging.is_some() || st.recording.volume_slider_dragging {
-                let final_volume = if st.recording.volume_slider_dragging {
-                    if st.recording.mic_volume_popup_open {
-                        Some((true, st.recording.mic_volume))
-                    } else if st.recording.speaker_volume_popup_open {
-                        Some((false, st.recording.speaker_volume))
-                    } else {
-                        None
-                    }
+            if st.recording.volume_slider_dragging {
+                let final_volume = if st.recording.mic_volume_popup_open {
+                    Some((true, st.recording.mic_volume))
+                } else if st.recording.speaker_volume_popup_open {
+                    Some((false, st.recording.speaker_volume))
                 } else {
                     None
                 };
-                st.recording.gif_slider_dragging = None;
                 st.recording.volume_slider_dragging = false;
                 st.recording.last_volume_system_write = None;
                 drop(st);
@@ -365,8 +371,7 @@ mod tests {
             "crosshair drag end must deliver selection after releasing the lock"
         );
         assert!(
-            production.contains("volume_slider_dragging")
-                && production.contains("gif_slider_dragging"),
+            production.contains("volume_slider_dragging"),
             "drag must pass through active slider drags"
         );
     }

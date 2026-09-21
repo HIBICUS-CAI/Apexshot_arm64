@@ -259,9 +259,9 @@ void CaptureOverlay::setCaptureMenuAreaMode(bool ocr, int timerSeconds)
 
 void CaptureOverlay::focusAndRaiseOverlay()
 {
-    // Flameshot-style placement: pin to full screen geometry (including panel
-    // regions), then request fullscreen so the freeze can cover shell chrome
-    // instead of sitting under it and painting a second status bar.
+    // Pin to full screen geometry (including panel regions), then request
+    // fullscreen so the freeze can cover shell chrome instead of sitting
+    // under it and painting a second status bar.
     QRect targetGeom;
     if (m_targetScreen) {
         targetGeom = m_targetScreen->geometry();
@@ -277,7 +277,7 @@ void CaptureOverlay::focusAndRaiseOverlay()
         setGeometry(targetGeom);
     } else {
         // Single virtual-desktop overlay: still prefer true fullscreen when we
-        // have an opaque freeze so we match Flameshot's cover-everything UX.
+        // have an opaque freeze so it covers everything.
         if (!m_background.isNull()) {
             create();
             QRect desktop;
@@ -412,23 +412,23 @@ CaptureOverlay::CaptureOverlay(const QPixmap& background, QWidget* parent,
     , m_rememberSelection(false)
     , m_dimScreen(true)
     , m_showCountdown(true)
-    , m_gifFpsDragging(false)
-    , m_gifQualityDragging(false)
     , m_videoFormat(0) // MP4
     , m_videoMaxRes(0) // Original
     , m_videoFps(2) // 50 (index 2: 24, 30, 50, 60)
     , m_recordMono(false)
     , m_openEditor(true)
-    , m_gifFps(50)
-    , m_gifQuality(0.75)
-    , m_optimizeGif(true)
-    , m_gifSizeIdx(0) // 800 x auto (default)
     , m_recMic(initialMic)
     , m_recSpeaker(initialSpeaker)
 
     , m_micLevel(0.0)
     , m_speakerLevel(0.0)
     , m_micTimer(new QTimer(this))
+    , m_hoveredTopBarAspect(-1)
+    , m_hoveredTopBarButton(TopBarButton::None)
+    , m_topBarAspectRatio(0.0)
+    , m_topBarSnapToRatios(true)
+    , m_topBarCropMenuOpen(false)
+    , m_hoveredTopBarCropItem(-1)
     , m_hoveredTool(-1)
     , m_hoveredSizeCard(false)
     , m_hoveredCaptureCropCard(false)

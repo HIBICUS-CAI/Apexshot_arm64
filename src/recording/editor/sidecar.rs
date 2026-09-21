@@ -295,8 +295,14 @@ impl PointerSidecar {
         let tilt = if motion.tilt <= 0.01 || travel < 28.0 {
             0.0
         } else {
-            let angle = vy.atan2(vx) + std::f64::consts::FRAC_PI_2;
-            (angle * motion.tilt * 0.28 * (travel / 220.0).clamp(0.0, 1.0)).clamp(-0.42, 0.42)
+            // Signed deviation of the direction of travel from straight up, so a
+            // leftward move leans the sprite the opposite way from a rightward
+            // one. Wrapping with `atan2(vy, vx) + PI/2` instead sent leftward
+            // travel past 3*PI/2, where the clamp pinned it to the right lean.
+            let lean = vx
+                .atan2(-vy)
+                .clamp(-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2);
+            (lean * motion.tilt * 0.28 * (travel / 220.0).clamp(0.0, 1.0)).clamp(-0.42, 0.42)
         };
         let alpha = if motion.hide_idle {
             self.idle_alpha(t, motion.idle_ms)
@@ -966,6 +972,46 @@ mod tests {
             .unwrap();
         assert!(!frame.trail.is_empty());
         assert!(frame.tilt.abs() > 0.02);
+    }
+
+    #[test]
+    fn presented_at_tilt_mirrors_leftward_and_rightward_travel() {
+        let moving = |from: f64, to: f64| {
+            let mut sidecar =
+                PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+            sidecar.pointer.push(PointerSample {
+                t: 0.0,
+                x: from,
+                y: 100.0,
+                kind: CursorKind::Default,
+            });
+            sidecar.pointer.push(PointerSample {
+                t: 0.2,
+                x: to,
+                y: 100.0,
+                kind: CursorKind::Default,
+            });
+            sidecar
+        };
+        let motion = CursorMotion {
+            smooth: 0.0,
+            tilt: 1.0,
+            ..CursorMotion::default()
+        };
+        let right = moving(100.0, 340.0).presented_at(0.2, motion).unwrap().tilt;
+        let left = moving(340.0, 100.0).presented_at(0.2, motion).unwrap().tilt;
+        assert!(
+            right > 0.02,
+            "rightward travel should lean clockwise: {right}"
+        );
+        assert!(
+            left < -0.02,
+            "leftward travel should lean the other way: {left}"
+        );
+        assert!(
+            (right + left).abs() < 1e-9,
+            "left and right leans should mirror: {right} vs {left}"
+        );
     }
 
     #[test]

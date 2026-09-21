@@ -38,9 +38,9 @@ support.
 
 | Workflow | ApexShot support |
 |---|---|
-| ShareX-style capture | Full screen, area, window, and crosshair screenshots |
+| Screen capture | Full screen, area, window, and crosshair screenshots |
 | Annotation and editing | Arrows, shapes, text, blur, pixelate, crop, highlighter, and color picker |
-| Screen recording | Area or full-screen recording with MP4/GIF output, audio monitoring, countdown, and controls (**not supported on Fedora**) |
+| Screen recording | Full-screen recording with MP4/WebM output, audio monitoring, countdown, and controls (**not supported on Fedora**) |
 | Video editing | Trim, convert dimensions, adjust quality, and change audio mode for MP4 recordings |
 | Text and code extraction | OCR plus automatic QR code detection from captured regions |
 | Linux desktop integration | GNOME Wayland support, portal-backed capture paths, tray, daemon mode, and global hotkeys |
@@ -103,7 +103,7 @@ support is improving over time.
 - **QR Code Detection** — Automatically detect and copy QR codes from screenshots
 
 ### Screen Recording
-- **Flexible Recording** — Area or full-screen recording with MP4/GIF output
+- **Flexible Recording** — Full-screen recording with MP4/WebM output
   ![ApexShot recording area overlay](media/video-recording.png)
 - **Audio Monitoring** — Real-time mic and speaker level monitoring via PipeWire
 - **Recording Controls** — Pause, resume, and stop recording with on-screen controls
@@ -130,7 +130,7 @@ support is improving over time.
 | **Native Overlay** | C++17 / Qt5 (region selection, drawing) |
 | **GUI** | GTK4 + gtk4-layer-shell |
 | **Display Servers** | X11 (x11rb + MIT-SHM), GNOME Wayland screenshots via C++ overlay + XDG Screenshot portal, wlroots/Hyprland/Sway screenshots via `wlr-screencopy` + Rust GTK layer-shell, recording via `wf-recorder` on wlroots or ScreenCast portal + PipeWire elsewhere |
-| **Recording** | Native PipeWire + ffmpeg (VP9, H.264, GIF) on Wayland; GStreamer ximagesrc fallback on X11 |
+| **Recording** | Native PipeWire + ffmpeg (VP9, H.264) on Wayland; GStreamer ximagesrc fallback on X11 |
 | **Audio** | PipeWire/PulseAudio (mic/speaker capture via ffmpeg) |
 | **OCR** | Tesseract + ocrs/rten |
 | **System Tray** | ksni (KDE System Tray Integration) |
@@ -155,7 +155,7 @@ curl -fsSL https://apexshot.org/install | sh
 The generic installer above will select this automatically. Direct command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/ubuntu-install.sh | bash
+curl -fsSL https://apexshot.org/install/ubuntu | bash
 ```
 
 ### Quick Install — Arch Linux
@@ -163,15 +163,15 @@ curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/ubu
 The generic installer above will select this automatically. Direct command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash
+curl -fsSL https://apexshot.org/install/arch | bash
 ```
 
 By default this installs the pre-built GitHub Release package. To choose a
 different Arch install method explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash -s -- --aur
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash -s -- --source
+curl -fsSL https://apexshot.org/install/arch | bash -s -- --aur
+curl -fsSL https://apexshot.org/install/arch | bash -s -- --source
 ```
 
 Or install manually from the AUR PKGBUILD:
@@ -204,7 +204,7 @@ The generic installer selects the Fedora path automatically when `dnf` is
 available. Direct command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/fedora-install.sh | bash
+curl -fsSL https://apexshot.org/install/fedora | bash
 ```
 
 The direct Fedora installer downloads the latest published GitHub Release RPM and
@@ -253,22 +253,23 @@ curl -fsSL https://apexshot.org/update | sh
 Direct Ubuntu / Debian command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/ubuntu-update.sh | bash
+curl -fsSL https://apexshot.org/update/ubuntu | bash
 ```
 
 Direct Arch Linux command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-update.sh | bash
+curl -fsSL https://apexshot.org/update/arch | bash
 ```
 
 Direct Fedora command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/fedora-update.sh | bash
+curl -fsSL https://apexshot.org/update/fedora | bash
 ```
 
-Direct openSUSE command:
+Direct openSUSE command (the openSUSE scripts are not proxied through
+`apexshot.org` yet, so this one still comes from GitHub):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/opensuse-update.sh | bash
@@ -460,13 +461,10 @@ apexshot daemon
 # Screenshots
 apexshot capture screen          # Full screen capture
 apexshot capture area            # Area selection capture
-apexshot capture window          # Window capture
 apexshot capture crosshair       # Crosshair / precise point capture
 
 # Recording
 apexshot record screen           # Full screen recording
-apexshot record area --gif       # Area recording as GIF
-apexshot record ui               # Open recording configuration UI
 
 # OCR (requires image path)
 apexshot ocr <image-path>        # Extract text from image
@@ -504,10 +502,10 @@ the daemon, the GTK4 overlay, and native PipeWire handle everything.
 
 **How it works:**
 1. The daemon runs in the background with a system tray icon and global hotkeys.
-2. Triggering a recording action (`apexshot record area`, tray click, or hotkey)
-   opens the Rust GTK4 overlay for area selection and recording configuration.
+2. Triggering a recording action (`apexshot record screen`, tray click, or hotkey)
+   opens the Rust GTK4 overlay for recording configuration.
 3. The overlay provides the same controls as the GNOME path: mic/speaker toggles,
-   format picker (MP4/GIF), countdown, and video quality settings.
+   format picker (MP4/WebM), countdown, and video quality settings.
 4. Once confirmed, recording begins. On wlroots compositors (Hyprland/Sway),
    `wf-recorder` is preferred when installed for native `wlr-screencopy`
    capture. On other Wayland compositors, native PipeWire capture
@@ -519,7 +517,7 @@ the daemon, the GTK4 overlay, and native PipeWire handle everything.
    or global hotkeys.
 
 **What you get without GNOME:**
-- Full screen and area recording (MP4, WebM, GIF)
+- Full-screen recording (MP4, WebM)
 - Mic and speaker audio capture with level monitoring
 - Countdown timer before recording starts
 - Pause/resume/restart/stop during recording
@@ -533,8 +531,6 @@ apexshot daemon
 
 # Record directly from CLI without the daemon
 apexshot record screen              # Full screen recording
-apexshot record area --gif          # Area recording as GIF
-apexshot record area                # Area recording as MP4 (default)
 
 # Control an active recording (requires daemon)
 apexshot record stop                # Stop and save

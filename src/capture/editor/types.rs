@@ -24,6 +24,26 @@ pub enum BackgroundStyle {
     PlainColor(DrawColor),
 }
 
+/// Minimum surround kept between the screenshot and the background edges
+/// whenever a fill is active, in padding slider units (reference px against
+/// a 400px long edge, exactly like padding itself). A canvas shaped by Frame
+/// would otherwise let the image touch the background on the short axis at
+/// padding 0, so layouts floor tiny paddings to this breathing room. Stored
+/// padding values are untouched — sliders still read/write the real value;
+/// only rendering uses the floored one.
+pub const BACKGROUND_MIN_GAP: f64 = 8.0;
+
+/// Rendering padding for a canvas: the user's value, floored to
+/// [`BACKGROUND_MIN_GAP`] while a background fill is active so the image
+/// never sits edge-to-edge against the fill on any Frame.
+pub fn effective_background_padding(padding: f64, has_fill: bool) -> f64 {
+    if has_fill {
+        padding.max(BACKGROUND_MIN_GAP)
+    } else {
+        padding
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BackgroundAlignment {
     TopLeft,
@@ -88,10 +108,327 @@ impl ArrowStyle {
     }
 }
 
+/// Frame style preset for the screenshot card border.
+///
+/// Replaces the old freeform border color/thickness sliders: each preset maps
+/// to an outside border (drawn *around* the image, not inside it) plus
+/// optional outer accent strokes for stacked looks. The corner radius stays
+/// user-adjustable via the Border Radius slider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum FrameStyle {
+    #[default]
+    Default,
+    GlassLight,
+    GlassDark,
+    Liquid,
+    InsetLight,
+    InsetDark,
+    Outline,
+    Border,
+    Retro,
+    Card,
+    Stack,
+    Stack2,
+}
+
+/// One outer accent stroke: thickness in slider px, color, and gap in slider
+/// px between the previous stroke's outer edge and this stroke's inner edge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameOuterStroke {
+    pub thickness: f64,
+    pub color: DrawColor,
+    pub gap: f64,
+}
+
+/// One backing sheet behind the card (Stack looks): same size as the card,
+/// offset in fixed canvas px (not scaled with image size so the peek stays
+/// modest on fullscreen shots), slight rotation in degrees, flat fill.
+/// Sheets with `center_pivot` fan diagonally (Stack: top-right and
+/// bottom-left peeks); the rest pivot at the hidden bottom-right corner and
+/// fan top-left (Stack2).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameBacking {
+    pub offset_x: f64,
+    pub offset_y: f64,
+    pub rotation_deg: f64,
+    pub center_pivot: bool,
+    pub color: DrawColor,
+}
+
+/// Resolved border rendering for a [`FrameStyle`]: main outside border, up to
+/// two outer accent strokes, and up to two backing sheets drawn
+/// *behind* the card (Stack looks). Farthest backing sheet first.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameSpec {
+    pub border_thickness: f64,
+    pub border_color: DrawColor,
+    /// True for Inset styles: the main border paints *inside* the image edge
+    /// instead of outside it, so it needs no extra canvas.
+    pub inset_border: bool,
+    /// True for the glass family (Liquid, Glass Light, Glass Dark): the edge
+    /// paints as glass instead of a flat stroke, so renderers hand the preset
+    /// to `render::LiquidFrame` (Cairo previews) or `render::glass_layer`
+    /// (static exports). The whitish/darkish read comes from `border_color`.
+    pub liquid: bool,
+    /// True for the frosted-glass siblings (Glass Light, Glass Dark): a
+    /// heavily-blurred milky/smoked band like Shots.so frames, as opposed
+    /// to Liquid's clear refractive edge. Only meaningful with `liquid`.
+    pub frost: bool,
+    pub outer1: Option<FrameOuterStroke>,
+    pub outer2: Option<FrameOuterStroke>,
+    pub backing1: Option<FrameBacking>,
+    pub backing2: Option<FrameBacking>,
+}
+
+impl FrameStyle {
+    pub const ALL: [Self; 12] = [
+        Self::Default,
+        Self::GlassLight,
+        Self::GlassDark,
+        Self::Liquid,
+        Self::InsetLight,
+        Self::InsetDark,
+        Self::Outline,
+        Self::Border,
+        Self::Retro,
+        Self::Card,
+        Self::Stack,
+        Self::Stack2,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "Default",
+            Self::GlassLight => "Glass Light",
+            Self::GlassDark => "Glass Dark",
+            Self::Liquid => "Liquid",
+            Self::InsetLight => "Inset Light",
+            Self::InsetDark => "Inset Dark",
+            Self::Outline => "Outline",
+            Self::Border => "Border",
+            Self::Retro => "Retro",
+            Self::Card => "Card",
+            Self::Stack => "Stack",
+            Self::Stack2 => "Stack 2",
+        }
+    }
+
+    pub fn spec(self) -> FrameSpec {
+        match self {
+            Self::Default => FrameSpec {
+                border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
+                outer1: None,
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            // Glass Light: frosted glass like Shots.so frames in a 3px edge —
+            // a heavily-blurred band carrying a whitish veil, edged by a
+            // crisp specular rim. The backdrop smears through the frost
+            // instead of bending like Liquid's refractive edge.
+            Self::GlassLight => FrameSpec {
+                border_thickness: 2.0,
+                inset_border: false,
+                liquid: true,
+                frost: true,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.55),
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(1.0, 1.0, 1.0, 0.95),
+                    gap: 0.0,
+                }),
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            // Glass Dark: the same 3px frost, smoked — the band deepens the
+            // backdrop while the white speculars and rim keep the glass read.
+            Self::GlassDark => FrameSpec {
+                border_thickness: 2.0,
+                inset_border: false,
+                liquid: true,
+                frost: true,
+                border_color: DrawColor::new(0.05, 0.05, 0.07, 0.60),
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(1.0, 1.0, 1.0, 0.9),
+                    gap: 0.0,
+                }),
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            // Liquid Glass (Apple/NSGlassEffectView language): a 3px glass
+            // edge — a 2px clear refracted body capped by a 1px specular
+            // rim. The body stays translucent so the backdrop reads through
+            // it; the light lives in the top-weighted specular and the crisp
+            // rim, visible all around the perimeter. Renderers expand this
+            // into gradients (Cairo previews) or the refraction shader
+            // (`render::glass_layer` in static exports) rather than a flat
+            // stroke.
+            Self::Liquid => FrameSpec {
+                border_thickness: 2.0,
+                inset_border: false,
+                liquid: true,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.20),
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(1.0, 1.0, 1.0, 0.9),
+                    gap: 0.0,
+                }),
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            Self::InsetLight => FrameSpec {
+                border_thickness: 3.0,
+                inset_border: true,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.85),
+                outer1: None,
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            Self::InsetDark => FrameSpec {
+                border_thickness: 3.0,
+                inset_border: true,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(0.0, 0.0, 0.0, 0.85),
+                outer1: None,
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            Self::Outline => FrameSpec {
+                border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
+                outer1: Some(FrameOuterStroke {
+                    thickness: 1.0,
+                    color: DrawColor::new(0.7, 0.7, 0.7, 1.0),
+                    gap: 2.0,
+                }),
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            Self::Border => FrameSpec {
+                border_thickness: 3.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(0.0, 0.0, 0.0, 1.0),
+                outer1: None,
+                outer2: None,
+                backing1: None,
+                backing2: None,
+            },
+            Self::Retro => FrameSpec {
+                border_thickness: 3.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(0.0, 0.0, 0.0, 1.0),
+                outer1: None,
+                outer2: None,
+                backing1: Some(FrameBacking {
+                    offset_x: 28.0,
+                    offset_y: 28.0,
+                    rotation_deg: 0.0,
+                    center_pivot: false,
+                    color: DrawColor::new(0.0, 0.0, 0.0, 1.0),
+                }),
+                backing2: None,
+            },
+            Self::Card => FrameSpec {
+                border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
+                outer1: None,
+                outer2: None,
+                backing1: Some(FrameBacking {
+                    offset_x: -6.0,
+                    offset_y: -16.0,
+                    rotation_deg: -1.5,
+                    center_pivot: false,
+                    color: DrawColor::new(0.78, 0.78, 0.80, 1.0),
+                }),
+                backing2: None,
+            },
+            Self::Stack => FrameSpec {
+                border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
+                outer1: None,
+                outer2: None,
+                backing1: Some(FrameBacking {
+                    offset_x: 0.0,
+                    offset_y: 0.0,
+                    rotation_deg: -2.0,
+                    center_pivot: true,
+                    color: DrawColor::new(0.75, 0.75, 0.77, 1.0),
+                }),
+                backing2: None,
+            },
+            Self::Stack2 => FrameSpec {
+                border_thickness: 0.0,
+                inset_border: false,
+                liquid: false,
+                frost: false,
+                border_color: DrawColor::new(1.0, 1.0, 1.0, 0.0),
+                outer1: None,
+                outer2: None,
+                backing1: Some(FrameBacking {
+                    offset_x: -10.0,
+                    offset_y: -28.0,
+                    rotation_deg: -3.0,
+                    center_pivot: false,
+                    color: DrawColor::new(0.56, 0.56, 0.58, 1.0),
+                }),
+                backing2: Some(FrameBacking {
+                    offset_x: -5.0,
+                    offset_y: -14.0,
+                    rotation_deg: -1.5,
+                    center_pivot: false,
+                    color: DrawColor::new(0.78, 0.78, 0.80, 1.0),
+                }),
+            },
+        }
+    }
+}
+
+/// Whether a frame style grows the canvas beyond the bare screenshot even
+/// with no background: an outside border, accent strokes, or backing sheets.
+/// `Default` with zero manual thickness needs nothing, so legacy no-background
+/// exports stay pixel-identical.
+pub fn frame_needs_canvas(style: FrameStyle, border_thickness: f64) -> bool {
+    let spec = style.spec();
+    if border_thickness > 0.01 && !spec.inset_border {
+        return true;
+    }
+    spec.backing1.is_some()
+        || spec.backing2.is_some()
+        || spec.outer1.is_some()
+        || spec.outer2.is_some()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tool {
     Select,
-    Crop,
     Background,
     Pen,
     Highlighter,
@@ -166,10 +503,16 @@ pub enum CropAspectRatio {
     TwentyOneNine,
     ThreeTwo,
     NineSixteen,
+    FiveFour,
+    FourFive,
+    ThreeFour,
+    TwoThree,
+    TenTwentyOne,
+    ThreeOne,
 }
 
 impl CropAspectRatio {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 14] = [
         Self::Freeform,
         Self::Original,
         Self::Square,
@@ -178,6 +521,12 @@ impl CropAspectRatio {
         Self::TwentyOneNine,
         Self::ThreeTwo,
         Self::NineSixteen,
+        Self::FiveFour,
+        Self::FourFive,
+        Self::ThreeFour,
+        Self::TwoThree,
+        Self::TenTwentyOne,
+        Self::ThreeOne,
     ];
 
     pub fn label(self) -> &'static str {
@@ -190,6 +539,12 @@ impl CropAspectRatio {
             Self::TwentyOneNine => "21:9",
             Self::ThreeTwo => "3:2",
             Self::NineSixteen => "9:16",
+            Self::FiveFour => "5:4",
+            Self::FourFive => "4:5",
+            Self::ThreeFour => "3:4",
+            Self::TwoThree => "2:3",
+            Self::TenTwentyOne => "10:21",
+            Self::ThreeOne => "3:1",
         }
     }
 
@@ -209,6 +564,12 @@ impl CropAspectRatio {
             Self::TwentyOneNine => Some(21.0 / 9.0),
             Self::ThreeTwo => Some(3.0 / 2.0),
             Self::NineSixteen => Some(9.0 / 16.0),
+            Self::FiveFour => Some(5.0 / 4.0),
+            Self::FourFive => Some(4.0 / 5.0),
+            Self::ThreeFour => Some(3.0 / 4.0),
+            Self::TwoThree => Some(2.0 / 3.0),
+            Self::TenTwentyOne => Some(10.0 / 21.0),
+            Self::ThreeOne => Some(3.0),
         }
     }
 }
@@ -288,6 +649,26 @@ pub struct ViewTransform {
     pub offset_y: f64,
     pub image_width: f64,
     pub image_height: f64,
+    /// True when a background (wallpaper/padding) canvas is active. The
+    /// annotation space stays in screenshot pixels, but negative / overflow
+    /// coordinates address the background padding around the screenshot.
+    pub has_background: bool,
+    /// Canvas origin in view coordinates (top-left of the full background).
+    pub canvas_offset_x: f64,
+    /// Canvas origin in view coordinates.
+    pub canvas_offset_y: f64,
+    /// View scale for the full canvas (maps canvas px -> view px).
+    pub canvas_scale: f64,
+    /// Full virtual canvas size in canvas pixels.
+    pub canvas_width: f64,
+    /// Full virtual canvas size in canvas pixels.
+    pub canvas_height: f64,
+    /// Screenshot origin inside the canvas, in canvas pixels.
+    pub image_rect_x: f64,
+    /// Screenshot origin inside the canvas, in canvas pixels.
+    pub image_rect_y: f64,
+    /// Screenshot scale inside the canvas (insert). Maps screenshot px -> canvas px.
+    pub canvas_draw_scale: f64,
 }
 
 impl ViewTransform {
@@ -298,6 +679,15 @@ impl ViewTransform {
             offset_y: 0.0,
             image_width,
             image_height,
+            has_background: false,
+            canvas_offset_x: 0.0,
+            canvas_offset_y: 0.0,
+            canvas_scale: 1.0,
+            canvas_width: image_width,
+            canvas_height: image_height,
+            image_rect_x: 0.0,
+            image_rect_y: 0.0,
+            canvas_draw_scale: 1.0,
         }
     }
 
@@ -313,17 +703,52 @@ impl ViewTransform {
 
         let draw_width = image_width * scale;
         let draw_height = image_height * scale;
+        let offset_x = (view_width - draw_width) / 2.0;
+        let offset_y = (view_height - draw_height) / 2.0;
 
         Self {
             scale,
-            offset_x: (view_width - draw_width) / 2.0,
-            offset_y: (view_height - draw_height) / 2.0,
+            offset_x,
+            offset_y,
             image_width,
             image_height,
+            has_background: false,
+            canvas_offset_x: offset_x,
+            canvas_offset_y: offset_y,
+            canvas_scale: scale,
+            canvas_width: image_width,
+            canvas_height: image_height,
+            image_rect_x: 0.0,
+            image_rect_y: 0.0,
+            canvas_draw_scale: 1.0,
         }
     }
 
+    /// Bounds of the full editable canvas expressed in screenshot pixels.
+    /// Without a background this is exactly the screenshot; with a background
+    /// the padding maps to negative / overflow coordinates so tools can place
+    /// annotations on the wallpaper instead of clipping them away.
+    pub fn canvas_bounds_in_image_coords(&self) -> (f64, f64, f64, f64) {
+        if !self.has_background {
+            return (0.0, 0.0, self.image_width, self.image_height);
+        }
+        let draw_scale = self.canvas_draw_scale.max(0.0001);
+        let min_x = -self.image_rect_x / draw_scale;
+        let min_y = -self.image_rect_y / draw_scale;
+        let max_x = (self.canvas_width - self.image_rect_x) / draw_scale;
+        let max_y = (self.canvas_height - self.image_rect_y) / draw_scale;
+        (min_x, min_y, max_x, max_y)
+    }
+
     pub fn contains_view(&self, point: Point) -> bool {
+        if self.has_background {
+            let draw_width = self.canvas_width * self.canvas_scale;
+            let draw_height = self.canvas_height * self.canvas_scale;
+            return point.x >= self.canvas_offset_x
+                && point.y >= self.canvas_offset_y
+                && point.x <= self.canvas_offset_x + draw_width
+                && point.y <= self.canvas_offset_y + draw_height;
+        }
         let draw_width = self.image_width * self.scale;
         let draw_height = self.image_height * self.scale;
         point.x >= self.offset_x
@@ -342,6 +767,22 @@ impl ViewTransform {
 
     pub fn view_to_image_clamped(&self, point: Point) -> Point {
         let mut image_point = self.view_to_image(point);
+        if self.has_background {
+            let (min_x, min_y, max_x, max_y) = self.canvas_bounds_in_image_coords();
+            let (lo_x, hi_x) = if min_x <= max_x {
+                (min_x, max_x)
+            } else {
+                (max_x, min_x)
+            };
+            let (lo_y, hi_y) = if min_y <= max_y {
+                (min_y, max_y)
+            } else {
+                (max_y, min_y)
+            };
+            image_point.x = image_point.x.clamp(lo_x, hi_x);
+            image_point.y = image_point.y.clamp(lo_y, hi_y);
+            return image_point;
+        }
         image_point.x = image_point.x.clamp(0.0, self.image_width);
         image_point.y = image_point.y.clamp(0.0, self.image_height);
         image_point
@@ -635,19 +1076,18 @@ pub fn tool_uses_stroke_size(tool: Tool) -> bool {
 /// Keep this match arm order identical to that vector or active-tool highlighting breaks.
 pub fn tool_button_index(tool: Tool) -> usize {
     match tool {
-        Tool::Crop => 0,
-        Tool::Background => 1,
-        Tool::Select => 2,
-        Tool::Pen => 3,
-        Tool::Box => 4,
-        Tool::Circle => 5,
-        Tool::Arrow => 6,
-        Tool::Line => 7,
-        Tool::Text => 8,
-        Tool::Obfuscate => 9,
-        Tool::Number => 10,
-        Tool::Highlighter => 11,
-        Tool::Focus => 12,
+        Tool::Background => 0,
+        Tool::Select => 1,
+        Tool::Pen => 2,
+        Tool::Box => 3,
+        Tool::Circle => 4,
+        Tool::Arrow => 5,
+        Tool::Line => 6,
+        Tool::Text => 7,
+        Tool::Obfuscate => 8,
+        Tool::Number => 9,
+        Tool::Highlighter => 10,
+        Tool::Focus => 11,
     }
 }
 
@@ -663,7 +1103,6 @@ pub fn tool_shortcut_target(key: char) -> Option<(Tool, usize)> {
         '7' | 'h' => Tool::Highlighter,
         'c' | 'b' => Tool::Obfuscate,
         'n' => Tool::Number,
-        'x' => Tool::Crop,
         'f' => Tool::Focus,
         _ => return None,
     };
