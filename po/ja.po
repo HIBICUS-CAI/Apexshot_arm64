@@ -1286,6 +1286,9 @@ msgstr "エクスポートに失敗しました"
 msgid "Export is still running."
 msgstr "エクスポートは現在も実行中です。"
 
+msgid "Export quality"
+msgstr "エクスポート品質"
+
 msgid "Export the edited MP4"
 msgstr "編集したMP4をエクスポートする"
 

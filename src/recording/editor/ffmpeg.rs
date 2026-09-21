@@ -1,6 +1,4 @@
-use super::model::{
-    even_crop_rect, quality_to_crf, AudioMode, VideoBackground, VideoEditState, VideoMetadata,
-};
+use super::model::{even_crop_rect, AudioMode, VideoBackground, VideoEditState, VideoMetadata};
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -438,7 +436,7 @@ fn build_single_convert_args(
         "-preset".into(),
         "veryfast".into(),
         "-crf".into(),
-        quality_to_crf(state.quality).to_string(),
+        state.quality.crf().to_string(),
     ]);
     args.extend(convert_audio_args(state, speed, start));
     args.push(output_path.to_string_lossy().into_owned());
@@ -585,7 +583,7 @@ fn build_composite_convert_args(
         "-preset".into(),
         "veryfast".into(),
         "-crf".into(),
-        quality_to_crf(state.quality).to_string(),
+        state.quality.crf().to_string(),
     ]);
     args.extend(convert_audio_args(state, speed, start));
     args.push(output_path.to_string_lossy().into_owned());
@@ -890,7 +888,6 @@ mod tests {
     #[test]
     fn convert_command_uses_h264_crf_and_audio_args() {
         let mut state = state();
-        state.quality = 70;
         state.audio_mode = AudioMode::Muted;
         state.dimension_preset = crate::recording::editor::model::DimensionPreset::P720;
         let args = build_single_convert_args(
@@ -901,13 +898,31 @@ mod tests {
         );
 
         assert!(args.windows(2).any(|pair| pair == ["-c:v", "libx264"]));
-        assert!(args.windows(2).any(|pair| pair == ["-crf", "22"]));
+        assert!(args.windows(2).any(|pair| pair == ["-crf", "20"]));
         assert!(args.windows(2).any(|pair| {
             pair[0] == "-vf"
                 && pair[1]
                     .starts_with("scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720")
         }));
         assert!(args.iter().any(|arg| arg == "-an"));
+        assert_eq!(args.last().map(String::as_str), Some("/tmp/output.mp4"));
+    }
+
+    #[test]
+    fn convert_command_uses_ultra_crf_when_quality_is_ultra() {
+        let mut state = state();
+        state.quality = crate::recording::editor::model::ExportQuality::Ultra;
+        // Ultra must force the re-encode path, otherwise the picked CRF would
+        // never reach ffmpeg on an otherwise untouched export.
+        assert!(state.needs_reencode());
+        let args = build_single_convert_args(
+            &state,
+            state.trim_start_seconds,
+            state.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+
+        assert!(args.windows(2).any(|pair| pair == ["-crf", "16"]));
         assert_eq!(args.last().map(String::as_str), Some("/tmp/output.mp4"));
     }
 
@@ -1088,7 +1103,7 @@ mod tests {
         assert!(!s.needs_reencode());
         // We only assert the decision helper here; full export needs a real file.
         let mut reencode = s.clone();
-        reencode.quality = 30;
+        reencode.quality = crate::recording::editor::model::ExportQuality::Ultra;
         assert!(reencode.needs_reencode());
     }
 

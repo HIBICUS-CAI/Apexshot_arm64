@@ -388,11 +388,6 @@ pub fn even_dimension(value: u32) -> u32 {
     }
 }
 
-pub fn quality_to_crf(quality: u8) -> u8 {
-    let quality = quality.min(100) as f64;
-    (32.0 - ((quality / 100.0) * 14.0).round()).clamp(18.0, 32.0) as u8
-}
-
 pub fn estimate_size_bytes(state: &VideoEditState, trim_only: bool) -> u64 {
     let duration = state.metadata.duration_seconds.max(0.0);
     if duration <= f64::EPSILON {
@@ -407,7 +402,14 @@ pub fn estimate_size_bytes(state: &VideoEditState, trim_only: bool) -> u64 {
         return base_size.round().max(0.0) as u64;
     }
 
-    let quality_factor = 0.55 + (state.quality.min(100) as f64 / 100.0) * 0.9;
+    // Export tiers bracket the source: Balanced shrinks the file, Ultra grows
+    // it. High keeps the previous default factor, so the default estimate is
+    // unchanged by the tier switch.
+    let quality_factor = match state.quality {
+        ExportQuality::Balanced => 1.0,
+        ExportQuality::High => 1.18,
+        ExportQuality::Ultra => 1.5,
+    };
     let (target_width, target_height) = state.output_dimensions();
     let original_pixels = (state.metadata.width as f64 * state.metadata.height as f64).max(1.0);
     let target_pixels = target_width as f64 * target_height as f64;

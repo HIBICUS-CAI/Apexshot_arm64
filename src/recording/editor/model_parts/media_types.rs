@@ -68,7 +68,10 @@ pub struct VideoEditState {
     pub dimension_preset: DimensionPreset,
     pub custom_width: u32,
     pub custom_height: u32,
-    pub quality: u8,
+    /// Export quality tier. `High` is the default; only a non-default tier
+    /// forces a re-encode (see `needs_reencode`), so an untouched export stays
+    /// a bit-identical stream copy.
+    pub quality: ExportQuality,
     pub audio_mode: AudioMode,
     /// Sorted list of cut points (seconds) within the trim range.
     pub cuts: Vec<f64>,

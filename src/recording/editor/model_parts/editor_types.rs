@@ -75,6 +75,35 @@ pub enum AudioMode {
     Muted,
 }
 
+/// Export quality tier. The same three tiers as Settings → recording quality,
+/// so an export encodes at least as sharply as the recording tier it came
+/// from. `High` is the default, and `needs_reencode` compares against it
+/// instead of a magic number, so an untouched export stays a stream copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExportQuality {
+    Balanced,
+    #[default]
+    High,
+    Ultra,
+}
+
+impl ExportQuality {
+    /// Settings tier index shared with `rec_video_quality` (`0 / 1 / 2`), so
+    /// project files and both quality pickers agree on what each value means.
+    pub fn tier(self) -> u8 {
+        match self {
+            Self::Balanced => 0,
+            Self::High => 1,
+            Self::Ultra => 2,
+        }
+    }
+
+    /// x264 CRF, mapped through the same tiers as recording (23 / 20 / 16).
+    pub fn crf(self) -> u32 {
+        crate::recording::crf_for_quality(self.tier())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum VideoBackground {
     None,

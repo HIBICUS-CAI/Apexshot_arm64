@@ -1284,6 +1284,9 @@ msgstr "导出失败"
 msgid "Export is still running."
 msgstr "导出仍在进行中。"
 
+msgid "Export quality"
+msgstr "导出质量"
+
 msgid "Export the edited MP4"
 msgstr "导出编辑后的 MP4 文件"
 
