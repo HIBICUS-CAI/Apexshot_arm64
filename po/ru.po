@@ -1312,6 +1312,9 @@ msgstr "Экспорт не удался"
 msgid "Export is still running."
 msgstr "Экспорт всё ещё продолжается."
 
+msgid "Export quality"
+msgstr "Качество экспорта"
+
 msgid "Export the edited MP4"
 msgstr "Экспорт отредактированного файла MP4"
 

@@ -214,10 +214,11 @@ fn move_cut_keeps_cut_between_neighbors() {
 }
 
 #[test]
-fn quality_maps_to_expected_crf_values() {
-    assert_eq!(quality_to_crf(100), 18);
-    assert_eq!(quality_to_crf(70), 22);
-    assert_eq!(quality_to_crf(0), 32);
+fn export_quality_tiers_match_recording_crf() {
+    assert_eq!(ExportQuality::Balanced.crf(), 23);
+    assert_eq!(ExportQuality::High.crf(), 20);
+    assert_eq!(ExportQuality::Ultra.crf(), 16);
+    assert_eq!(ExportQuality::default(), ExportQuality::High);
 }
 
 #[test]
@@ -533,10 +534,12 @@ fn needs_reencode_when_dimensions_or_quality_change() {
     let mut state = VideoEditState::new(metadata());
     assert!(!state.needs_reencode());
 
-    state.quality = 40;
+    state.quality = ExportQuality::Balanced;
+    assert!(state.needs_reencode());
+    state.quality = ExportQuality::Ultra;
     assert!(state.needs_reencode());
 
-    state.quality = 70;
+    state.quality = ExportQuality::High;
     state.dimension_preset = DimensionPreset::P720;
     assert!(state.needs_reencode());
 }
@@ -1241,6 +1244,28 @@ fn estimate_size_scales_with_dimensions() {
     smaller.dimension_preset = DimensionPreset::P720;
 
     assert!(smaller.estimated_size_bytes(false) < original.estimated_size_bytes(false));
+}
+
+#[test]
+fn estimate_size_follows_quality_tier() {
+    let estimate = |tier| {
+        let mut state = VideoEditState::new(metadata());
+        state.quality = tier;
+        state.estimated_size_bytes(false)
+    };
+
+    assert!(estimate(ExportQuality::Balanced) < estimate(ExportQuality::High));
+    assert!(estimate(ExportQuality::High) < estimate(ExportQuality::Ultra));
+
+    // The untouched-export estimate ignores quality: a stream copy is the
+    // source bytes whatever tier is picked.
+    let trim_estimate = |tier| {
+        let mut state = VideoEditState::new(metadata());
+        state.quality = tier;
+        state.estimated_size_bytes(true)
+    };
+    assert_eq!(trim_estimate(ExportQuality::Balanced), trim_estimate(ExportQuality::High));
+    assert_eq!(trim_estimate(ExportQuality::High), trim_estimate(ExportQuality::Ultra));
 }
 
 #[test]

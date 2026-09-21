@@ -1,7 +1,8 @@
 use super::{crop_dialog, footer};
 use crate::recording::editor::model::{
     even_crop_rect, format_timecode, source_to_zoomed_point, view_to_source, zoom_camera_transform,
-    CursorSettings, VideoBackground, VideoEditState, ZoomClip, ZoomMode, FRAME_ASPECT_RATIOS,
+    CursorSettings, ExportQuality, VideoBackground, VideoEditState, ZoomClip, ZoomMode,
+    FRAME_ASPECT_RATIOS,
 };
 use crate::recording::editor::sidecar::CursorMotion;
 use gtk4::{
@@ -456,10 +457,87 @@ pub(super) fn build_stage_tools(
         crop.connect_clicked(move |_| crop_dialog::show_crop(&window, &state, on_change.clone()));
     }
 
+    let quality_initial = quality_label_for(state.lock().unwrap().quality);
+    let quality = Button::new();
+    quality.set_has_frame(false);
+    quality.add_css_class("recording-editor-stage-chip");
+    quality.set_tooltip_text(Some(&t("Export quality")));
+    let quality_label = Label::new(Some(&quality_initial));
+    quality_label.add_css_class("recording-editor-stage-chip-label");
+    quality.set_child(Some(&quality_label));
+
+    let quality_popover = Popover::new();
+    quality_popover.set_has_arrow(false);
+    quality_popover.set_position(gtk4::PositionType::Top);
+    quality_popover.add_css_class("recording-editor-stage-aspect");
+    let quality_list = GtkBox::new(Orientation::Vertical, 2);
+    quality_list.add_css_class("recording-editor-stage-aspect-list");
+    quality_popover.set_child(Some(&quality_list));
+    quality_popover.set_parent(&quality);
+    quality.connect_clicked({
+        let quality_popover = quality_popover.clone();
+        move |_| quality_popover.popup()
+    });
+
+    for tier in [
+        ExportQuality::Balanced,
+        ExportQuality::High,
+        ExportQuality::Ultra,
+    ] {
+        append_stage_quality_item(
+            &quality_list,
+            &quality_popover,
+            &quality_label,
+            tier,
+            state.clone(),
+            on_change.clone(),
+        );
+    }
+
+    let quality_rule = Separator::new(Orientation::Vertical);
+    quality_rule.add_css_class("recording-editor-stage-rule");
+    quality_rule.set_valign(Align::Center);
+
     bar.append(&aspect);
     bar.append(&rule);
     bar.append(&crop);
+    bar.append(&quality_rule);
+    bar.append(&quality);
     bar
+}
+
+fn quality_label_for(tier: ExportQuality) -> String {
+    match tier {
+        ExportQuality::Balanced => t("Balanced"),
+        ExportQuality::High => t("High"),
+        ExportQuality::Ultra => t("Ultra"),
+    }
+}
+
+fn append_stage_quality_item(
+    list: &GtkBox,
+    popover: &Popover,
+    quality_label: &Label,
+    tier: ExportQuality,
+    state: Arc<Mutex<VideoEditState>>,
+    on_change: Rc<dyn Fn()>,
+) {
+    let item = Button::new();
+    item.set_has_frame(false);
+    item.add_css_class("recording-editor-stage-aspect-item");
+    item.set_hexpand(true);
+    item.set_child(Some(&Label::new(Some(&quality_label_for(tier)))));
+    item.connect_clicked({
+        let quality_label = quality_label.clone();
+        let popover = popover.clone();
+        move |_| {
+            state.lock().unwrap().quality = tier;
+            quality_label.set_text(&quality_label_for(tier));
+            popover.popdown();
+            on_change();
+        }
+    });
+    list.append(&item);
 }
 
 fn append_stage_aspect_item(

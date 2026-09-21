@@ -4,9 +4,10 @@ Working tracker for the recording/export audit done on 2026-09-21, and the
 handoff note for whoever continues it. Read this file, then take the first item
 whose status is not done.
 
-Status: item 1 done and verified on a live recording; PR #55 is green and waiting
-on the maintainer's merge. Items 2 to 5 not started. Next action: once PR #55 is
-merged, sync `main` and start item 2 on a fresh branch.
+Status: item 1 merged to `main` in PR #55. Item 2 is implemented on
+`feat/editor-export-quality` and waits on the maintainer's hand check. Items 3
+to 5 not started. Next action: check item 2, then start item 3 on a fresh
+branch.
 
 ## How to continue (read this first)
 
@@ -132,7 +133,8 @@ are fixed on `fix/overlay-resolution-options` and confirmed on a live recording.
 
 ## Item 2: export quality control in the video editor
 
-**Not started. Confirmed gap.** An edited export always re-encodes with
+**Implemented on `feat/editor-export-quality`, awaiting maintainer check.**
+An edited export always re-encodes with
 `libx264 -preset veryfast -crf quality_to_crf(quality)`
 (`src/recording/editor/ffmpeg.rs:435-441`, `helpers.rs:391`), and the default
 quality of 70 maps to CRF 22 (`model_parts/state_impl.rs:14`), softer than a
@@ -153,6 +155,50 @@ currently drift.
 - Keep the untouched-export path a stream copy; that behaviour is tested
   (`trim_only_command_uses_stream_copy`,
   `export_edited_uses_trim_when_no_reencode_needed`).
+
+**What landed**
+
+- `ExportQuality` enum (`Balanced` / `High` / `Ultra`, default `High`) in
+  `model_parts/editor_types.rs`, with `tier()` (the `0 / 1 / 2` index shared
+  with `rec_video_quality`) and `crf()` through `crate::recording::crf_for_quality`.
+- `VideoEditState.quality` is the enum now; `needs_reencode()` compares against
+  `ExportQuality::default()` instead of `70`; both ffmpeg convert paths encode
+  `-crf state.quality.crf()`; the old 0-100 `quality_to_crf` helper is gone.
+- Project files keep `quality: u8` and store the tier index; pre-tier files
+  (always `70`) load as `High` (`quality_from_file` in `project.rs`).
+- The estimate maps tiers to size factors (`Balanced 1.0 / High 1.18 /
+  Ultra 1.5`) in `estimate_size_bytes`; `High` keeps the old default factor so
+  the default estimate is unchanged.
+- The stage-tools footer row (next to the Frame and Crop chips) has an
+  "Export quality" chip with a Balanced / High / Ultra popover
+  (`build_stage_tools` in `window/preview.rs`, reusing the stage chip and
+  aspect-popover classes, no new CSS). One new UI string, `Export quality`
+  (tooltip), added to all eight catalogs by hand.
+- Item 3 owns the README and overlay-caption wording; this branch does not
+  touch them.
+
+**Verification**
+
+- New tests: tiers map to CRF 23 / 20 / 16 (`export_quality_tiers_match_recording_crf`),
+  Ultra forces re-encode and writes `-crf 16` (`convert_command_uses_ultra_crf_when_quality_is_ultra`),
+  estimates order Balanced < High < Ultra and trim-only estimates ignore the tier
+  (`estimate_size_follows_quality_tier`). Default convert is now `-crf 20`.
+- Gates: fmt clean, clippy with no new warnings, full suite 1090 lib tests plus
+  the integration targets with 0 failures, i18n catalogs ok. C++ overlay
+  untouched.
+- Hand check for the maintainer: open a recording in the video editor, pick
+  Ultra in the new footer chip, export twice (once untouched for the
+  bit-identical stream copy, once with a trim) and compare sizes against a
+  Balanced export of the same timeline; the CRF itself stays a code-level fact.
+
+**Separate finding (not fixed here)**
+
+- The export-size estimate label (`recording-editor-estimate`, updated by
+  `footer::update_estimate` on every edit) is parented nowhere: `f3f9195`
+  removed `content.append(&estimate_label)` with the old inspector panels and
+  no `append(&estimate_label)` exists today, so its text is computed but never
+  shown. The item 2 acceptance covers the estimate at the code level only;
+  making it visible is a UI placement decision for its own item.
 
 **Acceptance**: an untouched export stays bit-identical; selecting Ultra makes
 the export args use CRF 16 and the estimate reflect the change.

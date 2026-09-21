@@ -95,8 +95,10 @@ impl VideoEditState {
         if self.segment_muted.iter().any(|muted| *muted) {
             return true;
         }
-        // Quality only takes effect when re-encoding.
-        self.quality != 70
+        // Quality only takes effect when re-encoding. The default tier keeps
+        // the untouched-export stream copy; any other tier forces a re-encode
+        // so the picked CRF actually applies.
+        self.quality != ExportQuality::default()
     }
 
     pub fn needs_composite(&self) -> bool {

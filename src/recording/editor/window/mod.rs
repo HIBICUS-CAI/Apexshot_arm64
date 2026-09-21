@@ -20,7 +20,7 @@ pub(crate) mod tool_sidebar;
 mod toolbar;
 
 use super::ffmpeg;
-use super::model::{AudioMode, EditorTool, VideoEditState, VideoMetadata};
+use super::model::{AudioMode, EditorTool, ExportQuality, VideoEditState, VideoMetadata};
 use super::project::{self, persist_video_session};
 use super::ui_support::install_recording_editor_css;
 use gtk4::{
@@ -1022,7 +1022,7 @@ fn load_video_async(
                 stop_loading();
 
                 let mut loaded = VideoEditState::new(metadata);
-                loaded.quality = 70;
+                loaded.quality = ExportQuality::default();
                 loaded.audio_mode = AudioMode::Unchanged;
                 project::restore_into(&mut loaded);
                 let state = Arc::new(Mutex::new(loaded));

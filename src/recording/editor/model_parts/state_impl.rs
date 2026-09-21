@@ -11,7 +11,7 @@ impl VideoEditState {
             custom_height: metadata.height,
             metadata,
             dimension_preset: DimensionPreset::Original,
-            quality: 70,
+            quality: ExportQuality::default(),
             audio_mode: AudioMode::Unchanged,
             cuts: Vec::new(),
             segments_kept: vec![true],
