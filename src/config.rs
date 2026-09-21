@@ -325,6 +325,12 @@ impl AppConfig {
             self.after_capture_show_quick_access = DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS;
         }
         self.rec_video_format = self.rec_video_format.min(1);
+        // A config edited by hand must not point outside the option table that
+        // Settings offers. Unknown values fall back to Original, the same way
+        // `max_resolution_for_setting` reads them.
+        if self.rec_video_max_res as usize >= crate::recording::VIDEO_MAX_RES_OPTION_COUNT {
+            self.rec_video_max_res = 0;
+        }
         self.quick_access_overlay_size =
             sanitize_quick_access_overlay_size(self.quick_access_overlay_size);
         self.quick_access_position = match self.quick_access_position.as_str() {
@@ -785,6 +791,25 @@ mod tests {
             high.preview_auto_close_seconds,
             MAX_PREVIEW_AUTO_CLOSE_SECONDS
         );
+    }
+
+    #[test]
+    fn sanitize_keeps_recording_resolution_inside_the_option_table() {
+        for index in 0..crate::recording::VIDEO_MAX_RES_OPTION_COUNT as u8 {
+            let kept = AppConfig {
+                rec_video_max_res: index,
+                ..AppConfig::default()
+            }
+            .sanitized();
+            assert_eq!(kept.rec_video_max_res, index);
+        }
+
+        let out_of_range = AppConfig {
+            rec_video_max_res: 99,
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(out_of_range.rec_video_max_res, 0);
     }
 
     #[test]

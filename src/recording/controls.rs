@@ -289,7 +289,11 @@ pub fn prepare_overlay_recording_request(
     app_config.rec_mic = request.mic;
     app_config.rec_speaker = request.speaker;
     app_config.rec_video_format = 0;
-    app_config.rec_video_max_res = request.video_max_res;
+    // `rec_video_max_res` is deliberately not taken from the request: neither
+    // quick access offers a resolution picker any more, so the request only
+    // echoes the value the overlay was launched with. Writing that echo back
+    // reverted a resolution the user saved in Settings after the overlay
+    // started.
     app_config.rec_video_fps = request.video_fps;
     app_config.rec_video_mono = request.record_mono;
     app_config.rec_noise_suppression = request.noise_suppression;
@@ -305,12 +309,10 @@ pub fn prepare_overlay_recording_request(
     let output_path = super::recording_output_path(&app_config, "mp4", now);
     super::ensure_recording_parent_dir(&output_path);
 
-    let max_resolution = match request.video_max_res {
-        0 => None,
-        1 => Some((1920, 1080)),
-        2 => Some((1280, 720)),
-        _ => None,
-    };
+    // Settings is the only place the cap can be chosen, so it comes from the
+    // config the caller loaded, never from the request (which only echoes the
+    // overlay's launch-time value).
+    let max_resolution = super::max_resolution_for_setting(app_config.rec_video_max_res);
 
     let fps = match request.video_fps {
         0 => 24,
@@ -1023,6 +1025,9 @@ mod tests {
         let prepared = prepare_overlay_recording_request(
             AppConfig {
                 video_export_location: "/tmp/apexshot-recordings".into(),
+                // Settings holds 480p; the request below still asks for 720p
+                // because the overlay echoes whatever it was launched with.
+                rec_video_max_res: 5,
                 ..AppConfig::default()
             },
             &request,
@@ -1044,7 +1049,8 @@ mod tests {
         assert_eq!(prepared.updated_app_config.last_selection_w, Some(640));
         assert_eq!(prepared.updated_app_config.last_selection_h, Some(480));
         assert_eq!(prepared.updated_app_config.rec_video_format, 0);
-        assert_eq!(prepared.updated_app_config.rec_video_max_res, 2);
+        // The stale request value must not overwrite what Settings saved.
+        assert_eq!(prepared.updated_app_config.rec_video_max_res, 5);
         assert_eq!(prepared.updated_app_config.rec_video_fps, 3);
         assert_eq!(prepared.updated_app_config.rec_video_mono, true);
         assert_eq!(prepared.updated_app_config.rec_noise_suppression, true);
@@ -1061,7 +1067,7 @@ mod tests {
             crate::gnome_shell::should_use_pointer_track()
         );
         assert_eq!(prepared.recording_config.hidpi, true);
-        assert_eq!(prepared.recording_config.max_resolution, Some((1280, 720)));
+        assert_eq!(prepared.recording_config.max_resolution, Some((854, 480)));
         assert_eq!(prepared.recording_config.fps, 60);
         assert_eq!(prepared.recording_config.mono_audio, true);
         assert_eq!(prepared.recording_config.noise_suppression, true);
@@ -1105,14 +1111,23 @@ mod tests {
 
     #[test]
     fn prepare_overlay_recording_request_maps_video_setting_variants() {
+        // (video_format, saved video_max_res, video_fps, expected cap, fps).
+        // Every option Settings offers must survive the trip, not just the
+        // first three, and the cap must come from the saved value.
         let cases = [
-            (0, 0, None, 24_u32, "mp4"),
-            (1, 1, Some((1920, 1080)), 30_u32, "mp4"),
-            (0, 2, Some((1280, 720)), 50_u32, "mp4"),
-            (1, 0, None, 60_u32, "mp4"),
+            (0_u8, 0_u8, 0_u8, None, 24_u32),
+            (1, 1, 1, Some((1920, 1080)), 30),
+            (0, 2, 2, Some((1280, 720)), 50),
+            (1, 0, 3, None, 60),
+            (1, 3, 1, Some((2560, 1440)), 30),
+            (1, 4, 1, Some((1600, 900)), 30),
+            (1, 5, 1, Some((854, 480)), 30),
+            (1, 6, 1, Some((3840, 2160)), 30),
+            // An unknown index falls back to Original, never to a bogus cap.
+            (1, 99, 1, None, 30),
         ];
 
-        for (index, (video_format, video_max_res, expected_max_res, expected_fps, extension)) in
+        for (index, (video_format, video_max_res, video_fps, expected_max_res, expected_fps)) in
             cases.into_iter().enumerate()
         {
             let request = RecordingRequest {
@@ -1122,28 +1137,40 @@ mod tests {
                 height: 600,
                 record_type: RecordingType::Video,
                 video_format,
-                video_max_res,
-                video_fps: index as u8,
+                // The overlay has no resolution picker; it always sends the
+                // value it was launched with. This stale echo must be ignored.
+                video_max_res: 0,
+                video_fps,
                 ..RecordingRequest::default()
             };
 
             let prepared = prepare_overlay_recording_request(
-                AppConfig::default(),
+                AppConfig {
+                    rec_video_max_res: video_max_res,
+                    ..AppConfig::default()
+                },
                 &request,
                 chrono::Utc
                     .with_ymd_and_hms(2026, 4, 2, 10, 0, index as u32)
                     .unwrap(),
             );
 
-            assert_eq!(prepared.recording_config.max_resolution, expected_max_res);
+            assert_eq!(
+                prepared.recording_config.max_resolution, expected_max_res,
+                "saved resolution index {video_max_res} must keep its cap"
+            );
             assert_eq!(prepared.recording_config.fps, expected_fps);
             assert_eq!(prepared.updated_app_config.rec_video_format, 0);
+            assert_eq!(
+                prepared.updated_app_config.rec_video_max_res, video_max_res,
+                "the saved resolution must survive the request untouched"
+            );
             assert_eq!(
                 prepared
                     .output_path
                     .extension()
                     .and_then(|ext| ext.to_str()),
-                Some(extension)
+                Some("mp4")
             );
         }
     }

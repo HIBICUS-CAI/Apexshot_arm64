@@ -18,7 +18,9 @@ namespace {
 void CaptureOverlay::drawSettingsMenu(QPainter& p, double panelX, double startY)
 {
     const double menuW = 440.0;
-    const double menuH = 390.0;
+    // The Video tab no longer carries a maximum-resolution row (that lives in
+    // Settings), so the panel shrinks with it instead of leaving a gap.
+    const double menuH = (m_settingsTab == 1) ? 306.0 : 390.0;
     const double menuX = std::max(10.0, std::min(panelX, (double)width() - menuW - 10.0));
     const double menuY = std::max(10.0, std::min(startY, (double)height() - menuH - 10.0));
 
@@ -154,19 +156,18 @@ void CaptureOverlay::drawSettingsMenu(QPainter& p, double panelX, double startY)
         drawSetting("Dim screen", "While recording", m_dimScreen, &m_dimScreen);
         drawSetting("Countdown", "Before recording", m_showCountdown, &m_showCountdown);
     } else if (m_settingsTab == 1) { // Video
-        const QRectF card(menuX + 18.0, menuY + 106.0, menuW - 36.0, 256.0);
+        const QRectF card(menuX + 18.0, menuY + 106.0, menuW - 36.0, 180.0);
         const double labelX = card.x() + 14.0;
         const double controlRight = card.right() - 14.0;
         const double row1Y = card.y();
-        const double row2Y = row1Y + 76.0;
+        const double row2Y = row1Y + 52.0;
         const double row3Y = row2Y + 52.0;
-        const double row4Y = row3Y + 52.0;
 
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(255, 255, 255, 10));
         p.drawRoundedRect(card, 10.0, 10.0);
         p.setPen(QPen(QColor(255, 255, 255, 13), 1.0));
-        for (double dividerY : {row2Y, row3Y, row4Y})
+        for (double dividerY : {row2Y, row3Y})
             p.drawLine(QPointF(card.x() + 14.0, dividerY), QPointF(card.right() - 14.0, dividerY));
 
         auto drawText = [&](const QString& text, double x, double y, bool bold, int alpha) {
@@ -196,29 +197,10 @@ void CaptureOverlay::drawSettingsMenu(QPainter& p, double panelX, double startY)
             }
         };
 
-        const int resIdx = m_settingsClickableRects.size();
-        drawRowHover(QRectF(card.x(), row1Y, card.width(), 76.0), resIdx);
-        drawText("Maximum resolution", labelX, row1Y + 25.0, true, 230);
-        drawText("Reduce file size and upload time", labelX, row1Y + 48.0, false, 140);
-        QRectF resBtn(controlRight - 136.0, row1Y + 22.0, 136.0, 30.0);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, 15));
-        if (m_hoveredSettingsItem == resIdx) p.setBrush(QColor(255, 255, 255, 20));
-        p.drawRoundedRect(resBtn, 6, 6);
-        p.setPen(Qt::white);
-        p.setFont(QFont("Sans", 10));
-        const QStringList resOptions = {"Original", "1080p", "720p"};
-        p.drawText(resBtn.adjusted(10, 0, -25, 0), Qt::AlignLeft | Qt::AlignVCenter, resOptions[m_videoMaxRes]);
-        // Chevron
-        p.setPen(QPen(Qt::white, 1.5));
-        p.drawLine(QPointF(resBtn.right() - 15, resBtn.center().y() - 3), QPointF(resBtn.right() - 11, resBtn.center().y() + 1));
-        p.drawLine(QPointF(resBtn.right() - 11, resBtn.center().y() + 1), QPointF(resBtn.right() - 7, resBtn.center().y() - 3));
-        m_settingsClickableRects.append(resBtn);
-
         const int fpsIdx = m_settingsClickableRects.size();
-        drawRowHover(QRectF(card.x(), row2Y, card.width(), 52.0), fpsIdx);
-        drawText("Frame rate", labelX, row2Y + 31.0, true, 230);
-        QRectF fpsBtn(controlRight - 76.0, row2Y + 11.0, 76.0, 30.0);
+        drawRowHover(QRectF(card.x(), row1Y, card.width(), 52.0), fpsIdx);
+        drawText("Frame rate", labelX, row1Y + 31.0, true, 230);
+        QRectF fpsBtn(controlRight - 76.0, row1Y + 11.0, 76.0, 30.0);
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(255, 255, 255, 15));
         if (m_hoveredSettingsItem == fpsIdx) p.setBrush(QColor(255, 255, 255, 20));
@@ -233,18 +215,18 @@ void CaptureOverlay::drawSettingsMenu(QPainter& p, double panelX, double startY)
         m_settingsClickableRects.append(fpsBtn);
 
         const int monoIdx = m_settingsClickableRects.size();
-        QRectF monoRow(card.x(), row3Y, card.width(), 52.0);
+        QRectF monoRow(card.x(), row2Y, card.width(), 52.0);
         drawRowHover(monoRow, monoIdx);
-        drawText("Record audio in mono", labelX, row3Y + 31.0, true, 230);
-        drawCheck(QRectF(controlRight - 18.0, row3Y + 17.0, 18.0, 18.0), m_recordMono);
+        drawText("Record audio in mono", labelX, row2Y + 31.0, true, 230);
+        drawCheck(QRectF(controlRight - 18.0, row2Y + 17.0, 18.0, 18.0), m_recordMono);
         m_settingsClickableRects.append(monoRow);
 
         const int encoderIdx = m_settingsClickableRects.size();
-        QRectF encoderRow(card.x(), row4Y, card.width(), 76.0);
+        QRectF encoderRow(card.x(), row3Y, card.width(), 76.0);
         drawRowHover(encoderRow, encoderIdx);
-        drawText("Open video editor", labelX, row4Y + 27.0, true, 230);
-        drawText("Edit quality, resolution and audio after recording", labelX, row4Y + 50.0, false, 140);
-        drawCheck(QRectF(controlRight - 18.0, row4Y + 29.0, 18.0, 18.0), m_openEditor);
+        drawText("Open video editor", labelX, row3Y + 27.0, true, 230);
+        drawText("Edit quality, resolution and audio after recording", labelX, row3Y + 50.0, false, 140);
+        drawCheck(QRectF(controlRight - 18.0, row3Y + 29.0, 18.0, 18.0), m_openEditor);
         m_settingsClickableRects.append(encoderRow);
     }
 
