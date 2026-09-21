@@ -7,9 +7,11 @@ whose status is not done.
 Status: item 1 merged in PR #55. Item 2 done and verified on a live export,
 merged in PR #56, and its two orphan findings are fixed (the `config.rs` Ultra
 comment on `main`, the estimate label in PR #57). Item 3 done on `main` (docs).
-Item 4 implemented on `fix/x11-resolution-cap` (PR #58) together with the three
-separate findings recorded under it; awaiting maintainer verification. Item 5
-not started. Next action: verify item 4, then start item 5 on a fresh branch.
+Item 4 done on `fix/x11-resolution-cap` (PR #58) together with the three
+separate findings recorded under it; the maintainer confirmed it complete.
+Item 5 implemented on `chore/retire-rust-recording-panel` (PR #59), awaiting
+maintainer verification. Next action: verify item 5; with that, every item in
+this tracker is done and only the unclaimed lead below remains open.
 
 ## How to continue (read this first)
 
@@ -46,8 +48,8 @@ not started. Next action: verify item 4, then start item 5 on a fresh branch.
 - GNOME has no layer-shell, so the live capture UI is the **C++ quick access**
   (`capture-overlay/`, routed in `src/main.rs:437-444`). The Rust overlay and the
   Rust capture menu are the wlroots path (`src/overlay/`,
-  `src/capture_overlay/wlroots.rs`). The Rust recording panel is dead code and is
-  item 5.
+  `src/capture_overlay/wlroots.rs`). The Rust recording panel that used to
+  accompany the Rust overlay was dead code and was retired in item 5.
 - Both quick accesses start a recording by sending a `RecordingRequest`; on GNOME
   the daemon handles it in `run_overlay_recording_request_with_gtk`.
 - Watch the echo pattern in `prepare_overlay_recording_request`: it copies
@@ -239,9 +241,13 @@ README and overlay caption promised quality editing that did not exist.
 
 - `README.md:514` still says the non-GNOME overlay offers "video quality
   settings". That claim depends on the Rust recording panel that item 5 retires,
-  so it belongs to item 5's cleanup, not this docs pass.
+  so it belongs to item 5's cleanup, not this docs pass. — **Done in item 5's
+  PR**: the README's "How it works" steps now name the quick-capture menu and
+  point format/countdown/resolution/quality at Settings → Recording, and
+  `docs/MODULES.md`'s Area Selector capabilities list the quick-capture menu
+  instead of the retired panel and settings menu.
 
-## Item 4: DONE (PR #58, awaiting maintainer verification)
+## Item 4: DONE (PR #58, maintainer-confirmed)
 
 **Confirmed** (code-level). `build_x11_gstreamer_pipeline` had no
 `videoscale`, so `max_resolution` never reached the pipeline on Xorg
@@ -285,15 +291,16 @@ larger than before at the same tier (the compensated CRF). Also confirm a
 fullscreen uncapped X11 recording still starts — that path exercises the
 x11rb screen query.
 
-## Item 5: retire the dead Rust recording panel
+## Item 5: DONE (branch `chore/retire-rust-recording-panel`, PR #59)
 
-**Not started. Confirmed dead code.** `st.recording.panel_open` is written only
-by tests, so `recording_ui::draw_recording_panel`
-(`src/overlay/drawing/mod.rs:675`, `:755`) never paints in the running app, the
-recording settings menu with its resolution popup
-(`src/overlay/drawing/settings_ui.rs`) is unreachable, and the request path in
-`src/overlay/recording/result.rs` never produces a recording that way.
-`OverlayIntent::Record` is assigned nowhere outside tests.
+**Confirmed** (code-level, step 1 of this tracker). `st.recording.panel_open` was
+written `true` only by a test (`src/overlay/hit_testing.rs`), it defaulted to
+`false`, and `OverlayIntent::Record` was assigned nowhere outside tests
+(`src/overlay/api.rs` only ever sets `Ocr` or `Area`), so
+`recording_ui::draw_recording_panel` (`src/overlay/drawing/mod.rs:675`, `:755`),
+the settings menu (`src/overlay/drawing/settings_ui.rs`), the panel input
+branches, the volume popups and meters, and `recording_request_from_state`
+(`src/overlay/window/result.rs`) were unreachable in the running app.
 
 **Scope**: remove the panel state, drawing, hit testing and settings menu
 (`src/overlay/recording/`, `src/overlay/drawing/recording_ui.rs`,
@@ -302,6 +309,48 @@ exist to serve them (`src/overlay/window/input/`, `src/overlay/window/audio.rs`)
 keeping whatever the capture menu still uses (`src/overlay/capture_menu.rs`,
 `src/capture_overlay/wlroots.rs`). Tests that only exercised the panel go with
 it; `cargo clippy --workspace --all-targets` should report no new dead code.
+
+**What landed** (branch `chore/retire-rust-recording-panel`)
+
+- Deleted: `src/overlay/recording/` (panel state, hit testing, layout),
+  `src/overlay/drawing/recording_ui.rs`, `src/overlay/drawing/settings_ui.rs`,
+  `src/overlay/window/audio.rs` (the panel-only meter/volume machinery; its
+  meter thread was gated on `panel_open` and so never ran), and
+  `src/overlay/window/input/click/secondary.rs` (right-click volume popups).
+- `OverlayIntent` (now `Area` / `Ocr` only) moved into `src/overlay/state.rs`;
+  `SelectorState.recording` and `OverlayIntent::Record` are gone, and
+  `OverlaySelection::Recording` is gone with the request path
+  (`recording_request_from_state`, the `Record` arm of `send_selection_result`,
+  `ClickEffect::SendRecording`/`SetMicVolume`/`SetSpeakerVolume`).
+- The survivors were trimmed to match: top-bar visibility, the aspect/record
+  hover logic in motion and drag, the menu/toolbar click owners, the countdown
+  pill (the `Record` circle branch is gone), `ToolbarIcon` (Crop only), and the
+  panel-only layout helpers (volume popup, settings menu, aspect menu) in
+  `src/overlay/layout.rs`. `REC_ACTION_HEIGHT` moved into
+  `src/recording/stop_overlay.rs`, its only live consumer.
+- Owner-contract tests that asserted the panel strings now assert the panel
+  stays removed; `README.md` and `docs/MODULES.md` lost the retired-panel claims
+  (item 3's deferred `README.md:514` sweep).
+- Untouched on purpose: the capture menu and wlroots recording request
+  (`src/overlay/capture_menu.rs`, `src/capture_overlay/wlroots.rs`), the stop
+  overlay, and the daemon's audio-exclusivity helpers (still used by live
+  recording).
+
+**Verification**
+
+- Gates: `cargo fmt --all -- --check` clean; `cargo clippy --workspace
+  --all-targets` reports only the two known pre-existing warnings
+  (`canvas_render.rs`, `tool_sidebar_background.rs`), no new ones and no dead
+  code; `cargo test --jobs 2 -- --test-threads=1` — 1085 lib tests plus every
+  integration target, 0 failures; `python3 scripts/check-i18n-catalogs.py` ok
+  (699 messages). C++ overlay and metadata untouched, so those gates were
+  skipped.
+- Hand check for the maintainer (no display here): launch the app and confirm
+  the wlroots/GTK quick-capture menu still starts a recording with mic/speaker
+  toggles, area selection and the top-bar crop/aspect pills still work, and a
+  recording stops via the floating stop overlay. On the maintainer's GNOME
+  machine the Rust overlay is not in the path, so the visible check there is
+  simply that nothing regressed after installing the build.
 
 ## Unclaimed lead: empty recording file
 

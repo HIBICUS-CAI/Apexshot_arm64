@@ -1,17 +1,12 @@
 use super::icons::ToolbarIcon;
 use super::layout::*;
-use super::recording::state::OverlayIntent;
 use super::state::{OverlayMode, SelectorState};
-// Recording-specific hit-testing lives in recording/hit_testing.rs
 
 /// Mirrors C++ `topBarVisible()`: the screen-fixed bar is hidden while
-/// recording, picking a window, counting down, or showing the scroll popup.
-/// Crosshair capture and the recording intent never show it either.
+/// picking a window, counting down, or showing the scroll popup.
+/// Crosshair capture never shows it either.
 pub(crate) fn top_bar_visible(st: &SelectorState) -> bool {
     if st.overlay_mode == OverlayMode::CrosshairCapture {
-        return false;
-    }
-    if st.recording.panel_open {
         return false;
     }
     if st.window_picker_open {
@@ -21,9 +16,6 @@ pub(crate) fn top_bar_visible(st: &SelectorState) -> bool {
         return false;
     }
     if st.scroll_popup_open {
-        return false;
-    }
-    if st.intent == OverlayIntent::Record {
         return false;
     }
     true
@@ -194,17 +186,13 @@ mod tests {
     }
 
     #[test]
-    fn top_bar_hits_hide_with_recording_picker_countdown_and_scroll() {
+    fn top_bar_hits_hide_with_picker_countdown_and_scroll() {
         use crate::overlay::state::SelectorState;
         let layout = compute_top_bar_layout(1920.0).expect("bar must fit");
         let pill = layout.pills[1];
         let (x, y) = (pill.x + 1.0, pill.y + 1.0);
         let mut st = SelectorState::default();
         assert!(top_bar_visible(&st));
-        st.recording.panel_open = true;
-        assert!(!top_bar_visible(&st));
-        assert_eq!(top_bar_aspect_at(&st, 1920.0, x, y), None);
-        st.recording.panel_open = false;
         st.window_picker_open = true;
         assert!(!top_bar_visible(&st));
         st.window_picker_open = false;

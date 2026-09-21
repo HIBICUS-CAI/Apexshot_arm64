@@ -12,7 +12,6 @@ mod hit_testing;
 pub(crate) mod icons;
 pub(crate) mod layout;
 pub(crate) mod monitor_picker;
-pub(crate) mod recording;
 mod state;
 mod window;
 

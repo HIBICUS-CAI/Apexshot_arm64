@@ -8,17 +8,12 @@ pub(crate) const HANDLE_MARKER_THICKNESS: f64 = 2.5;
 pub(crate) const BRAND_ORANGE_R: f64 = 1.0;
 pub(crate) const BRAND_ORANGE_G: f64 = 0.4;
 pub(crate) const BRAND_ORANGE_B: f64 = 0.0;
-pub(crate) const FEATURE_PANEL_ITEM_WIDTH: f64 = 76.0;
-pub(crate) const FEATURE_PANEL_HEIGHT: f64 = 62.0;
 pub(crate) const FEATURE_PANEL_TOP_GAP: f64 = 12.0;
 pub(crate) const FEATURE_PANEL_MARGIN: f64 = 16.0;
 /// Keep bottom-anchored chrome above the app dock, mirroring BOTTOM_LIFT in
 /// capture-overlay/src/WindowPickerOverlay.cpp.
 pub(crate) const DOCK_LIFT: f64 = 76.0;
-pub(crate) const TOOL_RAIL_GAP: f64 = 18.0;
 pub(crate) const ACTION_CARD_GAP: f64 = 8.0;
-pub(crate) const SIZE_CARD_WIDTH: f64 = 152.0;
-pub(crate) const CROP_CARD_WIDTH: f64 = 62.0;
 
 // ── Top-center instruction bar ("Draw an area" frame) ────────────────────────
 // Screen-fixed chrome mirroring capture-overlay's computeTopBarLayout: it is
@@ -101,20 +96,6 @@ pub(crate) enum ToolbarHit {
     #[allow(dead_code)]
     CropPanel,
 }
-
-pub(crate) const ASPECT_RATIO_OPTIONS: &[&str] = &[
-    "Freeform",
-    "1 : 1 (Square)",
-    "5 : 4 (10 : 8)",
-    "4 : 3",
-    "7 : 5",
-    "3 : 2",
-    "16 : 10",
-    "16 : 9",
-    "2.35 : 1",
-    "2 : 3",
-    "9 : 16",
-];
 
 /// Top-center instruction bar layout. All rects are screen coordinates.
 /// `pills`: 0=Free, 1=16:9, 2=4:3, 3=1:1. `buttons`: 0=Crop, 1=Cancel.
@@ -234,36 +215,6 @@ pub(crate) fn compute_top_bar_crop_menu(
     (panel, items)
 }
 
-pub(crate) fn compute_aspect_menu_rects(
-    anchor_rect: RectF,
-    screen_width: f64,
-    screen_height: f64,
-) -> (RectF, Vec<RectF>) {
-    let item_h = 34.0;
-    let menu_w = 196.0;
-    let menu_h = (ASPECT_RATIO_OPTIONS.len() as f64 * item_h) + 10.0;
-    let menu_x = (anchor_rect.x + anchor_rect.width / 2.0 - menu_w / 2.0)
-        .clamp(10.0, screen_width - menu_w - 10.0);
-    let menu_y = (anchor_rect.y + anchor_rect.height + 8.0)
-        .clamp(10.0, screen_height - menu_h - 10.0 - DOCK_LIFT);
-    let panel_rect = RectF {
-        x: menu_x,
-        y: menu_y,
-        width: menu_w,
-        height: menu_h,
-    };
-    let mut item_rects = Vec::with_capacity(ASPECT_RATIO_OPTIONS.len());
-    for i in 0..ASPECT_RATIO_OPTIONS.len() {
-        item_rects.push(RectF {
-            x: menu_x + 5.0,
-            y: menu_y + 5.0 + i as f64 * item_h,
-            width: menu_w - 10.0,
-            height: item_h,
-        });
-    }
-    (panel_rect, item_rects)
-}
-
 // ── Shared popup / menu layouts (drawing + hit-testing consume these) ─────────
 
 pub(crate) const SCROLL_POPUP_WIDTH: f64 = 360.0;
@@ -344,90 +295,6 @@ pub(crate) fn compute_window_picker_layout(
     }
 }
 
-pub(crate) const VOLUME_POPUP_WIDTH: f64 = 64.0;
-pub(crate) const VOLUME_POPUP_HEIGHT: f64 = 184.0;
-pub(crate) const VOLUME_POPUP_GAP: f64 = 12.0;
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct VolumePopupLayout {
-    pub(crate) panel: RectF,
-}
-
-/// Vertical volume pill, preferring the right side of the selection.
-pub(crate) fn compute_volume_popup_layout(
-    selection_x: f64,
-    selection_y: f64,
-    selection_width: f64,
-    selection_height: f64,
-    screen_width: f64,
-    screen_height: f64,
-) -> VolumePopupLayout {
-    let menu_w = VOLUME_POPUP_WIDTH;
-    let menu_h = VOLUME_POPUP_HEIGHT;
-    let max_x = (screen_width - menu_w - 10.0).max(10.0);
-    let max_y = (screen_height - menu_h - 10.0 - DOCK_LIFT).max(10.0);
-    let right_x = selection_x + selection_width + VOLUME_POPUP_GAP;
-    let left_x = selection_x - VOLUME_POPUP_GAP - menu_w;
-    let menu_x = if right_x <= max_x {
-        right_x
-    } else if left_x >= 10.0 {
-        left_x
-    } else {
-        right_x.clamp(10.0, max_x)
-    };
-    let menu_y = (selection_y + (selection_height - menu_h) / 2.0).clamp(10.0, max_y);
-    VolumePopupLayout {
-        panel: RectF {
-            x: menu_x,
-            y: menu_y,
-            width: menu_w,
-            height: menu_h,
-        },
-    }
-}
-
-pub(crate) fn volume_from_pill_y(panel: RectF, pointer_y: f64) -> f64 {
-    let mut volume = 1.0 - ((pointer_y - panel.y) / panel.height);
-    volume = volume.clamp(0.0, 1.0);
-    if volume < 0.02 {
-        0.0
-    } else if volume > 0.98 {
-        1.0
-    } else {
-        volume
-    }
-}
-
-pub(crate) const SETTINGS_MENU_WIDTH: f64 = 440.0;
-pub(crate) const SETTINGS_MENU_HEIGHT: f64 = 428.0;
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct SettingsMenuLayout {
-    pub(crate) panel: RectF,
-}
-
-/// Settings menu position (C++ contextual menu): selection top-centre, clamped.
-pub(crate) fn compute_settings_menu_layout(
-    selection_x: f64,
-    selection_y: f64,
-    selection_width: f64,
-    screen_width: f64,
-    screen_height: f64,
-) -> SettingsMenuLayout {
-    let menu_w = SETTINGS_MENU_WIDTH;
-    let menu_h = SETTINGS_MENU_HEIGHT;
-    let menu_x = (selection_x + (selection_width - menu_w) / 2.0).clamp(10.0, screen_width - 450.0);
-    let menu_y = (selection_y + 24.0).clamp(10.0, screen_height - menu_h - 10.0 - DOCK_LIFT);
-    SettingsMenuLayout {
-        panel: RectF {
-            x: menu_x,
-            y: menu_y,
-            width: menu_w,
-            height: menu_h,
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,26 +331,6 @@ mod tests {
         let three = compute_window_picker_layout(500.0, 400.0, 1920.0, 1080.0, 3);
         assert!((three.panel.height - one.panel.height - 2.0 * WINDOW_PICKER_ITEM_H).abs() < 1e-9);
         assert_eq!(one.item_h, WINDOW_PICKER_ITEM_H);
-    }
-
-    #[test]
-    fn volume_pill_prefers_selection_right_and_centers_vertically() {
-        let vol = compute_volume_popup_layout(100.0, 200.0, 600.0, 300.0, 1920.0, 1080.0);
-        assert!((vol.panel.x - 712.0).abs() < 1e-9);
-        assert!((vol.panel.y - 258.0).abs() < 1e-9);
-        assert_eq!(vol.panel.width, VOLUME_POPUP_WIDTH);
-        assert_eq!(vol.panel.height, VOLUME_POPUP_HEIGHT);
-    }
-
-    #[test]
-    fn volume_pill_falls_back_left_then_clamps_to_screen() {
-        let left = compute_volume_popup_layout(1500.0, 200.0, 400.0, 300.0, 1920.0, 1080.0);
-        assert!((left.panel.x - 1424.0).abs() < 1e-9);
-
-        let clamped = compute_volume_popup_layout(0.0, 200.0, 1900.0, 300.0, 1920.0, 1080.0);
-        assert!((clamped.panel.x - 1846.0).abs() < 1e-9);
-        assert!(clamped.panel.x >= 10.0);
-        assert!(clamped.panel.x + clamped.panel.width <= 1910.0);
     }
 
     #[test]
@@ -541,20 +388,5 @@ mod tests {
             assert!((item.y - (panel.y + 5.0 + i as f64 * TOP_BAR_CROP_ITEM_H)).abs() < 1e-9);
             assert!(panel.contains(item.x + 1.0, item.y + 1.0));
         }
-    }
-
-    #[test]
-    fn volume_pill_maps_vertical_pointer_and_snaps_edges() {
-        let panel = RectF {
-            x: 100.0,
-            y: 200.0,
-            width: VOLUME_POPUP_WIDTH,
-            height: VOLUME_POPUP_HEIGHT,
-        };
-        assert_eq!(volume_from_pill_y(panel, panel.y), 1.0);
-        assert_eq!(volume_from_pill_y(panel, panel.y + panel.height), 0.0);
-        assert!((volume_from_pill_y(panel, panel.y + panel.height / 2.0) - 0.5).abs() < 1e-9);
-        assert_eq!(volume_from_pill_y(panel, panel.y + 1.0), 1.0);
-        assert_eq!(volume_from_pill_y(panel, panel.y + panel.height - 1.0), 0.0);
     }
 }

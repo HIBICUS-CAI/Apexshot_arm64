@@ -4,7 +4,6 @@ use super::{menu, toolbar, ClickEffect};
 use crate::overlay::api::{OverlaySelection, SelectionResult};
 use crate::overlay::background::BackgroundFrame;
 use crate::overlay::state::SelectorState;
-use crate::overlay::window::audio::{set_mic_volume, set_speaker_volume};
 use crate::overlay::window::send_selection_result;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, DrawingArea, GestureClick};
@@ -74,28 +73,10 @@ pub(super) fn wire_primary_click(
                     );
                 }
             }
-            ClickEffect::SendRecording(selection) => {
-                let _ = result_tx_click.send(Ok(selection));
-                if let Some(window) = window_weak.upgrade() {
-                    window.close();
-                }
-            }
             ClickEffect::Cancel => {
                 let _ = result_tx_click.send(Ok(OverlaySelection::Area(None)));
                 if let Some(window) = window_weak.upgrade() {
                     window.close();
-                }
-            }
-            ClickEffect::SetMicVolume(fraction) => {
-                set_mic_volume(fraction);
-                if let Some(drawing_area) = drawing_area_weak.upgrade() {
-                    drawing_area.queue_draw();
-                }
-            }
-            ClickEffect::SetSpeakerVolume(fraction) => {
-                set_speaker_volume(fraction);
-                if let Some(drawing_area) = drawing_area_weak.upgrade() {
-                    drawing_area.queue_draw();
                 }
             }
         }

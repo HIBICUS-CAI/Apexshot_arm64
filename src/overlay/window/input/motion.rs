@@ -9,15 +9,9 @@ use super::super::super::hit_testing::{
     top_bar_visible,
 };
 use super::super::super::layout::{
-    compute_scroll_popup_layout, compute_volume_popup_layout, compute_window_picker_layout,
-    volume_from_pill_y, ToolbarHit,
-};
-use super::super::super::recording::hit_testing::{
-    recording_crop_menu_hit_item, recording_tile_at, settings_dropdown_hit_item,
-    settings_menu_hit_item,
+    compute_scroll_popup_layout, compute_window_picker_layout, ToolbarHit,
 };
 use super::super::super::state::{OverlayMode, SelectorState};
-use super::super::audio::{set_mic_volume, set_speaker_volume};
 use gtk4::gdk;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, DrawingArea, EventControllerMotion};
@@ -25,9 +19,8 @@ use std::sync::{Arc, Mutex};
 
 /// Install motion + leave controllers on the drawing area.
 ///
-/// Preserves hover priority (menus → popups → tiles/toolbar → selection),
-/// cursor selection, crosshair updates, volume slider ownership while
-/// dragging, and leave/reset of hover state.
+/// Preserves hover priority (menus → popups → toolbar → selection),
+/// cursor selection, crosshair updates, and leave/reset of hover state.
 pub(in crate::overlay::window) fn wire_selection_motion(
     window: &ApplicationWindow,
     state: Arc<Mutex<SelectorState>>,
@@ -54,45 +47,6 @@ pub(in crate::overlay::window) fn wire_selection_motion(
             } else {
                 let rect = current_selection_rect(&st);
 
-                // Volume slider dragging
-                if st.recording.volume_slider_dragging
-                    && (st.recording.mic_volume_popup_open
-                        || st.recording.speaker_volume_popup_open)
-                {
-                    let vol = compute_volume_popup_layout(
-                        rect.left,
-                        rect.top,
-                        rect.width(),
-                        rect.height(),
-                        screen_width as f64,
-                        screen_height as f64,
-                    );
-                    let volume = volume_from_pill_y(vol.panel, y);
-                    let should_write = st
-                        .recording
-                        .last_volume_system_write
-                        .is_none_or(|last| last.elapsed() >= std::time::Duration::from_millis(75));
-                    if should_write {
-                        st.recording.last_volume_system_write = Some(std::time::Instant::now());
-                    }
-                    if st.recording.mic_volume_popup_open {
-                        st.recording.mic_volume = volume;
-                        if should_write {
-                            set_mic_volume(volume);
-                        }
-                    } else {
-                        st.recording.speaker_volume = volume;
-                        if should_write {
-                            set_speaker_volume(volume);
-                        }
-                    }
-                    drop(st);
-                    if let Some(da) = drawing_area_weak_motion.upgrade() {
-                        da.queue_draw();
-                    }
-                    return;
-                }
-
                 // Top-bar crop menu hover first (skipped while dragging so
                 // drags pass underneath). Only claims the pointer on an item;
                 // elsewhere execution falls through to bar/toolbar hover.
@@ -103,12 +57,9 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                     if changed {
                         st.hovered_top_bar_crop_item = next;
                     }
-                    st.recording.hovered_crop_menu_item = -1;
-                    st.recording.hovered_settings_item = -1;
                     st.hover_tool_index = None;
                     st.hover_size_panel = false;
                     st.hover_crop_panel = false;
-                    st.recording.hover_record_tile = None;
                     if next >= 0 {
                         drop(st);
                         if let Some(win) = window_weak_motion.upgrade() {
@@ -125,81 +76,7 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                         return;
                     }
                 }
-                if st.recording.crop_menu_open {
-                    let item = recording_crop_menu_hit_item(
-                        rect.left,
-                        rect.top,
-                        rect.width(),
-                        rect.height(),
-                        screen_width as f64,
-                        screen_height as f64,
-                        x,
-                        y,
-                    );
-                    let next = item.map(|i| i as i32).unwrap_or(-1);
-                    let changed = next != st.recording.hovered_crop_menu_item;
-                    if changed {
-                        st.recording.hovered_crop_menu_item = next;
-                    }
-                    st.hovered_capture_crop_menu_item = -1;
-                    st.recording.hovered_settings_item = -1;
-                    st.hover_tool_index = None;
-                    st.hover_size_panel = false;
-                    st.hover_crop_panel = false;
-                    st.recording.hover_record_tile = None;
-                    ("pointer".to_string(), changed, true)
-                } else if st.recording.settings_menu_open {
-                    if let Some(drop_idx) = st.recording.settings_dropdown_open {
-                        let next = settings_dropdown_hit_item(
-                            rect.left,
-                            rect.top,
-                            rect.width(),
-                            screen_width as f64,
-                            screen_height as f64,
-                            x,
-                            y,
-                            st.recording.settings_tab,
-                            drop_idx,
-                        )
-                        .map(|index| index as i32)
-                        .unwrap_or(-1);
-                        let changed = next != st.recording.hovered_settings_dropdown_item;
-                        st.recording.hovered_settings_dropdown_item = next;
-                        st.recording.hovered_settings_item = -1;
-                        st.hovered_capture_crop_menu_item = -1;
-                        st.recording.hovered_crop_menu_item = -1;
-                        st.hover_tool_index = None;
-                        st.hover_size_panel = false;
-                        st.hover_crop_panel = false;
-                        st.recording.hover_record_tile = None;
-                        ("pointer".to_string(), changed, true)
-                    } else {
-                        let item = settings_menu_hit_item(
-                            rect.left,
-                            rect.top,
-                            rect.width(),
-                            rect.height(),
-                            screen_width as f64,
-                            screen_height as f64,
-                            x,
-                            y,
-                            st.recording.settings_tab,
-                        );
-                        let next = item.unwrap_or(-1);
-                        let changed = next != st.recording.hovered_settings_item;
-                        if changed {
-                            st.recording.hovered_settings_item = next;
-                        }
-                        st.recording.hovered_settings_dropdown_item = -1;
-                        st.hovered_capture_crop_menu_item = -1;
-                        st.recording.hovered_crop_menu_item = -1;
-                        st.hover_tool_index = None;
-                        st.hover_size_panel = false;
-                        st.hover_crop_panel = false;
-                        st.recording.hover_record_tile = None;
-                        ("pointer".to_string(), changed, true)
-                    }
-                } else if st.window_picker_open {
+                if st.window_picker_open {
                     let n = st.windows.len();
                     let (center_x, center_y) = if st.completed || st.is_dragging {
                         let r = current_selection_rect(&st);
@@ -230,7 +107,6 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                     st.hover_tool_index = None;
                     st.hover_size_panel = false;
                     st.hover_crop_panel = false;
-                    st.recording.hover_record_tile = None;
                     ("pointer".to_string(), changed, true)
                 } else if st.scroll_popup_open {
                     // Scroll popup hover handling
@@ -258,7 +134,6 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                     st.hover_tool_index = None;
                     st.hover_size_panel = false;
                     st.hover_crop_panel = false;
-                    st.recording.hover_record_tile = None;
                     ("pointer".to_string(), true, true)
                 } else if top_bar_visible(&st)
                     && !st.is_dragging
@@ -281,41 +156,19 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                     st.hover_tool_index = None;
                     st.hover_size_panel = false;
                     st.hover_crop_panel = false;
-                    st.recording.hover_record_tile = None;
                     st.hovered_capture_crop_menu_item = -1;
-                    st.recording.hovered_crop_menu_item = -1;
-                    st.recording.hovered_settings_item = -1;
-                    st.recording.hovered_settings_dropdown_item = -1;
                     ("pointer".to_string(), changed, true)
                 } else {
-                    let record_hit = if st.recording.panel_open {
-                        recording_tile_at(
-                            rect.left,
-                            rect.top,
-                            rect.width(),
-                            rect.height(),
-                            screen_width as f64,
-                            screen_height as f64,
-                            x,
-                            y,
-                        )
-                    } else {
-                        None
-                    };
-                    let hit = if st.recording.panel_open {
-                        None
-                    } else {
-                        toolbar_hit_at(
-                            rect.left,
-                            rect.top,
-                            rect.width(),
-                            rect.height(),
-                            screen_width as f64,
-                            screen_height as f64,
-                            x,
-                            y,
-                        )
-                    };
+                    let hit = toolbar_hit_at(
+                        rect.left,
+                        rect.top,
+                        rect.width(),
+                        rect.height(),
+                        screen_width as f64,
+                        screen_height as f64,
+                        x,
+                        y,
+                    );
                     let hit =
                         if st.capture_menu_area_mode && matches!(hit, Some(ToolbarHit::Tool(_))) {
                             None
@@ -324,7 +177,7 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                         };
 
                     let mut next_hovered_window = None;
-                    if !st.completed && !st.is_dragging && hit.is_none() && record_hit.is_none() {
+                    if !st.completed && !st.is_dragging && hit.is_none() {
                         for (i, win) in st.windows.iter().enumerate() {
                             if x >= win.x as f64
                                 && x <= (win.x + win.width) as f64
@@ -341,52 +194,38 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                         next_hover_tool_index,
                         next_hover_size_panel,
                         next_hover_crop_panel,
-                        next_hover_record_tile,
                         cursor_name,
                     ) = match hit {
                         // Legacy rail retired: Tool never hits (see hit_testing),
                         // so only the compat arms below remain.
-                        Some(ToolbarHit::SizePanel) if !st.recording.panel_open => {
-                            (None, true, false, None, "default")
-                        }
-                        Some(ToolbarHit::CropPanel) if !st.recording.panel_open => {
-                            (None, false, true, None, "pointer")
-                        }
+                        Some(ToolbarHit::SizePanel) => (None, true, false, "default"),
+                        Some(ToolbarHit::CropPanel) => (None, false, true, "pointer"),
                         None => {
-                            if let Some(tile) = record_hit {
-                                (None, false, false, Some(tile), "pointer")
+                            let c = if st.completed || st.is_dragging {
+                                detect_resize_handle(x, y, rect)
+                                    .map(cursor_name_for_handle)
+                                    .unwrap_or_else(|| {
+                                        if is_inside_selection(x, y, rect) {
+                                            "fleur"
+                                        } else {
+                                            "crosshair"
+                                        }
+                                    })
+                            } else if next_hovered_window.is_some() {
+                                "pointer"
+                            } else if point_in_top_bar(&st, screen_width as f64, x, y) {
+                                "default"
                             } else {
-                                let c = if st.completed || st.is_dragging {
-                                    if st.recording.panel_open {
-                                        "fleur"
-                                    } else {
-                                        detect_resize_handle(x, y, rect)
-                                            .map(cursor_name_for_handle)
-                                            .unwrap_or_else(|| {
-                                                if is_inside_selection(x, y, rect) {
-                                                    "fleur"
-                                                } else {
-                                                    "crosshair"
-                                                }
-                                            })
-                                    }
-                                } else if next_hovered_window.is_some() {
-                                    "pointer"
-                                } else if point_in_top_bar(&st, screen_width as f64, x, y) {
-                                    "default"
-                                } else {
-                                    "crosshair"
-                                };
-                                (None, false, false, None, c)
-                            }
+                                "crosshair"
+                            };
+                            (None, false, false, c)
                         }
-                        _ => (None, false, false, None, "crosshair"),
+                        _ => (None, false, false, "crosshair"),
                     };
 
                     let hover_changed = st.hover_tool_index != next_hover_tool_index
                         || st.hover_size_panel != next_hover_size_panel
                         || st.hover_crop_panel != next_hover_crop_panel
-                        || st.recording.hover_record_tile != next_hover_record_tile
                         || st.hovered_window != next_hovered_window
                         || st.hovered_top_bar_aspect != -1
                         || st.hovered_top_bar_button != -1;
@@ -396,12 +235,8 @@ pub(in crate::overlay::window) fn wire_selection_motion(
                     st.hover_crop_panel = next_hover_crop_panel;
                     st.hovered_top_bar_aspect = -1;
                     st.hovered_top_bar_button = -1;
-                    st.recording.hover_record_tile = next_hover_record_tile;
                     st.hovered_window = next_hovered_window;
                     st.hovered_capture_crop_menu_item = -1;
-                    st.recording.hovered_crop_menu_item = -1;
-                    st.recording.hovered_settings_item = -1;
-                    st.recording.hovered_settings_dropdown_item = -1;
 
                     (cursor_name.to_string(), hover_changed, false)
                 }
@@ -429,25 +264,17 @@ pub(in crate::overlay::window) fn wire_selection_motion(
         let was_hovering = st.hover_tool_index.is_some()
             || st.hover_size_panel
             || st.hover_crop_panel
-            || st.recording.hover_record_tile.is_some()
             || st.hovered_capture_crop_menu_item != -1
             || st.hovered_top_bar_aspect != -1
             || st.hovered_top_bar_button != -1
-            || st.hovered_top_bar_crop_item != -1
-            || st.recording.hovered_crop_menu_item != -1
-            || st.recording.hovered_settings_item != -1
-            || st.recording.hovered_settings_dropdown_item != -1;
+            || st.hovered_top_bar_crop_item != -1;
         st.hover_tool_index = None;
         st.hover_size_panel = false;
         st.hover_crop_panel = false;
-        st.recording.hover_record_tile = None;
         st.hovered_top_bar_aspect = -1;
         st.hovered_top_bar_button = -1;
         st.hovered_top_bar_crop_item = -1;
         st.hovered_capture_crop_menu_item = -1;
-        st.recording.hovered_crop_menu_item = -1;
-        st.recording.hovered_settings_item = -1;
-        st.recording.hovered_settings_dropdown_item = -1;
         drop(st);
 
         // Reset cursor
@@ -485,15 +312,16 @@ mod tests {
             "motion must own motion + leave together"
         );
         assert!(
-            production.contains("volume_slider_dragging"),
-            "motion must own active slider drags"
-        );
-        assert!(
             production.contains("top_bar_crop_menu_open")
                 && production.contains("window_picker_open")
-                && production.contains("scroll_popup_open")
-                && production.contains("settings_menu_open"),
+                && production.contains("scroll_popup_open"),
             "motion must keep popup hover priority"
+        );
+        assert!(
+            !production.contains("volume_slider_dragging")
+                && !production.contains("settings_menu_open")
+                && !production.contains("hover_record_tile"),
+            "the retired recording-panel hovers must stay removed"
         );
         assert!(
             production.contains("cursor_name_for_handle")

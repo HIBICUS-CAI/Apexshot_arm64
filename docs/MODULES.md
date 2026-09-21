@@ -260,9 +260,9 @@ the C++ Qt5 overlay (`capture-overlay/`) handles area selection instead.
 
 **Capabilities:**
 - Click-and-drag area selection with resize handles
-- Recording panel with mic/speaker toggles, format picker, and
-  countdown options
-- Settings menu for video and control preferences
+- Quick-capture menu (capture mode, timer, mic/speaker toggles) for
+  screenshots and recording; format, countdown, resolution and quality
+  recording settings live in Settings → Recording, not in the overlay
 - Window picker mode for selecting application windows
 - Fullscreen capture mode
 - Crosshair pixel-zoom mode for precise point capture

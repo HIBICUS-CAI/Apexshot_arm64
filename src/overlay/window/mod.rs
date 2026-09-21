@@ -8,7 +8,6 @@ use super::state::{OverlayMode, SelectorState};
 use gtk4::{prelude::*, Application};
 use std::sync::{Arc, Mutex};
 
-mod audio;
 mod countdown;
 mod input;
 mod platform;
@@ -18,7 +17,6 @@ mod shell;
 pub(crate) use platform::suppress_x11_compositor_animation;
 pub(crate) use result::send_selection_result;
 
-use audio::install_overlay_audio_meters;
 use input::{wire_selection_drag, wire_selection_motion, wire_window_click, wire_window_keyboard};
 use shell::{build_overlay_shell, ShellBuildError};
 
@@ -82,8 +80,6 @@ pub(crate) fn setup_window(
         st.is_dragging = false;
     }
 
-    install_overlay_audio_meters(&state, &drawing_area);
-
     wire_selection_motion(
         &window,
         state.clone(),
@@ -143,7 +139,6 @@ mod tests {
 
         for call in [
             "build_overlay_shell(",
-            "install_overlay_audio_meters(",
             "wire_selection_motion(",
             "wire_window_click(",
             "wire_selection_drag(",
@@ -176,10 +171,8 @@ mod tests {
 
         assert!(
             !production.contains("ApplicationWindow::builder")
-                && !production.contains("init_layer_shell")
-                && !production.contains("poll_daemon_audio_levels")
-                && !production.contains("start_local_audio_monitoring"),
-            "setup must not retain shell or audio internals"
+                && !production.contains("init_layer_shell"),
+            "setup must not retain shell internals"
         );
         assert!(
             !production.contains("GestureClick")

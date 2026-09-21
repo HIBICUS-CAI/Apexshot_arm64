@@ -10,9 +10,7 @@ use super::super::super::hit_testing::{
     point_in_top_bar, toolbar_hit_at, toolbar_item_at, top_bar_crop_menu_contains, top_bar_visible,
 };
 use super::super::super::layout::ToolbarHit;
-use super::super::super::recording::hit_testing::recording_tile_at;
 use super::super::super::state::{DragMode, OverlayMode, SelectorState};
-use super::super::audio::{set_mic_volume, set_speaker_volume};
 use super::super::result::send_selection_result;
 use gtk4::glib::clone;
 use gtk4::prelude::*;
@@ -22,8 +20,8 @@ use std::sync::{Arc, Mutex};
 /// Install capture-phase `GestureDrag` for area selection on the drawing area.
 ///
 /// Preserves offset semantics, fixed-aspect resize (non-move), toolbar/menu
-/// surface suppression, slider-drag pass-through, lock release before result
-/// delivery or window closure, and crosshair finalize → `send_selection_result`.
+/// surface suppression, lock release before result delivery or window
+/// closure, and crosshair finalize → `send_selection_result`.
 pub(in crate::overlay::window) fn wire_selection_drag(
     window: &ApplicationWindow,
     state: Arc<Mutex<SelectorState>>,
@@ -132,36 +130,10 @@ pub(in crate::overlay::window) fn wire_selection_drag(
                 return;
             }
 
-            // Suppress drag when clicking recording panel tiles
-            if st.recording.panel_open
-                && recording_tile_at(
-                    rect.left,
-                    rect.top,
-                    rect.width(),
-                    rect.height(),
-                    screen_width as f64,
-                    screen_height as f64,
-                    start_x,
-                    start_y,
-                )
-                .is_some()
-            {
-                st.is_dragging = false;
-                st.drag_mode = None;
-                st.initial_rect = None;
-                drop(st);
-                return;
-            }
-
             // Any open menu owns this pointer press. The click handler may
             // close the menu or update a slider, but area move/resize/new
             // selection must not also start underneath it.
-            if st.top_bar_crop_menu_open
-                || st.recording.crop_menu_open
-                || st.recording.settings_menu_open
-                || st.recording.mic_volume_popup_open
-                || st.recording.speaker_volume_popup_open
-            {
+            if st.top_bar_crop_menu_open {
                 st.is_dragging = false;
                 st.drag_mode = None;
                 st.initial_rect = None;
@@ -234,10 +206,6 @@ pub(in crate::overlay::window) fn wire_selection_drag(
         drawing_area_weak,
         move |_gesture, x, y| {
             let mut st = state_drag.lock().unwrap();
-            if st.recording.volume_slider_dragging {
-                drop(st);
-                return;
-            }
             update_selection_for_drag(&mut st, x, y, screen_width as f64, screen_height as f64);
             let ratio = active_aspect_ratio(&st);
             if ratio > 0.0 && !matches!(st.drag_mode, Some(DragMode::Move)) {
@@ -269,29 +237,6 @@ pub(in crate::overlay::window) fn wire_selection_drag(
         background_drag,
         move |_gesture, x, y| {
             let mut st = state_drag.lock().unwrap();
-            if st.recording.volume_slider_dragging {
-                let final_volume = if st.recording.mic_volume_popup_open {
-                    Some((true, st.recording.mic_volume))
-                } else if st.recording.speaker_volume_popup_open {
-                    Some((false, st.recording.speaker_volume))
-                } else {
-                    None
-                };
-                st.recording.volume_slider_dragging = false;
-                st.recording.last_volume_system_write = None;
-                drop(st);
-                if let Some((microphone, volume)) = final_volume {
-                    if microphone {
-                        set_mic_volume(volume);
-                    } else {
-                        set_speaker_volume(volume);
-                    }
-                }
-                if let Some(drawing_area) = drawing_area_weak.upgrade() {
-                    drawing_area.queue_draw();
-                }
-                return;
-            }
             update_selection_for_drag(&mut st, x, y, screen_width as f64, screen_height as f64);
             let ratio = active_aspect_ratio(&st);
             if ratio > 0.0 && !matches!(st.drag_mode, Some(DragMode::Move)) {
@@ -356,10 +301,13 @@ mod tests {
             "drag controller must stay capture-phase"
         );
         assert!(
-            production.contains("toolbar_item_at")
-                && production.contains("recording_tile_at")
-                && production.contains("settings_menu_open"),
-            "drag must suppress under toolbar/tiles/menus"
+            production.contains("toolbar_item_at") && production.contains("top_bar_crop_menu_open"),
+            "drag must suppress under toolbar and the top-bar crop menu"
+        );
+        assert!(
+            !production.contains("recording_tile_at")
+                && !production.contains("volume_slider_dragging"),
+            "the retired recording-panel suppression must stay removed"
         );
         assert!(
             production.contains("apply_aspect_to_selection")
@@ -369,10 +317,6 @@ mod tests {
         assert!(
             production.contains("send_selection_result") && production.contains("CrosshairCapture"),
             "crosshair drag end must deliver selection after releasing the lock"
-        );
-        assert!(
-            production.contains("volume_slider_dragging"),
-            "drag must pass through active slider drags"
         );
     }
 }

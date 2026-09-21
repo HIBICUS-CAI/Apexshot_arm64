@@ -30,7 +30,7 @@ fn main() {
                 area.x, area.y, area.width, area.height
             );
         }
-        Ok(OverlaySelection::Area(None)) | Ok(OverlaySelection::Recording(_)) => {
+        Ok(OverlaySelection::Area(None)) => {
             println!("Selection cancelled");
         }
         Err(e) => {

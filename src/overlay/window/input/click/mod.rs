@@ -1,11 +1,10 @@
-//! Primary and secondary overlay click wiring.
+//! Primary overlay click wiring.
 
 mod menu;
 mod primary;
-mod secondary;
 mod toolbar;
 
-use crate::overlay::api::{OverlaySelection, SelectionResult};
+use crate::overlay::api::SelectionResult;
 use crate::overlay::background::BackgroundFrame;
 use crate::overlay::state::SelectorState;
 use gtk4::{ApplicationWindow, DrawingArea};
@@ -16,11 +15,8 @@ enum ClickEffect {
     Redraw,
     OpenScrollExtension,
     SendSelection,
-    SendRecording(OverlaySelection),
     /// Top-bar X button: cancel the selection and close the overlay.
     Cancel,
-    SetMicVolume(f64),
-    SetSpeakerVolume(f64),
 }
 
 pub(in crate::overlay::window) fn wire_window_click(
@@ -34,38 +30,41 @@ pub(in crate::overlay::window) fn wire_window_click(
 ) {
     primary::wire_primary_click(
         window,
-        state.clone(),
+        state,
         result_tx,
         drawing_area,
         background,
         screen_width,
         screen_height,
     );
-    secondary::wire_secondary_click(state, drawing_area, screen_width, screen_height);
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn click_facade_installs_primary_before_secondary() {
+    fn click_facade_wires_primary() {
         let source = include_str!("mod.rs");
         let production = source
             .split("#[cfg(test)]")
             .next()
             .expect("production click facade");
-        let primary = production
-            .find("primary::wire_primary_click(")
-            .expect("primary click wiring");
-        let secondary = production
-            .find("secondary::wire_secondary_click(")
-            .expect("secondary click wiring");
         assert!(
-            primary < secondary,
-            "primary must be attached before secondary"
+            production.contains("primary::wire_primary_click("),
+            "click facade must wire the primary click owner"
+        );
+        assert!(
+            !production.contains("secondary::wire_secondary_click("),
+            "the retired secondary (recording-panel) click must stay removed"
         );
         assert!(
             production.contains("mod menu;") && production.contains("mod toolbar;"),
             "click facade must declare cohesive menu and toolbar owners"
+        );
+        assert!(
+            !production.contains("SendRecording")
+                && !production.contains("SetMicVolume")
+                && !production.contains("SetSpeakerVolume"),
+            "the retired recording-panel click effects must stay removed"
         );
     }
 }
