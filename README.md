@@ -110,6 +110,12 @@ support is improving over time.
 - **Video Editor** — Trim, convert dimensions, adjust quality, and change audio mode for MP4 recordings. Open from the tray menu, CLI (`apexshot video-editor`), or a global hotkey. Supports drag-and-drop and file chooser for loading videos.
   ![ApexShot video editor](media/video-editor.png)
 
+> **Recording settings.** Resolution, frame rate, and quality are picked in
+> Settings → Recording. "Maximum resolution" is a ceiling, never an upscale: a
+> full-display 480p recording on a 16:10 screen is 768x480. The frame rate sets
+> the container's rate; the compositor decides how much motion reaches the file
+> ([mutter discussion](https://gitlab.gnome.org/GNOME/mutter/-/work_items/4214)).
+
 ### Integration
 - **Daemon Mode** — Background service with system tray and global hotkeys for instant capture
 - **Settings** — Language, start at login, shutter sounds, shortcuts, recording, screenshots, annotation, and cloud

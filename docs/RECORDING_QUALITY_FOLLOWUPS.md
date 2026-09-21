@@ -4,11 +4,10 @@ Working tracker for the recording/export audit done on 2026-09-21, and the
 handoff note for whoever continues it. Read this file, then take the first item
 whose status is not done.
 
-Status: item 1 merged to `main` in PR #55. Item 2 done and verified on a live
-export, merged in PR #56. Its two orphan findings are handled: the `config.rs`
-Ultra comment is on `main` (`fd94d44`), the estimate label is fixed in PR #57
-(this branch). Items 3 to 5 not started. Next action: check the estimate-label
-branch, then start item 3 on a fresh branch.
+Status: item 1 merged in PR #55. Item 2 done and verified on a live export,
+merged in PR #56, and its two orphan findings are fixed (the `config.rs` Ultra
+comment on `main`, the estimate label in PR #57). Item 3 done on `main` (docs).
+Items 4 and 5 not started. Next action: start item 4 on a fresh branch.
 
 ## How to continue (read this first)
 
@@ -205,18 +204,17 @@ currently drift.
   removed `content.append(&estimate_label)` with the old inspector panels and
   no `append(&estimate_label)` exists today, so its text is computed but never
   shown. The item 2 acceptance covers the estimate at the code level only;
-  making it visible got its own branch after this (`fix/editor-estimate-label`).
+  making it visible was fixed in PR #57 (`fix/editor-estimate-label`).
 
 **Acceptance**: an untouched export stays bit-identical; selecting Ultra makes
 the export args use CRF 16 and the estimate reflect the change.
 
-## Item 3: document the cap semantics and fix the quality wording
+## Item 3: DONE (docs, committed straight to `main`)
 
-**Not started. Confirmed drift.** No `.md` file mentions "Maximum resolution" at
-all, and the README and overlay caption promise quality editing that does not
-exist.
+**Confirmed drift.** No `.md` file mentioned "Maximum resolution" at all, and the
+README and overlay caption promised quality editing that did not exist.
 
-- Add a short note where recording settings are described: the resolution
+- Added a short note where recording settings are described: the resolution
   setting is a ceiling (never upscales; a full-display 480p recording is 768x480
   on a 16:10 screen), and the FPS setting sets the container frame rate, not a
   guarantee of captured motion (the compositor decides what it delivers; see the
@@ -224,6 +222,22 @@ exist.
   <https://gitlab.gnome.org/GNOME/mutter/-/work_items/4214>).
 - Reword `README.md:44`, `README.md:110` and the overlay caption once item 2
   decides whether the control exists, so the text matches the code.
+
+**What landed**
+
+- `README.md` Screen Recording section: a blockquote note ("Recording settings.")
+  naming Settings → Recording and carrying both caveats, with the mutter link.
+- The quality wording needed no reword after item 2 landed: `README.md:44` and
+  `README.md:110` ("adjust quality") and the C++ overlay caption
+  (`CaptureOverlay_RecordingSettingsDrawing.cpp:228`, "Edit quality, resolution
+  and audio after recording") all match the shipped editor now (export quality
+  picker, Frame picker, audio mode).
+
+**Not covered here (for item 5's sweep)**
+
+- `README.md:514` still says the non-GNOME overlay offers "video quality
+  settings". That claim depends on the Rust recording panel that item 5 retires,
+  so it belongs to item 5's cleanup, not this docs pass.
 
 ## Item 4: the X11 backend ignores the resolution cap
 
