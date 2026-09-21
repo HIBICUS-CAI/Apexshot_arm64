@@ -2424,3 +2424,19 @@ msgstr "تويتر"
 
 msgid "Ultra"
 msgstr "فائق"
+
+msgid "Background color"
+msgstr "لون الخلفية"
+
+msgid "COLOR"
+msgstr "اللون"
+
+msgid "Choose background color"
+msgstr "اختر لون الخلفية"
+
+msgid "WALLPAPER"
+msgstr "خلفية"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "تملأ الخلفية أو اللون المساحة خلف الفيديو في المعاينة والتصدير"

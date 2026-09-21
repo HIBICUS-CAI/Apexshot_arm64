@@ -2444,3 +2444,19 @@ msgstr "Твиттер"
 
 msgid "Ultra"
 msgstr "Ультра"
+
+msgid "Background color"
+msgstr "Цвет фона"
+
+msgid "COLOR"
+msgstr "ЦВЕТ"
+
+msgid "Choose background color"
+msgstr "Выбрать цвет фона"
+
+msgid "WALLPAPER"
+msgstr "ОБОИ"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "Обои или цвет заполняют область за видео в предпросмотре и при экспорте"

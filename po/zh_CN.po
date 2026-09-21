@@ -2405,3 +2405,19 @@ msgstr "Twitter"
 
 msgid "Ultra"
 msgstr "极致"
+
+msgid "Background color"
+msgstr "背景颜色"
+
+msgid "COLOR"
+msgstr "颜色"
+
+msgid "Choose background color"
+msgstr "选择背景颜色"
+
+msgid "WALLPAPER"
+msgstr "壁纸"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "壁纸或颜色填充预览和导出时视频背后的画布"

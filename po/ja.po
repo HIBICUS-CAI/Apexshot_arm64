@@ -2408,3 +2408,19 @@ msgstr "Twitter"
 
 msgid "Ultra"
 msgstr "ウルトラ"
+
+msgid "Background color"
+msgstr "背景色"
+
+msgid "COLOR"
+msgstr "カラー"
+
+msgid "Choose background color"
+msgstr "背景色を選択"
+
+msgid "WALLPAPER"
+msgstr "壁紙"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "壁紙または色が、プレビューと書き出し時に動画の背後のキャンバスを塗りつぶします"

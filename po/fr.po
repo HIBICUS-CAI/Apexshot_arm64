@@ -2453,3 +2453,20 @@ msgstr "Twitter"
 
 msgid "Ultra"
 msgstr "Ultra"
+
+msgid "Background color"
+msgstr "Couleur d'arrière-plan"
+
+msgid "COLOR"
+msgstr "COULEUR"
+
+msgid "Choose background color"
+msgstr "Choisir la couleur d'arrière-plan"
+
+msgid "WALLPAPER"
+msgstr "FOND D'ÉCRAN"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr ""
+"Le fond d'écran ou la couleur remplit la zone derrière la vidéo dans l'aperçu et l'exportation"

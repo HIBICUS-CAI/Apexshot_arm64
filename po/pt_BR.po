@@ -2444,3 +2444,20 @@ msgstr "Twitter"
 
 msgid "Ultra"
 msgstr "Ultra"
+
+msgid "Background color"
+msgstr "Cor de fundo"
+
+msgid "COLOR"
+msgstr "COR"
+
+msgid "Choose background color"
+msgstr "Escolher cor de fundo"
+
+msgid "WALLPAPER"
+msgstr "PAPEL DE PAREDE"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr ""
+"O papel de parede ou a cor preenche a tela atrás do vídeo na pré-visualização e na exportação"
