@@ -64,7 +64,7 @@ pub struct AppConfig {
     pub rec_video_format: u8,
     pub rec_video_max_res: u8,
     pub rec_video_fps: u8,
-    /// 0 = Balanced (CRF 23), 1 = High (CRF 20), 2 = Ultra (CRF 17).
+    /// 0 = Balanced (CRF 23), 1 = High (CRF 20), 2 = Ultra (CRF 16).
     pub rec_video_quality: u8,
     pub rec_video_mono: bool,
     pub rec_video_open_editor: bool,
