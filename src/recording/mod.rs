@@ -300,6 +300,7 @@ pub fn max_resolution_for_setting(value: u8) -> Option<(u32, u32)> {
 
 /// x264 CRF for a Settings quality tier, inside the recommended 16–23
 /// recording range (sharpest tier = 16). Lower is sharper at file-size cost.
+/// The video editor's export picker maps through these same tiers.
 pub fn crf_for_quality(tier: u8) -> u32 {
     match tier {
         0 => 23, // Balanced

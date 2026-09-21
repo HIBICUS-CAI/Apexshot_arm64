@@ -11,11 +11,11 @@ use std::time::UNIX_EPOCH;
 
 use super::model::{
     AudioMode, ClickEffect, CropSelection, CursorHideClip, CursorSettings, CursorTheme,
-    DimensionPreset, ProjectMedia, ProjectMediaKind, VideoBackground, VideoEditState, ZoomClip,
-    ZoomEasing, ZoomMode, DEFAULT_CLICK_COLOR, DEFAULT_CLICK_DURATION_MS, DEFAULT_CLICK_INTENSITY,
-    DEFAULT_CLICK_OPACITY, DEFAULT_CLICK_SCALE, DEFAULT_CURSOR_IDLE_MS, DEFAULT_CURSOR_SHADOW,
-    DEFAULT_CURSOR_SIZE, DEFAULT_CURSOR_SMOOTH, DEFAULT_CURSOR_SPEED, DEFAULT_CURSOR_SWAY,
-    DEFAULT_CURSOR_TILT, DEFAULT_CURSOR_TRAIL,
+    DimensionPreset, ExportQuality, ProjectMedia, ProjectMediaKind, VideoBackground,
+    VideoEditState, ZoomClip, ZoomEasing, ZoomMode, DEFAULT_CLICK_COLOR, DEFAULT_CLICK_DURATION_MS,
+    DEFAULT_CLICK_INTENSITY, DEFAULT_CLICK_OPACITY, DEFAULT_CLICK_SCALE, DEFAULT_CURSOR_IDLE_MS,
+    DEFAULT_CURSOR_SHADOW, DEFAULT_CURSOR_SIZE, DEFAULT_CURSOR_SMOOTH, DEFAULT_CURSOR_SPEED,
+    DEFAULT_CURSOR_SWAY, DEFAULT_CURSOR_TILT, DEFAULT_CURSOR_TRAIL,
 };
 
 pub const VIDEO_PROJECT_VERSION: u32 = 1;
@@ -582,6 +582,17 @@ fn audio_from_file(mode: AudioFile) -> AudioMode {
     }
 }
 
+/// Tier index from a project file. Pre-tier files stored the 0-100 slider
+/// value (always 70, the only value the old code ever wrote); those mean the
+/// default tier, same as any other unknown value.
+fn quality_from_file(quality: u8) -> ExportQuality {
+    match quality {
+        0 => ExportQuality::Balanced,
+        2 => ExportQuality::Ultra,
+        _ => ExportQuality::High,
+    }
+}
+
 fn media_to_file(item: &ProjectMedia) -> MediaFile {
     MediaFile {
         path: item.path.clone(),
@@ -656,7 +667,7 @@ impl VideoEditState {
             dimension_preset: dimension_to_file(self.dimension_preset),
             custom_width: self.custom_width,
             custom_height: self.custom_height,
-            quality: self.quality,
+            quality: self.quality.tier(),
             audio_mode: audio_to_file(self.audio_mode),
             audio_removed: self.audio_removed,
             audio_locked: self.audio_locked,
@@ -711,7 +722,7 @@ impl VideoEditState {
         self.dimension_preset = dimension_from_file(file.dimension_preset);
         self.custom_width = file.custom_width;
         self.custom_height = file.custom_height;
-        self.quality = file.quality;
+        self.quality = quality_from_file(file.quality);
         self.audio_mode = audio_from_file(file.audio_mode);
         self.audio_removed = file.audio_removed;
         self.audio_locked = file.audio_locked;
