@@ -380,6 +380,7 @@ fn build_preview_inner(
 pub(super) fn build_stage_tools(
     window: &ApplicationWindow,
     state: Arc<Mutex<VideoEditState>>,
+    estimate_label: Label,
     on_change: Rc<dyn Fn()>,
 ) -> GtkBox {
     let bar = GtkBox::new(Orientation::Horizontal, 10);
@@ -498,11 +499,20 @@ pub(super) fn build_stage_tools(
     quality_rule.add_css_class("recording-editor-stage-rule");
     quality_rule.set_valign(Align::Center);
 
+    let estimate_rule = Separator::new(Orientation::Vertical);
+    estimate_rule.add_css_class("recording-editor-stage-rule");
+    estimate_rule.set_valign(Align::Center);
+    // Paint once at build: afterwards every edit refreshes it through the
+    // same helper, so the footer never shows a stale value.
+    footer::update_estimate(&estimate_label, &state, false);
+
     bar.append(&aspect);
     bar.append(&rule);
     bar.append(&crop);
     bar.append(&quality_rule);
     bar.append(&quality);
+    bar.append(&estimate_rule);
+    bar.append(&estimate_label);
     bar
 }
 
@@ -1109,6 +1119,39 @@ mod tests {
         assert!(
             source.contains("VideoBackground::Wallpaper"),
             "preview must handle wallpaper backgrounds"
+        );
+    }
+
+    #[test]
+    fn stage_tools_row_shows_the_export_estimate() {
+        // The estimate label was orphaned once before when its home was
+        // removed (f3f9195); pin that the footer row parents it so a future
+        // cleanup cannot silently drop it again.
+        let source = include_str!("preview.rs");
+        let start = source
+            .find("fn build_stage_tools")
+            .expect("stage tools builder");
+        let rest = &source[start..];
+        let end = rest
+            .find("\nfn append_stage_aspect_item")
+            .expect("stage tools end");
+        let body = &rest[..end];
+        assert!(
+            body.contains("estimate_label: Label"),
+            "stage tools must take the estimate label"
+        );
+        assert!(
+            body.contains("bar.append(&estimate_label)"),
+            "stage tools must parent the estimate label"
+        );
+        assert!(
+            body.contains("footer::update_estimate(&estimate_label, &state"),
+            "stage tools must paint the estimate on first build"
+        );
+        let window = include_str!("mod.rs");
+        assert!(
+            window.contains("estimate_label.add_css_class(\"recording-editor-estimate\")"),
+            "the estimate label must carry its muted styling"
         );
     }
 

@@ -196,13 +196,15 @@ fn build_window(application: &Application, initial_video: InitialVideo) {
     stage.set_hexpand(true);
     stage.set_vexpand(true);
     let estimate_label = Label::new(None);
+    estimate_label.add_css_class("recording-editor-estimate");
     let preview_media = media.borrow().clone();
     let (preview_widget, _, _) =
-        preview::build_preview_with_media(state.clone(), estimate_label, preview_media);
+        preview::build_preview_with_media(state.clone(), estimate_label.clone(), preview_media);
     stage.append(&preview_widget);
     stage.append(&preview::build_stage_tools(
         &window,
         state.clone(),
+        estimate_label,
         ping.clone(),
     ));
     workspace.append(&stage);
