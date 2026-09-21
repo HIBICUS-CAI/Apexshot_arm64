@@ -180,6 +180,15 @@ pub(super) async fn record_x11_with_gstreamer(
 
 /// Build a GStreamer pipeline string for X11 capture (preserved from old code).
 /// The muxer is named when audio is attached so the audio bin can request a pad.
+///
+/// `config.max_resolution` becomes a `videoscale` caps range after `videorate`,
+/// mirroring the Wayland backend's `wayland_video_filter` ceiling: the range
+/// never upscales (a source already inside the box negotiates unchanged) and
+/// the `pixel-aspect-ratio=1/1` pin keeps pixels square, so the fit is
+/// aspect-preserving (e.g. 1920x1200 → 768x480 under the 854x480 box) instead
+/// of filling the box and relying on a non-square PAR. The scale segment must
+/// not sit adjacent to the framerate caps: gst-parse rejects two consecutive
+/// caps filters.
 fn build_x11_gstreamer_pipeline(
     config: &RecordingConfig,
     profile: &EncoderProfile,
@@ -189,6 +198,12 @@ fn build_x11_gstreamer_pipeline(
     let output_str = output_path.to_string_lossy();
     let video_source = get_x11_source(config)?;
     let video_raw_caps = format!("video/x-raw,framerate={}/1", config.fps);
+    let scale_segment = match config.max_resolution {
+        Some((max_w, max_h)) => format!(
+            " ! videoscale ! video/x-raw,width=[1,{max_w}],height=[1,{max_h}],pixel-aspect-ratio=1/1"
+        ),
+        None => String::new(),
+    };
     let muxer = if with_audio {
         format!("{} name=mux", profile.muxer)
     } else {
@@ -196,8 +211,8 @@ fn build_x11_gstreamer_pipeline(
     };
 
     Ok(format!(
-        "{} ! videoconvert ! {}videorate ! {} ! {} ! {} ! filesink location=\"{}\"",
-        video_source, video_raw_caps, "queue", profile.encoder, muxer, output_str
+        "{} ! videoconvert ! {} ! videorate{} ! {} ! {} ! {} ! filesink location=\"{}\"",
+        video_source, video_raw_caps, scale_segment, "queue", profile.encoder, muxer, output_str
     ))
 }
 
@@ -217,4 +232,103 @@ pub(in crate::recording) fn get_x11_source(config: &RecordingConfig) -> RecordRe
     }
 
     Ok(source)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::profile::PROFILES;
+    use super::*;
+
+    fn x11_config(max_resolution: Option<(u32, u32)>) -> RecordingConfig {
+        RecordingConfig {
+            output_path: PathBuf::from("/tmp/apexshot-test.mp4"),
+            width: Some(1920),
+            height: Some(1200),
+            x: Some(0),
+            y: Some(0),
+            cursor: true,
+            pointer_track: false,
+            hidpi: false,
+            max_resolution,
+            fps: 30,
+            crf: 20,
+            mono_audio: false,
+            mic_enabled: false,
+            speaker_enabled: false,
+            mic_source: None,
+            speaker_source: None,
+            noise_suppression: false,
+        }
+    }
+
+    fn h264_profile() -> &'static EncoderProfile {
+        PROFILES
+            .iter()
+            .find(|profile| profile.encoder == "x264enc")
+            .expect("expected x264 profile to exist")
+    }
+
+    #[test]
+    fn x11_pipeline_scales_down_to_the_configured_cap() {
+        let config = x11_config(Some((854, 480)));
+
+        let pipeline =
+            build_x11_gstreamer_pipeline(&config, h264_profile(), &config.output_path, false)
+                .expect("expected pipeline string");
+
+        assert_eq!(
+            pipeline,
+            "ximagesrc show-pointer=true use-damage=false startx=0 starty=0 endx=1919 endy=1199 \
+             ! videoconvert ! video/x-raw,framerate=30/1 ! videorate \
+             ! videoscale ! video/x-raw,width=[1,854],height=[1,480],pixel-aspect-ratio=1/1 \
+             ! queue ! x264enc ! mp4mux ! filesink location=\"/tmp/apexshot-test.mp4\""
+        );
+    }
+
+    #[test]
+    fn x11_pipeline_omits_scaling_without_a_cap() {
+        let config = x11_config(None);
+
+        let pipeline =
+            build_x11_gstreamer_pipeline(&config, h264_profile(), &config.output_path, false)
+                .expect("expected pipeline string");
+
+        assert!(!pipeline.contains("videoscale"));
+        assert!(!pipeline.contains("width=[1,"));
+    }
+
+    #[test]
+    fn x11_pipeline_keeps_a_separator_between_framerate_caps_and_videorate() {
+        // Regression: the string once concatenated them into
+        // `framerate=30/1videorate`, which gst-parse folds into the caps value
+        // and the pipeline then fails to link videoconvert to queue.
+        for cap in [None, Some((1280, 720))] {
+            let config = x11_config(cap);
+
+            let pipeline =
+                build_x11_gstreamer_pipeline(&config, h264_profile(), &config.output_path, false)
+                    .expect("expected pipeline string");
+
+            assert!(pipeline.contains("video/x-raw,framerate=30/1 ! videorate"));
+            assert!(!pipeline.contains("30/1videorate"));
+        }
+    }
+
+    #[test]
+    fn x11_pipeline_scale_follows_videorate_not_the_framerate_caps() {
+        // gst-parse rejects two adjacent caps filters, so the scale caps must
+        // sit after the videorate element rather than next to the framerate caps.
+        let config = x11_config(Some((1280, 720)));
+
+        let pipeline =
+            build_x11_gstreamer_pipeline(&config, h264_profile(), &config.output_path, false)
+                .expect("expected pipeline string");
+
+        let videorate = pipeline.find("videorate").expect("videorate in pipeline");
+        let scale = pipeline
+            .find("! videoscale !")
+            .expect("videoscale segment in pipeline");
+        assert!(videorate < scale);
+        assert!(!pipeline.contains("1/1 ! video/x-raw,framerate"));
+    }
 }
