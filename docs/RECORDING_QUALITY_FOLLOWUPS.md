@@ -1,112 +1,144 @@
 # Recording and export quality follow-ups
 
-Working tracker for the recording/export audit done on 2026-09-21. Each item is
-one logical change on its own branch, in the order listed. Update the status
-line when an item lands so the next session can pick up from here.
+Working tracker for the recording/export audit done on 2026-09-21, and the
+handoff note for whoever continues it. Read this file, then take the first item
+whose status is not done.
 
-Status: item 1 verified on a live recording (PR #55 green, awaiting merge);
-items 2 to 4 and the item 5 cleanup not started.
+Status: item 1 done and verified on a live recording; PR #55 is green and waiting
+on the maintainer's merge. Items 2 to 5 not started. Next action: once PR #55 is
+merged, sync `main` and start item 2 on a fresh branch.
+
+## How to continue (read this first)
+
+- One item at a time, in order. When an item is implemented, stop and tell the
+  maintainer exactly what to check by hand. Do not start the next item until they
+  confirm the previous one; they install and test the build themselves.
+- Follow `AGENTS.md`: investigate before editing (no code changes while
+  confirming), then take the lightest path that protects `main`. Behaviour
+  changes: branch from `origin/main` plus a PR. Docs, comments and message
+  strings: commit straight to `main`. Never merge the PR; that is the
+  maintainer's call.
+- Gates before pushing: `cargo fmt --all -- --check`,
+  `cargo clippy --workspace --all-targets` (must not add warnings; two
+  pre-existing ones live in `src/capture/editor/window/canvas_render.rs` and
+  `src/recording/editor/window/tool_sidebar_background.rs`),
+  `cargo test --jobs 2 -- --test-threads=1`, `python3
+  scripts/check-i18n-catalogs.py` when UI strings change, and
+  `cd capture-overlay && cmake -S . -B build && cmake --build build -j` when the
+  C++ overlay changes.
+- Verifying a recording by hand: the maintainer records, then inspect the file
+  with
+  `ffprobe -v error -show_entries stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,codec_name -show_entries format=duration,size -of default=noprint_wrappers=1 <file>`,
+  and `strings -n 6 <file> | grep -o "h264_nvenc\|libx264"` to see the encoder.
+  The quality tier (CQP/CRF) is not stored in the container, so it stays a
+  code-level fact.
+- Recording settings live in `~/.config/apexshot/config.yml` (YAML). The app
+  rewrites that file at record start, so its mtime marks the recording and it is
+  the quickest way to see what the app actually had saved.
+
+## Machine and session facts (the maintainer's machine)
+
+- GNOME on Wayland, one 1920x1200 display, NVIDIA GPU. Recordings use NVENC
+  (`encoder=Lavc62.11.100 h264_nvenc` in the file tags).
+- GNOME has no layer-shell, so the live capture UI is the **C++ quick access**
+  (`capture-overlay/`, routed in `src/main.rs:437-444`). The Rust overlay and the
+  Rust capture menu are the wlroots path (`src/overlay/`,
+  `src/capture_overlay/wlroots.rs`). The Rust recording panel is dead code and is
+  item 5.
+- Both quick accesses start a recording by sending a `RecordingRequest`; on GNOME
+  the daemon handles it in `run_overlay_recording_request_with_gtk`.
+- Watch the echo pattern in `prepare_overlay_recording_request`: it copies
+  request fields into the config and the caller saves that config at record
+  start. A request field with no picker behind it silently reverts the saved
+  setting, which is what item 1 fixed for the resolution. The remaining fields
+  (fps, mono, DND, HiDPI, countdown, dim screen, controls, notifications,
+  remember-selection) are still echoed; that is correct while the C++ overlay
+  offers those pickers, but a stale overlay process reverts them the same way.
+- Build and install: the maintainer builds a local dev deb and installs it
+  themselves (`apt install --reinstall /tmp/apexshot-dev-deb.*.deb`, then they
+  restart the app; the installed binary matched `target/release/apexshot`). Push
+  the branch and ask them to build, install and test; do not assume a build
+  command of your own.
 
 ## Decisions already made
 
-- All four items below are approved, and are worked one at a time.
+- All items below are approved and are worked one at a time.
 - The editor gets a real export-quality control (Balanced / High / Ultra),
   defaulting to High, rather than only fixing the wording.
 - "Maximum resolution" keeps its ceiling semantics (never upscales); the docs
   need to say so instead of the setting changing meaning.
-- The recording resolution is chosen in Settings only. The overlay forwards the
-  configured value and no longer offers a picker of its own (removed in PR #55),
-  and the dead Rust panel that had one is item 5.
+- The recording resolution is chosen in Settings only. The overlays forward the
+  configured value and no longer offer a picker (removed in PR #55); the dead
+  Rust panel that had one is item 5.
+- On a 16:10 screen a full-display 480p recording is 768x480, not 854x480: the
+  cap box is 854x480 and the aspect fit is limited by height.
 
-## Item 1: overlay recording requests dropped four of the seven resolution options
+## Item 1: DONE (PR #55, verified)
 
-**Confirmed** (code-level; the manual check is still pending).
+Two defects kept a saved "Maximum resolution" from reaching a recording. Both
+are fixed on `fix/overlay-resolution-options` and confirmed on a live recording.
 
-Settings offers seven options for "Maximum resolution"
-(`src/settings/recording.rs`), but the request built for the capture overlay only
-knew the first three: `src/recording/controls.rs:317-322` mapped indices 0 to 2
-and sent everything else to `None` (Original). Values 3 to 6 do reach that code,
-because the overlay seeds its state from the config
-(`src/overlay/recording/state.rs:120`), so a 480p, 900p, 1440p or 2160p cap was
-silently recorded at native size.
+1. The overlay request path only knew the first three options:
+   `src/recording/controls.rs` mapped indices 0 to 2 to a cap and sent 3 to 6 to
+   `None` (Original), so 480p, 900p, 1440p and 2160p were recorded at native
+   size whenever the request came from the overlay.
+2. The request's resolution was written back into the saved config.
+   `prepare_overlay_recording_request` copied `request.video_max_res` into
+   `app_config.rec_video_max_res` (`controls.rs:292`) and
+   `run_overlay_recording_request_with_gtk` (`controls.rs:755`) saves that config
+   at record start. Neither quick access has a resolution picker, so the request
+   only echoes the value the overlay was launched with, and a resolution saved in
+   Settings after the overlay started was reverted by the next recording.
 
-Each UI also carried its own copy of the list. The Rust recording panel drew
-seven rows but hit-tested three (`hit_testing.rs:483-485` versus
-`settings_ui.rs:627-632`), and the C++ overlay
-(`capture-overlay/src/CaptureOverlay_RecordingSettingsDrawing.cpp:210`) offered
-only `Original / 1080p / 720p` while indexing that three-element list with the
-value taken straight from the config (`CaptureOverlay.h:163`), which is out of
-range for anything above 720p.
+**What landed**
 
-**Correction (same day)**: the Rust recording panel is dead code. It is drawn
-only when `st.recording.panel_open` is true and nothing outside tests sets it
-(`src/overlay/recording/hit_testing.rs`, `src/overlay/geometry.rs` are the only
-writers), and `OverlayIntent::Record` is never assigned in production
-(`src/overlay/api.rs:116` produces `Area` and `Ocr` only). On GNOME Wayland the
-selector is the C++ overlay regardless (`src/main.rs:437-444`: GNOME has no
-layer-shell). The seven-row dropdown fix was therefore dropped from the PR, and
-the whole panel is scheduled for removal as item 5. There is one settings UI for
-recording resolution, and it is Settings; the quick access menu never had that
-option.
-
-**Second defect, found while testing the first fix (same day)**: the request's
-resolution was written back into the saved config.
-`prepare_overlay_recording_request` copied `request.video_max_res` into
-`app_config.rec_video_max_res` (`controls.rs:292`), and
-`run_overlay_recording_request_with_gtk` (`controls.rs:755`) saves that config at
-record start. Neither quick access has a resolution picker any more, so the
-request only echoes the value the overlay was launched with; a resolution saved
-in Settings after the overlay started was therefore reverted by the next
-recording. Two real recordings (1920x1200 native, 60 fps, NVENC CQP 16) show it:
-`config.yml`'s last write is the recording's start second and reads
-`rec_video_max_res: 0` while the Settings window shows 480p.
-
-**Fix scope (PR #55)**
-
-- One source of truth in `src/recording/mod.rs`:
-  `max_resolution_for_setting(u8) -> Option<(u32, u32)>`, plus
-  `VIDEO_MAX_RES_OPTION_COUNT` for how many options Settings offers.
-- `src/recording/controls.rs` maps every index through the helper instead of its
-  own three-case match; the test covers all seven indices and an out-of-range
-  value.
-- `prepare_overlay_recording_request` no longer copies the request's
-  `rec_video_max_res` into the config, and the cap comes from the config the
-  caller loaded, so a stale overlay echo can neither revert the setting nor
-  escape the cap. The test drives the cap from the saved value and pins that a
+- `src/recording/mod.rs` owns the table: `max_resolution_for_setting(u8)` plus
+  `VIDEO_MAX_RES_OPTION_COUNT`, used by the request builder and by the config
+  clamp in `src/config.rs`.
+- `src/recording/controls.rs` maps every index through the helper and no longer
+  copies the request's resolution into the config; the cap comes from the config
+  the caller loaded. Tests drive the cap from the saved value and pin that a
   request value of 0 cannot change it.
-- `src/config.rs` keeps a hand-edited `rec_video_max_res` inside the table.
-- The C++ overlay's resolution picker is removed rather than extended: the Video
-  tab is now frame rate, mono and open-video-editor, and the value the overlay
-  forwards comes from Settings
+- The C++ overlay's three-option picker is removed
   (`CaptureOverlay_RecordingSettingsDrawing.cpp`, `CaptureOverlay_Events.cpp`,
-  `CaptureOverlay.h`). Settings is the only place the resolution is chosen.
+  `CaptureOverlay.h`): its Video tab is frame rate, mono and open-video-editor,
+  and the panel shrinks to fit. Settings is the only place the resolution is
+  chosen.
 
-**Status**: verified on the maintainer's machine after installing the fix commit:
-a 480p setting came out as 768x480 at 60 fps, and the saved setting survived the
-recording. PR #55 is green and awaiting merge.
+**Verification (maintainer's machine, 1920x1200)**
 
-**Acceptance**: with Settings on 480p, a full-display recording comes out inside
-the 854x480 box (854x480 on a 16:9 screen, 768x480 on the maintainer's 1920x1200
-screen, aspect preserved, never upscaled); 2160p on a 1920x1200 display records
-1920x1200 unchanged.
+- Before, with 480p saved: `ApexShot Recording 2026-09-21 at 15-53-47.mp4` and
+  `... at 16-08-11.mp4`, both 1920x1200, 60.000 fps CFR, H.264 High, NVENC,
+  CQP 16 (Ultra), and `config.yml` written back to `rec_video_max_res: 0` at each
+  recording's start second.
+- After, with 480p saved: `ApexShot Recording 2026-09-21 at 16-37-36.mp4` is
+  768x480, 60.000 fps CFR (637 frames / 10.617 s), H.264 High, NVENC, 432 kbps,
+  573 KB, and `config.yml` kept `rec_video_max_res: 5`.
+- Gates: fmt clean, clippy with no new warnings, full suite 1088 lib tests plus
+  the integration targets with 0 failures, i18n catalogs ok, C++ overlay builds
+  clean. CI on the fix commit passed (the push did not trigger a run, so it was
+  dispatched with `gh workflow run "CI & Release" --ref
+  fix/overlay-resolution-options`).
 
-**Separate risks found while tracing (not part of this fix)**: the C++ overlay's
-frame-rate picker (`CaptureOverlay_Events.cpp`) indexes a four-element list with
-`m_videoFps`, which also comes from the config
-(`CaptureOverlay.h:164`, `CaptureOverlay_RecordingSettingsDrawing.cpp:224`), and
-`rec_video_fps` is not clamped in `config.rs`; a hand-edited value indexes out of
-range. `config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality`
-uses 16, and `rec_video_fps` shares the hand-edited-config indexing risk.
+**Separate risks found while tracing (not fixed here)**
+
+- The C++ overlay's frame-rate picker (`CaptureOverlay_Events.cpp`) indexes a
+  four-element list with `m_videoFps`, which also comes from the config
+  (`CaptureOverlay.h:164`, `CaptureOverlay_RecordingSettingsDrawing.cpp:224`), and
+  `rec_video_fps` is not clamped in `config.rs`; a hand-edited value indexes out
+  of range.
+- `config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality` uses
+  16.
 
 ## Item 2: export quality control in the video editor
 
-**Confirmed gap.** An edited export always re-encodes with
+**Not started. Confirmed gap.** An edited export always re-encodes with
 `libx264 -preset veryfast -crf quality_to_crf(quality)`
 (`src/recording/editor/ffmpeg.rs:435-441`, `helpers.rs:391`), and the default
 quality of 70 maps to CRF 22 (`model_parts/state_impl.rs:14`), softer than a
 High (20) or Ultra (16) recording (`src/recording/mod.rs:295`). No UI writes
-`state.quality`, so the README claim "adjust quality"
-(`README.md:44`, `README.md:110`) and the overlay caption
+`state.quality`, so the README claim "adjust quality" (`README.md:44`,
+`README.md:110`) and the overlay caption
 (`capture-overlay/src/CaptureOverlay_RecordingSettingsDrawing.cpp:246`) are
 currently drift.
 
@@ -127,31 +159,35 @@ the export args use CRF 16 and the estimate reflect the change.
 
 ## Item 3: document the cap semantics and fix the quality wording
 
-**Confirmed drift.** No `.md` file mentions "Maximum resolution" at all, and the
-README and overlay caption promise quality editing that does not exist.
+**Not started. Confirmed drift.** No `.md` file mentions "Maximum resolution" at
+all, and the README and overlay caption promise quality editing that does not
+exist.
 
 - Add a short note where recording settings are described: the resolution
-  setting is a ceiling (never upscales), and the FPS setting sets the container
-  frame rate, not a guarantee of captured motion (the compositor decides what it
-  delivers; see the mutter discussion in
+  setting is a ceiling (never upscales; a full-display 480p recording is 768x480
+  on a 16:10 screen), and the FPS setting sets the container frame rate, not a
+  guarantee of captured motion (the compositor decides what it delivers; see the
+  mutter discussion in
   <https://gitlab.gnome.org/GNOME/mutter/-/work_items/4214>).
 - Reword `README.md:44`, `README.md:110` and the overlay caption once item 2
   decides whether the control exists, so the text matches the code.
 
 ## Item 4: the X11 backend ignores the resolution cap
 
-**Confirmed** (code-level). `build_x11_gstreamer_pipeline`
+**Not started. Confirmed** (code-level). `build_x11_gstreamer_pipeline`
 (`src/recording/backend/x11.rs:183`) has no `videoscale`, so `max_resolution`
 never reaches the pipeline on Xorg sessions. There is no test on that pipeline
-string today. Only worth doing if X11 stays supported.
+string today. Only worth doing if X11 stays supported. The maintainer's machine
+is Wayland, so this needs a code-level check plus a test, not a live recording.
 
 ## Item 5: retire the dead Rust recording panel
 
-**Confirmed dead code.** `st.recording.panel_open` is written only by tests, so
-`recording_ui::draw_recording_panel` (`src/overlay/drawing/mod.rs:675`, `:755`)
-never paints in the running app, the recording settings menu with its resolution
-popup (`src/overlay/drawing/settings_ui.rs`) is unreachable, and the request
-path in `src/overlay/recording/result.rs` never produces a recording that way.
+**Not started. Confirmed dead code.** `st.recording.panel_open` is written only
+by tests, so `recording_ui::draw_recording_panel`
+(`src/overlay/drawing/mod.rs:675`, `:755`) never paints in the running app, the
+recording settings menu with its resolution popup
+(`src/overlay/drawing/settings_ui.rs`) is unreachable, and the request path in
+`src/overlay/recording/result.rs` never produces a recording that way.
 `OverlayIntent::Record` is assigned nowhere outside tests.
 
 **Scope**: remove the panel state, drawing, hit testing and settings menu
@@ -177,25 +213,7 @@ it is not part of the items above.
 - Synthetic ffmpeg check of the stream-copy trim path (30fps, GOP 2s,
   `-ss 3 -to 5`): exactly 60 frames / 2.000s, pre-roll covered by an mp4 edit
   list (`elst media_time=15360`).
-- Not verified: no live recording session was run, so delivered frame rate,
-  encoder behaviour at 4K60 and the overlay dropdown were confirmed by code and
-  tests only.
-- Item 1 live checks (maintainer's GNOME Wayland machine, 1920x1200):
-  `ApexShot Recording 2026-09-21 at 15-53-47.mp4` and `... at 16-08-11.mp4` are
-  both 1920x1200, 60.000 fps CFR, H.264 High, yuv420p, bt709/tv, NVENC
-  (`encoder=Lavc62.11.100 h264_nvenc`), CQP 16 (Ultra) at 2.75 / 2.13 Mbps. So
-  60 fps and Ultra were honoured, and the 480p cap was not: the config's last
-  write is each recording's start second and read `rec_video_max_res: 0`. That
-  produced the second defect above, fixed in the same branch.
-- Item 1 verified (maintainer's machine, after installing `05f18f8`):
-  `ApexShot Recording 2026-09-21 at 16-37-36.mp4` is 768x480, 60.000 fps CFR
-  (637 frames / 10.617 s), H.264 High, NVENC, 432 kbps, 573 KB. `config.yml` was
-  written at the recording's start second and kept `rec_video_max_res: 5`, so the
-  echo no longer reverts the setting. Expected CQP 11 at this size; the container
-  does not carry the QP, so that part stays code-level.
-- Item 1 gates (both commits on PR #55): `cargo fmt --all -- --check` clean,
-  `cargo clippy --workspace --all-targets` with the two pre-existing warnings and
-  no new ones, `cargo test --jobs 2 -- --test-threads=1` 1088 lib tests plus the
-  integration targets with 0 failures, `python3 scripts/check-i18n-catalogs.py`
-  ok, and `capture-overlay` builds clean with
-  `cmake -S . -B build && cmake --build build -j`.
+- Item 1 live checks, before and after, are in the item 1 section above.
+- Not verified: delivered frame rate against a demanding compositor, encoder
+  behaviour at 4K60, and anything on X11. The maintainer's machine is GNOME
+  Wayland at 1920x1200 with NVENC.
