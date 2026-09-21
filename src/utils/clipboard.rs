@@ -446,18 +446,36 @@ mod tests {
 
     #[test]
     fn gtk_fast_path_is_never_taken_off_the_main_thread() {
-        // The daemon initializes GTK (so a Display exists process-wide) but
-        // copies from worker threads, where GDK calls silently no-op and mask
-        // the wl-copy/xclip fallback. Reproduce that shape here: even with a
-        // display present, a spawned thread must not take the GTK path.
-        let _ = gtk4::init();
-        let display_present = gtk4::gdk::Display::default().is_some();
-        let took_gtk_path = std::thread::spawn(|| gtk_clipboard_set_text("x"))
-            .join()
-            .unwrap();
+        // The daemon initializes GTK on its own thread (so a Display exists
+        // process-wide) but copies from worker threads, where GDK calls
+        // silently no-op and mask the wl-copy/xclip fallback. Reproduce that
+        // shape here: with GTK up and a display present, a spawned thread must
+        // not take the GTK path.
+        //
+        // This test must not call `gtk4::init()` itself: gtk4-rs panics when a
+        // second thread initializes GTK, so the test binary keeps GTK on one
+        // shared thread (see `crate::test_support`).
+        let display_present = crate::test_support::with_gtk(|| {
+            // Positive control: the shared GTK thread is exactly the thread the
+            // fast path accepts, so this test would notice a guard that refuses
+            // every thread.
+            assert!(
+                on_gtk_main_thread(),
+                "the GTK thread does not own the default main context"
+            );
+            gtk4::gdk::Display::default().is_some()
+        });
+        let (owns_context, took_gtk_path) =
+            std::thread::spawn(|| (on_gtk_main_thread(), gtk_clipboard_set_text("x")))
+                .join()
+                .unwrap();
+        assert!(
+            !owns_context,
+            "worker thread claims the GTK main context (display present: {display_present:?})"
+        );
         assert!(
             !took_gtk_path,
-            "worker thread took GTK clipboard path (display present: {display_present})"
+            "worker thread took GTK clipboard path (display present: {display_present:?})"
         );
     }
 

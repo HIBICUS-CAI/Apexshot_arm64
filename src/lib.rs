@@ -28,6 +28,8 @@ pub mod preview_launch;
 pub mod qr;
 pub mod recording;
 pub mod settings;
+#[cfg(test)]
+mod test_support;
 mod typography;
 pub mod update;
 pub mod update_ui;
