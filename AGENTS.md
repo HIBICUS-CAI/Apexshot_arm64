@@ -1,0 +1,154 @@
+# AGENTS.md
+
+Working agreement for LLM agents in this repository. `CONTRIBUTING.md` covers
+setup, the subsystem map, and code style; this file covers how work arrives here
+and what "done" means. Read both before changing anything.
+
+## The loop
+
+Most work starts as a *suspected* issue: the maintainer describes something that
+looks wrong. Move it through these states in order, and say which state you are
+in. Do not skip to step 2.
+
+### 1. Investigate and confirm, with no code changes
+
+- Restate the suspected issue in one or two sentences.
+- Reproduce it, or trace it to the exact code that would cause it. Quote
+  evidence: `path/file.rs:123`, the command you ran, the output or log line.
+- Where to look: daemon stderr (`cargo run -- daemon`),
+  `journalctl /usr/bin/gnome-shell -f | grep apexshot` for the extension,
+  `docs/ARCHITECTURE.md` and `docs/MODULES.md` for the code path, `git log` for
+  the last change in that area.
+- Do not edit while confirming. Diagnosis and fix are separate steps, and the
+  maintainer decides whether to proceed.
+- Finish with a verdict, each backed by its evidence: **confirmed**,
+  **partly confirmed**, **not reproducible**, or **already fixed / by design**.
+- Only a confirmed issue earns a fix, and only a fix that changes behaviour
+  earns a branch (step 2). **Not reproducible** and **by design** verdicts stop
+  here and go back to the maintainer with the evidence.
+- Say what else a fix would touch (callers, tests, docs, packaging) before
+  anyone edits anything.
+
+### 2. Pick the lightest path that protects `main`
+
+Not every change needs a branch. A *confirmed* issue is what earns one; a typo
+does not.
+
+| Change | Path |
+| --- | --- |
+| Docs, comments, typos, metadata, message strings, other small self-contained edits with no behaviour risk | Commit and push straight to `main` |
+| A confirmed issue whose fix changes behaviour, or that touches several files or subsystems | Branch + PR |
+| Features, refactors, packaging, CI changes | Branch + PR |
+
+When you cannot tell which side of that line a change is on, ask. Rules that
+apply to either path:
+
+- Base new branches on `origin/main`, never on a stale local copy:
+  `git fetch origin && git switch -c fix/<slug> --no-track origin/main`
+  (`feat/`, `docs/`, `chore/` for other kinds of work).
+- One logical change per branch and commit. No drive-by refactors or "while I
+  was here" fixes; report those separately and let the maintainer decide.
+- Asked to continue on an existing long-lived branch? Merge `main` into it first
+  (`git merge origin/main`) so it does not drift.
+- Fix the cause, not the symptom, and keep the diff as small as it can be.
+- Never merge your own PR. Merges are the maintainer's call.
+
+### 3. Verify, then say exactly what you verified
+
+- Re-run step 1's reproduction and show the before and after behaviour.
+- Anything user-visible (windows, overlays, hotkeys, portals, recording,
+  clipboard) needs a manual check on the running app: launch it, trigger the
+  path, and describe what you saw. If the machine cannot do that (no display, no
+  compositor, no hardware), say so, mark it unverified, and let the maintainer
+  confirm before you push.
+- Then CI's gates:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets      # must not add warnings
+cargo test --jobs 2 -- --test-threads=1     # every target, as CI runs it
+```
+
+  Start narrow (`cargo test --lib <module>`, or `./scripts/test.sh --test NAME`),
+  then run the full command above before pushing. `./scripts/test.sh` is the
+  OOM-safe local runner.
+- Only if you touched that subsystem:
+  - UI strings: `python3 scripts/check-i18n-catalogs.py`
+  - GNOME extension: `pnpm check:gnome` (or `node --check gnome-extension/*.js`)
+  - Desktop / AppStream metadata: `scripts/validate-metadata.sh`
+  - C++ overlay: `cd capture-overlay && cmake -S . -B build && cmake --build build -j`
+- Report the checks you ran, the ones you skipped, and any failure as it is.
+  "Tests pass" without the command and result is not a verification.
+
+### 4. Commit, push, publish
+
+```bash
+git add <files>
+git diff --staged                              # review before committing
+git commit                                     # summary, why, how you verified
+```
+
+For a direct-to-`main` change, push it (`git push`, or
+`git push origin HEAD:main` when `main` is checked out in another worktree) and
+stop there.
+
+For a branch:
+
+```bash
+git push -u origin HEAD
+gh pr create --base main --fill                # then make the body follow the template
+```
+
+- Summary line: short and imperative. Body: why the change is needed and how it
+  was verified. `CONTRIBUTING.md` lists Conventional Commits prefixes while
+  recent history uses plain prose summaries, so match the commits around you
+  (`git log --oneline -20`).
+- Fill `.github/PULL_REQUEST_TEMPLATE.md`: summary, type of change, `Fixes #N`,
+  **How was this tested** with the real commands, subsystem checklist, and
+  screenshots for visual changes.
+- Stage only what belongs to the change: no debug prints, personal paths,
+  commented-out code, or secrets.
+- If `gh pr edit --body` fails with a Projects (classic) GraphQL error, patch it
+  with `gh api -X PATCH repos/:owner/:repo/pulls/<n> -F body=@body.md`.
+- CI red on your branch? Fix it there. Never merge a red PR.
+
+### 5. After the merge
+
+Sync `main` and start a fresh branch for the next change. Do not keep adding
+unrelated work to an already-merged branch or to an old long-lived one.
+
+## Repository traps
+
+- **GTK tests:** GTK may only be initialized once per process, on one thread.
+  Tests that need it must call `crate::test_support::with_gtk`, not
+  `gtk4::init()`; a second init panics with "Attempted to initialize GTK from
+  two different threads". Tests that need a display skip themselves when there
+  is none. CI runs with `--test-threads=1`, so order-dependent failures surface
+  there first.
+- **i18n:** every UI string registered in code (helpers like `t(...)`,
+  `tfmt(...)`) must exist in all eight shipped catalogs
+  (`po/{ar,de,es,fr,ja,pt_BR,ru,zh_CN}.po`) or `tests/i18n_catalog.rs` fails.
+  `scripts/translate-i18n-catalogs.py` needs `DEEPL_AUTH_KEY`; without it, add
+  entries by hand in the repo's PO format.
+- **Docs drift:** this repo has advertised removed features before (GIF
+  recording, area recording, webcam PiP, `record ui`). When a capability is
+  added or retired, update `README.md` and the matching `docs/*.md` in the same
+  PR.
+- **Fedora recording is unsupported by design.** Recording entry points refuse
+  there with a notification; that is not a bug to fix.
+- **Clippy backlog:** pre-existing warnings keep CI from using `-D warnings`. Do
+  not clear them in an unrelated branch, and do not add new ones.
+- **Privacy:** never paste tokens, cookies, portal restore tokens, file paths,
+  window titles, or captured screen/audio content into issues, PRs, logs, or
+  commits. See "Privacy-safe reports" in `CONTRIBUTING.md`.
+- **Destructive git:** no `reset --hard`, `clean`, force-push, or branch
+  deletion unless the maintainer asks. Treat uncommitted work as theirs.
+
+## Report format
+
+- **Verdict:** confirmed / partly confirmed / not reproducible / already fixed
+- **Evidence:** reproduction, `file:line`, command output
+- **Cause:** what is actually wrong
+- **Fix:** branch, files, one-line summary
+- **Verified:** manual check and commands run, with results
+- **Not verified:** what you could not exercise, and why
