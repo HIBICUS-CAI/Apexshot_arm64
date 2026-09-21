@@ -155,7 +155,7 @@ curl -fsSL https://apexshot.org/install | sh
 The generic installer above will select this automatically. Direct command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/ubuntu-install.sh | bash
+curl -fsSL https://apexshot.org/install/ubuntu | bash
 ```
 
 ### Quick Install — Arch Linux
@@ -163,15 +163,15 @@ curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/ubu
 The generic installer above will select this automatically. Direct command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash
+curl -fsSL https://apexshot.org/install/arch | bash
 ```
 
 By default this installs the pre-built GitHub Release package. To choose a
 different Arch install method explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash -s -- --aur
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash -s -- --source
+curl -fsSL https://apexshot.org/install/arch | bash -s -- --aur
+curl -fsSL https://apexshot.org/install/arch | bash -s -- --source
 ```
 
 Or install manually from the AUR PKGBUILD:
@@ -204,7 +204,7 @@ The generic installer selects the Fedora path automatically when `dnf` is
 available. Direct command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/fedora-install.sh | bash
+curl -fsSL https://apexshot.org/install/fedora | bash
 ```
 
 The direct Fedora installer downloads the latest published GitHub Release RPM and
@@ -253,22 +253,23 @@ curl -fsSL https://apexshot.org/update | sh
 Direct Ubuntu / Debian command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/ubuntu-update.sh | bash
+curl -fsSL https://apexshot.org/update/ubuntu | bash
 ```
 
 Direct Arch Linux command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-update.sh | bash
+curl -fsSL https://apexshot.org/update/arch | bash
 ```
 
 Direct Fedora command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/fedora-update.sh | bash
+curl -fsSL https://apexshot.org/update/fedora | bash
 ```
 
-Direct openSUSE command:
+Direct openSUSE command (the openSUSE scripts are not proxied through
+`apexshot.org` yet, so this one still comes from GitHub):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/opensuse-update.sh | bash

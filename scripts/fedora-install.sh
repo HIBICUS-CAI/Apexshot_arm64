@@ -427,7 +427,7 @@ summary() {
     echo -e "\n  ${BOLD}How to use:${RESET}"
     echo -e "    Open ${BOLD}ApexShot${RESET} from the app menu (Settings / first-run setup)"
     echo -e "    Tray icon + hotkeys handle day-to-day capture"
-    echo -e "  Update:    ${DIM}curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/fedora-update.sh | bash${RESET}"
+    echo -e "  Update:    ${DIM}curl -fsSL https://apexshot.org/update/fedora | bash${RESET}"
     echo -e "  Remove:    ${DIM}sudo dnf remove apexshot${RESET}"
     echo -e "  ${DIM}Re-run this installer with --force to re-download the package.${RESET}"
     echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${RESET}\n"

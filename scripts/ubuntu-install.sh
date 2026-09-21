@@ -901,7 +901,7 @@ summary() {
     echo -e "    Tray icon + hotkeys handle day-to-day capture (daemon starts with your session)"
     echo -e "    apexshot capture area      # CLI area capture"
     echo -e "\n  ${BOLD}Update later with:${RESET}"
-    echo -e "    ${DIM}curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/ubuntu-update.sh | bash${RESET}"
+    echo -e "    ${DIM}curl -fsSL https://apexshot.org/update/ubuntu | bash${RESET}"
     echo -e "  ${DIM}Re-run this installer with --force to re-download the package.${RESET}"
     echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${RESET}\n"
 }
