@@ -141,6 +141,13 @@ unrelated work to an already-merged branch or to an old long-lived one.
 - **Privacy:** never paste tokens, cookies, portal restore tokens, file paths,
   window titles, or captured screen/audio content into issues, PRs, logs, or
   commits. See "Privacy-safe reports" in `CONTRIBUTING.md`.
+- **Worktrees:** do not create one unless two checkouts have to be live at the
+  same time (a long build or test run in one while the other is used). Prefer
+  the checkout you are in and `git switch -c` for a new branch: it reuses the
+  warm `target/`. When a worktree is warranted, keep the build cache shared so
+  dependencies are not recompiled per checkout, for example
+  `CARGO_TARGET_DIR=$HOME/.cache/apexshot-cargo-target cargo test`, and prune
+  stale entries when you are done (`git worktree prune`).
 - **Destructive git:** no `reset --hard`, `clean`, force-push, or branch
   deletion unless the maintainer asks. Treat uncommitted work as theirs.
 
