@@ -4,10 +4,11 @@ Working tracker for the recording/export audit done on 2026-09-21, and the
 handoff note for whoever continues it. Read this file, then take the first item
 whose status is not done.
 
-Status: item 1 merged to `main` in PR #55. Item 2 is implemented on
-`feat/editor-export-quality` (PR #56) and waits on the maintainer's hand
-check. Items 3 to 5 not started. Next action: check item 2, then start item 3
-on a fresh branch.
+Status: item 1 merged to `main` in PR #55. Item 2 done and verified on a live
+export (PR #56, unmerged). Two orphan findings from item 2 are being fixed:
+the `config.rs` Ultra comment goes straight to `main`, the estimate label gets
+its own branch. Items 3 to 5 not started. Next action: check the estimate-label
+branch, then start item 3 on a fresh branch.
 
 ## How to continue (read this first)
 
@@ -131,10 +132,9 @@ are fixed on `fix/overlay-resolution-options` and confirmed on a live recording.
 - `config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality` uses
   16.
 
-## Item 2: export quality control in the video editor
+## Item 2: DONE (PR #56, verified)
 
-**Implemented on `feat/editor-export-quality`, awaiting maintainer check.**
-An edited export always re-encodes with
+An edited export always re-encoded with
 `libx264 -preset veryfast -crf quality_to_crf(quality)`
 (`src/recording/editor/ffmpeg.rs:435-441`, `helpers.rs:391`), and the default
 quality of 70 maps to CRF 22 (`model_parts/state_impl.rs:14`), softer than a
@@ -190,6 +190,13 @@ currently drift.
   Ultra in the new footer chip, export twice (once untouched for the
   bit-identical stream copy, once with a trim) and compare sizes against a
   Balanced export of the same timeline; the CRF itself stays a code-level fact.
+- Live export (maintainer's machine): `ApexShot Recording 2026-09-19 at
+  21-02-42-edited-3.mp4` (3.3 MB, 1920x1200, 60 fps, 747 frames / 12.45 s),
+  exported with Ultra picked: the x264 options header in the file reads
+  `rc=crf ... crf=16.0`, so the picked tier reached the encoder. Correction to
+  the note above: libx264 exports *do* carry the CRF in that header
+  (`strings -n 6 <file> | grep -o "x264 - core[^\\\\]*"`); only the NVENC
+  recording tier stays a code-level fact.
 
 **Separate finding (not fixed here)**
 
@@ -198,7 +205,7 @@ currently drift.
   removed `content.append(&estimate_label)` with the old inspector panels and
   no `append(&estimate_label)` exists today, so its text is computed but never
   shown. The item 2 acceptance covers the estimate at the code level only;
-  making it visible is a UI placement decision for its own item.
+  making it visible got its own branch after this (`fix/editor-estimate-label`).
 
 **Acceptance**: an untouched export stays bit-identical; selecting Ultra makes
 the export args use CRF 16 and the estimate reflect the change.
