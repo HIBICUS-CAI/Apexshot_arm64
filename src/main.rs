@@ -5,7 +5,7 @@
 //!   cargo run -- capture area
 //!   cargo run -- capture window
 //!   cargo run -- record screen
-//!   cargo run -- record area
+//!   cargo run -- record screen
 //!   cargo run -- ocr <image>
 #![allow(
     clippy::too_many_arguments,

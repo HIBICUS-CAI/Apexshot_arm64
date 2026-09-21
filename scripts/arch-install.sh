@@ -592,11 +592,11 @@ install_from_source() {
     local desktop
     desktop=$(current_desktop_id)
 
-    # wlroots compositors need wf-recorder for video/GIF recording.
+    # wlroots compositors need wf-recorder for video recording.
     if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || [[ "$desktop" == *hyprland* ]] || \
        [[ -n "${SWAYSOCK:-}" ]] || [[ "$desktop" == *sway* || "$desktop" == *river* || "$desktop" == *dwl* || "$desktop" == *wayfire* || "$desktop" == *labwc* || "$desktop" == *niri* ]]; then
         deps+=(wf-recorder)
-        info "wlroots compositor detected — adding wf-recorder for video/GIF recording"
+        info "wlroots compositor detected — adding wf-recorder for video recording"
     fi
 
     local portal_backend

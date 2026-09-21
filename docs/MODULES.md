@@ -127,7 +127,7 @@ whether the user interacts through the Qt overlay (GNOME) or the daemon/CLI
 
 **Submodules:**
 - `mod.rs` — Native PipeWire capture + ffmpeg pipe recording loop, X11 GStreamer
-  fallback, codec selection, GIF encoding, portal session management
+  fallback, codec selection, portal session management
 - `editor/` — GTK4 video editor for trimming, conversion, and export
 - `control_session.rs` — Active recording session tracking and D-Bus control commands
 - `stop_overlay.rs` — GTK4 floating control bar (pause, stop, timer) during recording
@@ -136,14 +136,13 @@ whether the user interacts through the Qt overlay (GNOME) or the daemon/CLI
 - `dnd.rs` — Do Not Disturb inhibition during recording
 
 **Key Types (`mod.rs`):**
-- `RecordError` — `InitError`, `GStreamerError`, `PortalError`, `IoError`, `UnsupportedBackend`, `Cancelled`, `NoEncoderFound`, `GifError`
+- `RecordError` — `InitError`, `GStreamerError`, `PortalError`, `IoError`, `UnsupportedBackend`, `Cancelled`, `NoEncoderFound`
 - `RecordResult<T>` — `Result<T, RecordError>`
 - `RecordingConfig` — `output_path`, `width`/`height`, `x`/`y`, `cursor`, `fps`, audio sources, overlay options
 
 **Key Functions (`mod.rs`):**
 - `start_recording(config)` — Main recording entry point; selects backend (wf-recorder / native PipeWire + ffmpeg / GStreamer X11) and runs recording loop
 - `record_wayland_with_ffmpeg_sync()` — Wayland recording: native PipeWire capture → RGBA frames → ffmpeg stdin pipe
-- `record_gif_wayland_native()` — Wayland GIF recording: native PipeWire + ffmpeg palettegen/paletteuse
 - `record_x11_with_gstreamer()` — X11 fallback using GStreamer ximagesrc pipeline
 - `run_recording_with_controls(config, params)` — Recording session with shortcut / tray / notification controls; adds the GNOME shell mask when available
 - `run_recording_countdown_bar()` — Shows countdown then recording controls
@@ -263,7 +262,7 @@ the C++ Qt5 overlay (`capture-overlay/`) handles area selection instead.
 - Click-and-drag area selection with resize handles
 - Recording panel with mic/speaker toggles, format picker, and
   countdown options
-- Settings menu for video/GIF/control preferences
+- Settings menu for video and control preferences
 - Window picker mode for selecting application windows
 - Fullscreen capture mode
 - Crosshair pixel-zoom mode for precise point capture
@@ -648,7 +647,7 @@ without requiring the Qt overlay or GNOME Shell extension.
 
 1. Receives a `RecordScreen` or `RecordArea` action via hotkey, tray click, D-Bus
    `Trigger()`, or CLI relay.
-2. For area recording: spawns the GTK4 overlay (`src/overlay.rs`) via
+2. For screen recording: spawns the GTK4 overlay (`src/overlay.rs`) via
    `select_area_for_recording()`. The user draws a selection rectangle and
    configures recording options directly inside the GTK overlay panel.
 3. Builds a `RecordingConfig` from the overlay result and user settings.
@@ -840,7 +839,7 @@ Most modules use `anyhow::Result<T>` for general error propagation.
 
 **Domain-specific error types:**
 - `SaveError` (`capture/mod.rs`) — Pixel format, filename, IO, image encoding errors
-- `RecordError` (`recording/mod.rs`) — GStreamer, portal, encoder, GIF errors
+- `RecordError` (`recording/mod.rs`) — GStreamer, portal, and encoder errors
 - `DisplayError` (`backend/mod.rs`) — Backend initialization, capture, portal errors
 - `SelectionError` (`overlay.rs`) — Area selection failures
 - `EditorError` (`capture/editor/types.rs`) — Missing file, image load/save errors

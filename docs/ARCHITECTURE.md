@@ -157,7 +157,7 @@ Native `libpipewire` client that replaces GStreamer's `pipewiresrc`:
 
 ### 6. Recording Module (`src/recording/`)
 Screen recording with native PipeWire + ffmpeg:
-- `mod.rs` — Native PipeWire capture + ffmpeg pipe recording loop, X11 GStreamer fallback, codec selection, GIF encoding, portal session management
+- `mod.rs` — Native PipeWire capture + ffmpeg pipe recording loop, X11 GStreamer fallback, codec selection, portal session management
 - `control_session.rs` — `RecordingControlCommand` (Pause/Resume/Restart/StopSave/StopDiscard), active session tracking via static `OnceLock`
 - `stop_overlay.rs` — GTK4 floating control bar during recording (pause, stop, timer, position)
 - `countdown_overlay.rs` — fullscreen 3-2-1 countdown with Escape cancellation
@@ -165,7 +165,7 @@ Screen recording with native PipeWire + ffmpeg:
 - `editor/` — GTK4 video editor for trimming, dimension conversion, quality, and audio mode (MP4 only)
 - `dnd.rs` — Do Not Disturb mode during recording
 
-**Features:** MP4/WebM/OGV/GIF output, mic + speaker audio, recording mask, pause/resume/restart, countdown timer, post-recording video editor.
+**Features:** MP4/WebM/OGV output, mic + speaker audio, recording mask, pause/resume/restart, countdown timer, post-recording video editor.
 
 ### 7. X11/Wayland Area Selector (`src/overlay.rs`)
 GTK4 overlay for interactive area selection:
@@ -361,9 +361,9 @@ session is created. Screenshots on Fedora remain supported.
 
 #### Native Rust recording path (non-GNOME): daemon → portal → native PipeWire + ffmpeg
 
-1. User triggers recording via hotkey, tray, or CLI (`apexshot record area`,
+1. User triggers recording via hotkey, tray, or CLI (`apexshot record screen`,
    `apexshot record screen`).
-2. The daemon processes the action: for area recording, it launches the Rust GTK4
+2. The daemon processes the action: for screen recording, it launches the Rust GTK4
    layer-shell overlay (`src/overlay.rs`) for interactive area selection. For
    fullscreen recording, it skips this step and captures the full monitor bounds.
 3. A `RecordingConfig` is built from user settings (format, fps, audio sources,

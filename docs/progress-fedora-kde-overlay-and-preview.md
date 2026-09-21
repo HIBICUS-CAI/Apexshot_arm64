@@ -17,7 +17,7 @@ Stabilize ApexShot behavior for Fedora KDE Plasma and related Linux desktop path
 
 | Supported on Fedora | Not supported on Fedora |
 |---|---|
-| Screenshots (area / screen / window) | Screen recording (area / full screen / UI / GIF) |
+| Screenshots (area / screen / window) | Screen recording (full screen) |
 | Preview overlay, tray, settings, hotkeys | Portal / OpenH264 / VP9 encode paths for ApexShot |
 | Cloud upload for images | In-app recording controls / stop indicator for video |
 

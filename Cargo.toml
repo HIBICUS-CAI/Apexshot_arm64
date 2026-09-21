@@ -119,7 +119,7 @@ license-file = ["LICENSE", "4"]
 #                                                pulseaudio-utils on legacy PulseAudio systems.
 #   xdg-utils                                  → `xdg-open` (open file/URL)
 #   libnotify-bin                              → desktop notifications via notify-send
-#   ffmpeg                                     → GIF encoding & video post-processing
+#   ffmpeg                                     → video encoding & post-processing
 #   wget, curl, unzip                          → in-app GNOME extension installer
 #   gstreamer1.0-{plugins-base,plugins-good,plugins-bad,libav,pipewire}
 #                                              → ScreenCast / PipeWire capture + encoding
