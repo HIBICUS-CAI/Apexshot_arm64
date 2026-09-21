@@ -289,7 +289,11 @@ pub fn prepare_overlay_recording_request(
     app_config.rec_mic = request.mic;
     app_config.rec_speaker = request.speaker;
     app_config.rec_video_format = 0;
-    app_config.rec_video_max_res = request.video_max_res;
+    // `rec_video_max_res` is deliberately not taken from the request: neither
+    // quick access offers a resolution picker any more, so the request only
+    // echoes the value the overlay was launched with. Writing that echo back
+    // reverted a resolution the user saved in Settings after the overlay
+    // started.
     app_config.rec_video_fps = request.video_fps;
     app_config.rec_video_mono = request.record_mono;
     app_config.rec_noise_suppression = request.noise_suppression;
@@ -305,10 +309,10 @@ pub fn prepare_overlay_recording_request(
     let output_path = super::recording_output_path(&app_config, "mp4", now);
     super::ensure_recording_parent_dir(&output_path);
 
-    // The overlay has no resolution picker of its own; it forwards the value
-    // saved in Settings, so every option Settings offers must survive the trip
-    // and not just the three the overlay used to show.
-    let max_resolution = super::max_resolution_for_setting(request.video_max_res);
+    // Settings is the only place the cap can be chosen, so it comes from the
+    // config the caller loaded, never from the request (which only echoes the
+    // overlay's launch-time value).
+    let max_resolution = super::max_resolution_for_setting(app_config.rec_video_max_res);
 
     let fps = match request.video_fps {
         0 => 24,
@@ -1021,6 +1025,9 @@ mod tests {
         let prepared = prepare_overlay_recording_request(
             AppConfig {
                 video_export_location: "/tmp/apexshot-recordings".into(),
+                // Settings holds 480p; the request below still asks for 720p
+                // because the overlay echoes whatever it was launched with.
+                rec_video_max_res: 5,
                 ..AppConfig::default()
             },
             &request,
@@ -1042,7 +1049,8 @@ mod tests {
         assert_eq!(prepared.updated_app_config.last_selection_w, Some(640));
         assert_eq!(prepared.updated_app_config.last_selection_h, Some(480));
         assert_eq!(prepared.updated_app_config.rec_video_format, 0);
-        assert_eq!(prepared.updated_app_config.rec_video_max_res, 2);
+        // The stale request value must not overwrite what Settings saved.
+        assert_eq!(prepared.updated_app_config.rec_video_max_res, 5);
         assert_eq!(prepared.updated_app_config.rec_video_fps, 3);
         assert_eq!(prepared.updated_app_config.rec_video_mono, true);
         assert_eq!(prepared.updated_app_config.rec_noise_suppression, true);
@@ -1059,7 +1067,7 @@ mod tests {
             crate::gnome_shell::should_use_pointer_track()
         );
         assert_eq!(prepared.recording_config.hidpi, true);
-        assert_eq!(prepared.recording_config.max_resolution, Some((1280, 720)));
+        assert_eq!(prepared.recording_config.max_resolution, Some((854, 480)));
         assert_eq!(prepared.recording_config.fps, 60);
         assert_eq!(prepared.recording_config.mono_audio, true);
         assert_eq!(prepared.recording_config.noise_suppression, true);
@@ -1103,8 +1111,9 @@ mod tests {
 
     #[test]
     fn prepare_overlay_recording_request_maps_video_setting_variants() {
-        // (video_format, video_max_res, video_fps, expected cap, expected fps).
-        // Every dropdown index must survive the trip, not just the first three.
+        // (video_format, saved video_max_res, video_fps, expected cap, fps).
+        // Every option Settings offers must survive the trip, not just the
+        // first three, and the cap must come from the saved value.
         let cases = [
             (0_u8, 0_u8, 0_u8, None, 24_u32),
             (1, 1, 1, Some((1920, 1080)), 30),
@@ -1128,13 +1137,18 @@ mod tests {
                 height: 600,
                 record_type: RecordingType::Video,
                 video_format,
-                video_max_res,
+                // The overlay has no resolution picker; it always sends the
+                // value it was launched with. This stale echo must be ignored.
+                video_max_res: 0,
                 video_fps,
                 ..RecordingRequest::default()
             };
 
             let prepared = prepare_overlay_recording_request(
-                AppConfig::default(),
+                AppConfig {
+                    rec_video_max_res: video_max_res,
+                    ..AppConfig::default()
+                },
                 &request,
                 chrono::Utc
                     .with_ymd_and_hms(2026, 4, 2, 10, 0, index as u32)
@@ -1143,10 +1157,14 @@ mod tests {
 
             assert_eq!(
                 prepared.recording_config.max_resolution, expected_max_res,
-                "resolution index {video_max_res} must keep its cap"
+                "saved resolution index {video_max_res} must keep its cap"
             );
             assert_eq!(prepared.recording_config.fps, expected_fps);
             assert_eq!(prepared.updated_app_config.rec_video_format, 0);
+            assert_eq!(
+                prepared.updated_app_config.rec_video_max_res, video_max_res,
+                "the saved resolution must survive the request untouched"
+            );
             assert_eq!(
                 prepared
                     .output_path

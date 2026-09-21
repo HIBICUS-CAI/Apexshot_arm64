@@ -49,6 +49,18 @@ the whole panel is scheduled for removal as item 5. There is one settings UI for
 recording resolution, and it is Settings; the quick access menu never had that
 option.
 
+**Second defect, found while testing the first fix (same day)**: the request's
+resolution was written back into the saved config.
+`prepare_overlay_recording_request` copied `request.video_max_res` into
+`app_config.rec_video_max_res` (`controls.rs:292`), and
+`run_overlay_recording_request_with_gtk` (`controls.rs:755`) saves that config at
+record start. Neither quick access has a resolution picker any more, so the
+request only echoes the value the overlay was launched with; a resolution saved
+in Settings after the overlay started was therefore reverted by the next
+recording. Two real recordings (1920x1200 native, 60 fps, NVENC CQP 16) show it:
+`config.yml`'s last write is the recording's start second and reads
+`rec_video_max_res: 0` while the Settings window shows 480p.
+
 **Fix scope (PR #55)**
 
 - One source of truth in `src/recording/mod.rs`:
@@ -57,6 +69,11 @@ option.
 - `src/recording/controls.rs` maps every index through the helper instead of its
   own three-case match; the test covers all seven indices and an out-of-range
   value.
+- `prepare_overlay_recording_request` no longer copies the request's
+  `rec_video_max_res` into the config, and the cap comes from the config the
+  caller loaded, so a stale overlay echo can neither revert the setting nor
+  escape the cap. The test drives the cap from the saved value and pins that a
+  request value of 0 cannot change it.
 - `src/config.rs` keeps a hand-edited `rec_video_max_res` inside the table.
 - The C++ overlay's resolution picker is removed rather than extended: the Video
   tab is now frame rate, mono and open-video-editor, and the value the overlay
@@ -67,9 +84,10 @@ option.
 **Status**: PR #55 (branch `fix/overlay-resolution-options`), awaiting merge and
 the manual check below.
 
-**Acceptance**: with Settings on 480p, a recording started from the overlay
-produces an 854x480 file; 2160p on a 1080p display records 1920x1080 (a ceiling,
-never an upscale).
+**Acceptance**: with Settings on 480p, a full-display recording comes out inside
+the 854x480 box (854x480 on a 16:9 screen, 768x480 on the maintainer's 1920x1200
+screen, aspect preserved, never upscaled); 2160p on a 1920x1200 display records
+1920x1200 unchanged.
 
 **Separate risks found while tracing (not part of this fix)**: the C++ overlay's
 frame-rate picker (`CaptureOverlay_Events.cpp`) indexes a four-element list with
@@ -161,12 +179,20 @@ it is not part of the items above.
 - Not verified: no live recording session was run, so delivered frame rate,
   encoder behaviour at 4K60 and the overlay dropdown were confirmed by code and
   tests only.
-- Item 1 as it now stands (PR #55): `cargo fmt --all -- --check` clean,
+- Item 1 live checks (maintainer's GNOME Wayland machine, 1920x1200):
+  `ApexShot Recording 2026-09-21 at 15-53-47.mp4` and `... at 16-08-11.mp4` are
+  both 1920x1200, 60.000 fps CFR, H.264 High, yuv420p, bt709/tv, NVENC
+  (`encoder=Lavc62.11.100 h264_nvenc`), CQP 16 (Ultra) at 2.75 / 2.13 Mbps. So
+  60 fps and Ultra were honoured, and the 480p cap was not: the config's last
+  write is each recording's start second and read `rec_video_max_res: 0`. That
+  produced the second defect above, fixed in the same branch.
+- Not verified for item 1: no recording has been made with the echo fix in the
+  binary yet. Reinstall the branch build, save 480p in Settings, confirm
+  `rec_video_max_res: 5` in `~/.config/apexshot/config.yml` before recording,
+  then record a few seconds: expect 768x480 at 60 fps with CQP 11.
+- Item 1 gates (both commits on PR #55): `cargo fmt --all -- --check` clean,
   `cargo clippy --workspace --all-targets` with the two pre-existing warnings and
   no new ones, `cargo test --jobs 2 -- --test-threads=1` 1088 lib tests plus the
   integration targets with 0 failures, `python3 scripts/check-i18n-catalogs.py`
   ok, and `capture-overlay` builds clean with
   `cmake -S . -B build && cmake --build build -j`.
-- Not verified for item 1: the overlay was not run against a live session. The
-  resolution row is gone from the built overlay and the request path is covered
-  by tests, but the recording check in the acceptance line is still open.
