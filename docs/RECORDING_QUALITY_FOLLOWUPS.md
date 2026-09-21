@@ -5,9 +5,9 @@ handoff note for whoever continues it. Read this file, then take the first item
 whose status is not done.
 
 Status: item 1 merged to `main` in PR #55. Item 2 is implemented on
-`feat/editor-export-quality` and waits on the maintainer's hand check. Items 3
-to 5 not started. Next action: check item 2, then start item 3 on a fresh
-branch.
+`feat/editor-export-quality` (PR #56) and waits on the maintainer's hand
+check. Items 3 to 5 not started. Next action: check item 2, then start item 3
+on a fresh branch.
 
 ## How to continue (read this first)
 
