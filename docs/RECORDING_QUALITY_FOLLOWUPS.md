@@ -4,14 +4,15 @@ Working tracker for the recording/export audit done on 2026-09-21, and the
 handoff note for whoever continues it. Read this file, then take the first item
 whose status is not done.
 
-Status: item 1 merged in PR #55. Item 2 done and verified on a live export,
-merged in PR #56, and its two orphan findings are fixed (the `config.rs` Ultra
-comment on `main`, the estimate label in PR #57). Item 3 done on `main` (docs).
-Item 4 done on `fix/x11-resolution-cap` (PR #58) together with the three
-separate findings recorded under it; the maintainer confirmed it complete.
-Item 5 implemented on `chore/retire-rust-recording-panel` (PR #59), awaiting
-maintainer verification. Next action: verify item 5; with that, every item in
-this tracker is done and only the unclaimed lead below remains open.
+Status: all five items are done and merged. Item 1 merged in PR #55. Item 2
+done and verified on a live export, merged in PR #56, and its two orphan findings
+are fixed (the `config.rs` Ultra comment on `main`, the estimate label in
+PR #57). Item 3 done on `main` (docs). Item 4 merged in PR #58 together with the
+three separate findings recorded under it; the maintainer confirmed it complete.
+Item 5 merged in PR #59. Next action: nothing under the items below is open.
+What remains in this file: the unclaimed lead at the bottom, the still-open
+`rec_video_fps` clamp finding under item 1, and the not-verified list in the
+verification log (X11 hand check, delivered frame rate, 4K60).
 
 ## How to continue (read this first)
 
@@ -131,7 +132,9 @@ are fixed on `fix/overlay-resolution-options` and confirmed on a live recording.
   four-element list with `m_videoFps`, which also comes from the config
   (`CaptureOverlay.h:164`, `CaptureOverlay_RecordingSettingsDrawing.cpp:224`), and
   `rec_video_fps` is not clamped in `config.rs`; a hand-edited value indexes out
-  of range.
+  of range. **Still open** after item 5's merge: `sanitized()` clamps other
+  fields but not `rec_video_fps` (verified on `main` at `config.rs:66`, `:211`
+  and `CaptureOverlay_RecordingSettingsDrawing.cpp:209-210`).
 - `config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality` uses
   16.
 
@@ -291,7 +294,7 @@ larger than before at the same tier (the compensated CRF). Also confirm a
 fullscreen uncapped X11 recording still starts — that path exercises the
 x11rb screen query.
 
-## Item 5: DONE (branch `chore/retire-rust-recording-panel`, PR #59)
+## Item 5: DONE (PR #59, merged)
 
 **Confirmed** (code-level, step 1 of this tracker). `st.recording.panel_open` was
 written `true` only by a test (`src/overlay/hit_testing.rs`), it defaulted to
