@@ -4,7 +4,7 @@ Working tracker for the recording/export audit done on 2026-09-21. Each item is
 one logical change on its own branch, in the order listed. Update the status
 line when an item lands so the next session can pick up from here.
 
-Status: item 1 in progress; items 2 to 4 not started.
+Status: item 1 in review (PR #55); items 2 to 4 not started.
 
 ## Decisions already made
 
@@ -43,25 +43,35 @@ The same index table is written out three times:
 
 - One source of truth in `src/recording/mod.rs`:
   `max_resolution_for_setting(u8) -> Option<(u32, u32)>` plus the setting count
-  (`VIDEO_MAX_RES_SETTINGS` length) used by the overlay drawing and hit test.
+  (`VIDEO_MAX_RES_OPTION_COUNT`) used by the overlay drawing and hit test.
   Keep the `t("...")` label literals at their call sites so i18n extraction
-  keeps working; assert the label array length against the shared count in a
-  test instead.
+  keeps working; the label arrays are typed with the shared count, so a dropped
+  or added label is a compile error.
 - `src/recording/controls.rs` uses the helper instead of its own match.
 - `src/overlay/recording/hit_testing.rs` uses the shared count.
+- `src/config.rs` keeps a hand-edited `rec_video_max_res` inside the table
+  instead of indexing past the overlay's label array.
 - Extend `prepare_overlay_recording_request_maps_video_setting_variants` to all
   seven indices plus an out-of-range value, and update the dropdown geometry
   test to seven rows.
 
+**Status**: PR #55 (branch `fix/overlay-resolution-options`), awaiting merge and
+the manual check below. The order of the drawn labels versus the cap table is
+guarded by the typed array length and a comment, not by a test.
+
 **Acceptance**: picking 2160p in the overlay records a 1080p file on a 1080p
 display (cap, no upscale) and 2160p on a 4K display; picking 480p yields 854x480.
 
-**Separate risk found while tracing (not part of this fix)**: the C++ overlay
+**Separate risks found while tracing (not part of this fix)**: the C++ overlay
 (`capture-overlay/`) still ships three options
 (`CaptureOverlay_Events.cpp:410`, `CaptureOverlay_RecordingSettingsDrawing.cpp:210`)
 and indexes a three-element list with a value taken straight from config
 (`CaptureOverlay.h:163`, `:211`). A config saved from Settings with 1440p or
-2160p can therefore index out of range on non-GNOME sessions.
+2160p can therefore index out of range on non-GNOME sessions. The dropdown popup
+rows also use untranslated literals while the closed button uses `t(...)`.
+`rec_video_fps` has the same hand-edited-config indexing risk, and
+`config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality` uses
+16.
 
 ## Item 2: export quality control in the video editor
 
