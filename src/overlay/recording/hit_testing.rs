@@ -300,14 +300,9 @@ mod tests {
         )
         .panel;
 
-        for (tab, drop_idx, option_count) in [
-            (
-                SettingsTab::Video,
-                3,
-                crate::recording::VIDEO_MAX_RES_OPTION_COUNT,
-            ),
-            (SettingsTab::Video, 4, 4),
-        ] {
+        for (tab, drop_idx, option_count) in
+            [(SettingsTab::Video, 3, 3), (SettingsTab::Video, 4, 4)]
+        {
             let popup_y = compute_dropdown_popup_y(panel.y, drop_idx, tab);
             let popup_width = 160.0;
             let popup_x = panel.x + 408.0 - popup_width;
@@ -487,7 +482,7 @@ pub(crate) fn settings_dropdown_hit_item(
     drop_idx: usize,
 ) -> Option<usize> {
     let option_count = match (tab, drop_idx) {
-        (SettingsTab::Video, 3) => crate::recording::VIDEO_MAX_RES_OPTION_COUNT,
+        (SettingsTab::Video, 3) => 3,
         (SettingsTab::Video, 4) => 4,
         _ => return None,
     };

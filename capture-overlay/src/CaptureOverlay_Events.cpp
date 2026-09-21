@@ -403,21 +403,18 @@ void CaptureOverlay::mousePressEvent(QMouseEvent* event)
                         update();
                         return;
                     } else if (m_settingsTab == 1) { // Video tab logic
+                        // Row order matches drawSettingsMenu: frame rate, mono,
+                        // open video editor. Maximum resolution lives in
+                        // Settings now, so the panel has no picker for it.
                         switch (i) {
-                        case 2: // Max Resolution
-                            m_dropdownOpen = i;
-                            m_dropdownAnchor = m_settingsClickableRects[i];
-                            m_dropdownOptions = QStringList() << "Original" << "1080p" << "720p";
-                            m_dropdownValuePtr = &m_videoMaxRes;
-                            break;
-                        case 3: // Video FPS
+                        case 2: // Video FPS
                             m_dropdownOpen = i;
                             m_dropdownAnchor = m_settingsClickableRects[i];
                             m_dropdownOptions = QStringList() << "24" << "30" << "50" << "60";
                             m_dropdownValuePtr = &m_videoFps;
                             break;
-                        case 4: m_recordMono = !m_recordMono; break;
-                        case 5: m_openEditor = !m_openEditor; break;
+                        case 3: m_recordMono = !m_recordMono; break;
+                        case 4: m_openEditor = !m_openEditor; break;
                         }
                         update();
                         return;

@@ -325,9 +325,9 @@ impl AppConfig {
             self.after_capture_show_quick_access = DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS;
         }
         self.rec_video_format = self.rec_video_format.min(1);
-        // The overlay indexes its dropdown labels with this value, so a config
-        // edited by hand must not point outside the shared option table.
-        // Unknown values fall back to Original, like `max_resolution_for_setting`.
+        // A config edited by hand must not point outside the option table that
+        // Settings offers. Unknown values fall back to Original, the same way
+        // `max_resolution_for_setting` reads them.
         if self.rec_video_max_res as usize >= crate::recording::VIDEO_MAX_RES_OPTION_COUNT {
             self.rec_video_max_res = 0;
         }

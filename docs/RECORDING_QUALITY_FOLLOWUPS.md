@@ -4,7 +4,8 @@ Working tracker for the recording/export audit done on 2026-09-21. Each item is
 one logical change on its own branch, in the order listed. Update the status
 line when an item lands so the next session can pick up from here.
 
-Status: item 1 in review (PR #55); items 2 to 4 not started.
+Status: item 1 in review (PR #55); items 2 to 4 and the item 5 cleanup not
+started.
 
 ## Decisions already made
 
@@ -13,65 +14,70 @@ Status: item 1 in review (PR #55); items 2 to 4 not started.
   defaulting to High, rather than only fixing the wording.
 - "Maximum resolution" keeps its ceiling semantics (never upscales); the docs
   need to say so instead of the setting changing meaning.
+- The recording resolution is chosen in Settings only. The overlay forwards the
+  configured value and no longer offers a picker of its own (removed in PR #55),
+  and the dead Rust panel that had one is item 5.
 
-## Item 1: the overlay resolution setting only offers three working options
+## Item 1: overlay recording requests dropped four of the seven resolution options
 
-**Confirmed** (code-level; a live run has not been done yet).
+**Confirmed** (code-level; the manual check is still pending).
 
-Two defects stack up so that 1440p, 900p, 480p and 2160p cannot be selected from
-the overlay, and would be dropped even if they arrived:
+Settings offers seven options for "Maximum resolution"
+(`src/settings/recording.rs`), but the request built for the capture overlay only
+knew the first three: `src/recording/controls.rs:317-322` mapped indices 0 to 2
+and sent everything else to `None` (Original). Values 3 to 6 do reach that code,
+because the overlay seeds its state from the config
+(`src/overlay/recording/state.rs:120`), so a 480p, 900p, 1440p or 2160p cap was
+silently recorded at native size.
 
-1. `src/overlay/recording/hit_testing.rs:483-485` caps the resolution dropdown
-   at three rows (`(SettingsTab::Video, 3) => 3`), while
-   `src/overlay/drawing/settings_ui.rs:627-632` draws seven rows
-   (`Original, 1080p, 720p, 1440p, 900p, 480p, 2160p`). The popup is drawn
-   210px tall and hit-tested as 90px tall, so rows 4 to 7 close the dropdown
-   without selecting anything. The existing test
-   (`hit_testing.rs:300-330`) encodes the wrong count.
-2. `src/recording/controls.rs:317-322` maps only indices 0, 1, 2 to a cap and
-   sends everything else to `None` (Original). A value of 3 to 6 can arrive
-   from Settings, which offers all seven
-   (`src/settings/recording.rs:184-200`), because the overlay seeds its state
-   from the config (`src/overlay/recording/state.rs:120`). The test at
-   `controls.rs:1107-1137` only covers indices 0 to 2.
+Each UI also carried its own copy of the list. The Rust recording panel drew
+seven rows but hit-tested three (`hit_testing.rs:483-485` versus
+`settings_ui.rs:627-632`), and the C++ overlay
+(`capture-overlay/src/CaptureOverlay_RecordingSettingsDrawing.cpp:210`) offered
+only `Original / 1080p / 720p` while indexing that three-element list with the
+value taken straight from the config (`CaptureOverlay.h:163`), which is out of
+range for anything above 720p.
 
-The same index table is written out three times:
-`src/recording/mod.rs:251-266` (complete), `src/recording/controls.rs:317-322`
-(truncated), and the overlay label list (`settings_ui.rs:627-632`).
+**Correction (same day)**: the Rust recording panel is dead code. It is drawn
+only when `st.recording.panel_open` is true and nothing outside tests sets it
+(`src/overlay/recording/hit_testing.rs`, `src/overlay/geometry.rs` are the only
+writers), and `OverlayIntent::Record` is never assigned in production
+(`src/overlay/api.rs:116` produces `Area` and `Ocr` only). On GNOME Wayland the
+selector is the C++ overlay regardless (`src/main.rs:437-444`: GNOME has no
+layer-shell). The seven-row dropdown fix was therefore dropped from the PR, and
+the whole panel is scheduled for removal as item 5. There is one settings UI for
+recording resolution, and it is Settings; the quick access menu never had that
+option.
 
-**Fix scope**
+**Fix scope (PR #55)**
 
 - One source of truth in `src/recording/mod.rs`:
-  `max_resolution_for_setting(u8) -> Option<(u32, u32)>` plus the setting count
-  (`VIDEO_MAX_RES_OPTION_COUNT`) used by the overlay drawing and hit test.
-  Keep the `t("...")` label literals at their call sites so i18n extraction
-  keeps working; the label arrays are typed with the shared count, so a dropped
-  or added label is a compile error.
-- `src/recording/controls.rs` uses the helper instead of its own match.
-- `src/overlay/recording/hit_testing.rs` uses the shared count.
-- `src/config.rs` keeps a hand-edited `rec_video_max_res` inside the table
-  instead of indexing past the overlay's label array.
-- Extend `prepare_overlay_recording_request_maps_video_setting_variants` to all
-  seven indices plus an out-of-range value, and update the dropdown geometry
-  test to seven rows.
+  `max_resolution_for_setting(u8) -> Option<(u32, u32)>`, plus
+  `VIDEO_MAX_RES_OPTION_COUNT` for how many options Settings offers.
+- `src/recording/controls.rs` maps every index through the helper instead of its
+  own three-case match; the test covers all seven indices and an out-of-range
+  value.
+- `src/config.rs` keeps a hand-edited `rec_video_max_res` inside the table.
+- The C++ overlay's resolution picker is removed rather than extended: the Video
+  tab is now frame rate, mono and open-video-editor, and the value the overlay
+  forwards comes from Settings
+  (`CaptureOverlay_RecordingSettingsDrawing.cpp`, `CaptureOverlay_Events.cpp`,
+  `CaptureOverlay.h`). Settings is the only place the resolution is chosen.
 
 **Status**: PR #55 (branch `fix/overlay-resolution-options`), awaiting merge and
-the manual check below. The order of the drawn labels versus the cap table is
-guarded by the typed array length and a comment, not by a test.
+the manual check below.
 
-**Acceptance**: picking 2160p in the overlay records a 1080p file on a 1080p
-display (cap, no upscale) and 2160p on a 4K display; picking 480p yields 854x480.
+**Acceptance**: with Settings on 480p, a recording started from the overlay
+produces an 854x480 file; 2160p on a 1080p display records 1920x1080 (a ceiling,
+never an upscale).
 
-**Separate risks found while tracing (not part of this fix)**: the C++ overlay
-(`capture-overlay/`) still ships three options
-(`CaptureOverlay_Events.cpp:410`, `CaptureOverlay_RecordingSettingsDrawing.cpp:210`)
-and indexes a three-element list with a value taken straight from config
-(`CaptureOverlay.h:163`, `:211`). A config saved from Settings with 1440p or
-2160p can therefore index out of range on non-GNOME sessions. The dropdown popup
-rows also use untranslated literals while the closed button uses `t(...)`.
-`rec_video_fps` has the same hand-edited-config indexing risk, and
-`config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality` uses
-16.
+**Separate risks found while tracing (not part of this fix)**: the C++ overlay's
+frame-rate picker (`CaptureOverlay_Events.cpp`) indexes a four-element list with
+`m_videoFps`, which also comes from the config
+(`CaptureOverlay.h:164`, `CaptureOverlay_RecordingSettingsDrawing.cpp:224`), and
+`rec_video_fps` is not clamped in `config.rs`; a hand-edited value indexes out of
+range. `config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality`
+uses 16, and `rec_video_fps` shares the hand-edited-config indexing risk.
 
 ## Item 2: export quality control in the video editor
 
@@ -120,6 +126,23 @@ README and overlay caption promise quality editing that does not exist.
 never reaches the pipeline on Xorg sessions. There is no test on that pipeline
 string today. Only worth doing if X11 stays supported.
 
+## Item 5: retire the dead Rust recording panel
+
+**Confirmed dead code.** `st.recording.panel_open` is written only by tests, so
+`recording_ui::draw_recording_panel` (`src/overlay/drawing/mod.rs:675`, `:755`)
+never paints in the running app, the recording settings menu with its resolution
+popup (`src/overlay/drawing/settings_ui.rs`) is unreachable, and the request
+path in `src/overlay/recording/result.rs` never produces a recording that way.
+`OverlayIntent::Record` is assigned nowhere outside tests.
+
+**Scope**: remove the panel state, drawing, hit testing and settings menu
+(`src/overlay/recording/`, `src/overlay/drawing/recording_ui.rs`,
+`src/overlay/drawing/settings_ui.rs`) together with the input branches that only
+exist to serve them (`src/overlay/window/input/`, `src/overlay/window/audio.rs`),
+keeping whatever the capture menu still uses (`src/overlay/capture_menu.rs`,
+`src/capture_overlay/wlroots.rs`). Tests that only exercised the panel go with
+it; `cargo clippy --workspace --all-targets` should report no new dead code.
+
 ## Unclaimed lead: empty recording file
 
 `ApexShot Recording 2026-05-26 at 18-16-17.mp4` in the working tree (gitignored,
@@ -138,3 +161,12 @@ it is not part of the items above.
 - Not verified: no live recording session was run, so delivered frame rate,
   encoder behaviour at 4K60 and the overlay dropdown were confirmed by code and
   tests only.
+- Item 1 as it now stands (PR #55): `cargo fmt --all -- --check` clean,
+  `cargo clippy --workspace --all-targets` with the two pre-existing warnings and
+  no new ones, `cargo test --jobs 2 -- --test-threads=1` 1088 lib tests plus the
+  integration targets with 0 failures, `python3 scripts/check-i18n-catalogs.py`
+  ok, and `capture-overlay` builds clean with
+  `cmake -S . -B build && cmake --build build -j`.
+- Not verified for item 1: the overlay was not run against a live session. The
+  resolution row is gone from the built overlay and the request path is covered
+  by tests, but the recording check in the acceptance line is still open.

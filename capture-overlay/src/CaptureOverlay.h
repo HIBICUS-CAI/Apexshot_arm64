@@ -160,6 +160,9 @@ public:
     /// freeze and painting a second status bar under the real one.
     void setFreezeBackground(const QPixmap& freeze);
     void setInitialVideoFormat(int v) { m_videoFormat = std::clamp(v, 0, 1); }
+    /// Maximum-resolution index for the recording request. It comes from
+    /// Settings (sanitized by the Rust config loader) and the overlay no longer
+    /// offers a picker for it, so this only forwards the configured value.
     void setInitialVideoMaxRes(int v) { m_videoMaxRes = v; }
     void setInitialVideoFps(int v) { m_videoFps = v; }
     void setInitialRecordMono(bool v) { m_recordMono = v; }

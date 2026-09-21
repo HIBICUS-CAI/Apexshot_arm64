@@ -272,9 +272,10 @@ impl RecordingConfig {
     }
 }
 
-/// Number of options in Settings → "Maximum resolution" and in the overlay's
-/// matching dropdown. The index is the value stored in `rec_video_max_res`, so
-/// the dropdown order must match [`max_resolution_for_setting`].
+/// Number of options in Settings → "Maximum resolution". The index is the value
+/// stored in `rec_video_max_res`, so the list order must match
+/// [`max_resolution_for_setting`]. Settings is the only place that offers the
+/// list; the capture overlay carries the configured value through untouched.
 pub const VIDEO_MAX_RES_OPTION_COUNT: usize = 7;
 
 /// Settings → "Maximum resolution" as a capture cap.

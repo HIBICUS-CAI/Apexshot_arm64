@@ -305,8 +305,9 @@ pub fn prepare_overlay_recording_request(
     let output_path = super::recording_output_path(&app_config, "mp4", now);
     super::ensure_recording_parent_dir(&output_path);
 
-    // Every dropdown option maps through the shared table, so the overlay can
-    // pick 1440p/900p/480p/2160p and not just the original three.
+    // The overlay has no resolution picker of its own; it forwards the value
+    // saved in Settings, so every option Settings offers must survive the trip
+    // and not just the three the overlay used to show.
     let max_resolution = super::max_resolution_for_setting(request.video_max_res);
 
     let fps = match request.video_fps {
