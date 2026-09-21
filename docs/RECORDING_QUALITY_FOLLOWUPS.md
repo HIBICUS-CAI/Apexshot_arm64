@@ -4,8 +4,8 @@ Working tracker for the recording/export audit done on 2026-09-21. Each item is
 one logical change on its own branch, in the order listed. Update the status
 line when an item lands so the next session can pick up from here.
 
-Status: item 1 in review (PR #55); items 2 to 4 and the item 5 cleanup not
-started.
+Status: item 1 verified on a live recording (PR #55 green, awaiting merge);
+items 2 to 4 and the item 5 cleanup not started.
 
 ## Decisions already made
 
@@ -81,8 +81,9 @@ recording. Two real recordings (1920x1200 native, 60 fps, NVENC CQP 16) show it:
   (`CaptureOverlay_RecordingSettingsDrawing.cpp`, `CaptureOverlay_Events.cpp`,
   `CaptureOverlay.h`). Settings is the only place the resolution is chosen.
 
-**Status**: PR #55 (branch `fix/overlay-resolution-options`), awaiting merge and
-the manual check below.
+**Status**: verified on the maintainer's machine after installing the fix commit:
+a 480p setting came out as 768x480 at 60 fps, and the saved setting survived the
+recording. PR #55 is green and awaiting merge.
 
 **Acceptance**: with Settings on 480p, a full-display recording comes out inside
 the 854x480 box (854x480 on a 16:9 screen, 768x480 on the maintainer's 1920x1200
@@ -186,10 +187,12 @@ it is not part of the items above.
   60 fps and Ultra were honoured, and the 480p cap was not: the config's last
   write is each recording's start second and read `rec_video_max_res: 0`. That
   produced the second defect above, fixed in the same branch.
-- Not verified for item 1: no recording has been made with the echo fix in the
-  binary yet. Reinstall the branch build, save 480p in Settings, confirm
-  `rec_video_max_res: 5` in `~/.config/apexshot/config.yml` before recording,
-  then record a few seconds: expect 768x480 at 60 fps with CQP 11.
+- Item 1 verified (maintainer's machine, after installing `05f18f8`):
+  `ApexShot Recording 2026-09-21 at 16-37-36.mp4` is 768x480, 60.000 fps CFR
+  (637 frames / 10.617 s), H.264 High, NVENC, 432 kbps, 573 KB. `config.yml` was
+  written at the recording's start second and kept `rec_video_max_res: 5`, so the
+  echo no longer reverts the setting. Expected CQP 11 at this size; the container
+  does not carry the QP, so that part stays code-level.
 - Item 1 gates (both commits on PR #55): `cargo fmt --all -- --check` clean,
   `cargo clippy --workspace --all-targets` with the two pre-existing warnings and
   no new ones, `cargo test --jobs 2 -- --test-threads=1` 1088 lib tests plus the
