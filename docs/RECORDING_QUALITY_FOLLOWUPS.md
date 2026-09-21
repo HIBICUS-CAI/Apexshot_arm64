@@ -364,11 +364,36 @@ it; `cargo clippy --workspace --all-targets` should report no new dead code.
 
 ## Unclaimed lead: empty recording file
 
+**Step 1 done (2026-09-21): verdict — already fixed, with one residual gap.**
+
 `ApexShot Recording 2026-05-26 at 18-16-17.mp4` in the working tree (gitignored,
 261 bytes) is a finalized MP4 with `ftyp` + empty `mdat` + a 213-byte `moov` and
 no `trak` box: ffmpeg exited cleanly having written zero streams. Worth a step 1
 investigation (how a session can end like that without a user-facing error), but
 it is not part of the items above.
+
+- Re-probed the file: `nb_streams=0`, `duration=N/A`, size 261 — matches the
+  description above.
+- The date is the day the GStreamer → native PipeWire backend swap landed
+  (`d2eeb82`, 2026-05-26) plus six more recording commits the same day and
+  seven the next: the backend's unstable landing day, not steady-state code.
+- The "without a user-facing error" half is **already fixed**. On 2026-05-26
+  nothing validated the output and "Recording saved" was notified
+  unconditionally. Since then three guards landed, in order: the empty-output
+  guard (2026-07-12, `backend/wayland.rs`, "output file is empty"), the
+  zero-frame guard (2026-08-28, deletes the file and errors "Recording produced
+  no frames. The screen share ended before capture started."), and
+  `validate_saved_recording` gating the success notification (2026-09-10,
+  `controls.rs:235`).
+- **Residual gap (still unclaimed):** `validate_saved_recording` only checks
+  `metadata.len() > 0`, so a 261-byte streamless file like this sample would
+  still pass and notify success. The upstream wayland guards catch the common
+  cases first, but they count frames *submitted to ffmpeg*, not what the
+  container ended up holding, and the X11 backend has no zero-frame guard at
+  all. A fix would be an ffprobe structural check (`nb_streams > 0` and a
+  positive duration) inside `validate_saved_recording`, with tests next to the
+  existing ones at `controls.rs:962-966`.
+- Not verified: no session end could be reproduced here (no display).
 
 ## Verification log for the audit
 
