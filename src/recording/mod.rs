@@ -248,20 +248,7 @@ impl RecordingConfig {
             3 => 60,
             _ => 30,
         };
-        let max_resolution = match app_config.rec_video_max_res {
-            0 => None, // Original — native size, no rescaling at all
-            1 => Some((1920, 1080)),
-            2 => Some((1280, 720)),
-            // Appended after the original three so saved configs keep their
-            // meaning. A target at or above the capture size leaves the frame
-            // untouched (no rescale = no quality loss); smaller targets are
-            // downscaled with lanczos in RGB space plus CRF compensation.
-            3 => Some((2560, 1440)),
-            4 => Some((1600, 900)),
-            5 => Some((854, 480)),
-            6 => Some((3840, 2160)),
-            _ => None,
-        };
+        let max_resolution = max_resolution_for_setting(app_config.rec_video_max_res);
 
         Self {
             output_path,
@@ -282,6 +269,31 @@ impl RecordingConfig {
             speaker_source: None,
             noise_suppression: app_config.rec_noise_suppression,
         }
+    }
+}
+
+/// Number of options in Settings → "Maximum resolution" and in the overlay's
+/// matching dropdown. The index is the value stored in `rec_video_max_res`, so
+/// the dropdown order must match [`max_resolution_for_setting`].
+pub const VIDEO_MAX_RES_OPTION_COUNT: usize = 7;
+
+/// Settings → "Maximum resolution" as a capture cap.
+///
+/// Index 0 is Original (native size, no rescaling at all). Every other entry is
+/// a ceiling: a target at or above the capture size leaves the frame untouched
+/// (no rescale = no quality loss); smaller targets are downscaled with lanczos
+/// in RGB space plus CRF compensation. Nothing here upscales. The three larger
+/// targets were appended after the original three so saved configs keep their
+/// meaning.
+pub fn max_resolution_for_setting(value: u8) -> Option<(u32, u32)> {
+    match value {
+        1 => Some((1920, 1080)),
+        2 => Some((1280, 720)),
+        3 => Some((2560, 1440)),
+        4 => Some((1600, 900)),
+        5 => Some((854, 480)),
+        6 => Some((3840, 2160)),
+        _ => None,
     }
 }
 

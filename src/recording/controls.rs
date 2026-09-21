@@ -305,12 +305,9 @@ pub fn prepare_overlay_recording_request(
     let output_path = super::recording_output_path(&app_config, "mp4", now);
     super::ensure_recording_parent_dir(&output_path);
 
-    let max_resolution = match request.video_max_res {
-        0 => None,
-        1 => Some((1920, 1080)),
-        2 => Some((1280, 720)),
-        _ => None,
-    };
+    // Every dropdown option maps through the shared table, so the overlay can
+    // pick 1440p/900p/480p/2160p and not just the original three.
+    let max_resolution = super::max_resolution_for_setting(request.video_max_res);
 
     let fps = match request.video_fps {
         0 => 24,
@@ -1105,14 +1102,22 @@ mod tests {
 
     #[test]
     fn prepare_overlay_recording_request_maps_video_setting_variants() {
+        // (video_format, video_max_res, video_fps, expected cap, expected fps).
+        // Every dropdown index must survive the trip, not just the first three.
         let cases = [
-            (0, 0, None, 24_u32, "mp4"),
-            (1, 1, Some((1920, 1080)), 30_u32, "mp4"),
-            (0, 2, Some((1280, 720)), 50_u32, "mp4"),
-            (1, 0, None, 60_u32, "mp4"),
+            (0_u8, 0_u8, 0_u8, None, 24_u32),
+            (1, 1, 1, Some((1920, 1080)), 30),
+            (0, 2, 2, Some((1280, 720)), 50),
+            (1, 0, 3, None, 60),
+            (1, 3, 1, Some((2560, 1440)), 30),
+            (1, 4, 1, Some((1600, 900)), 30),
+            (1, 5, 1, Some((854, 480)), 30),
+            (1, 6, 1, Some((3840, 2160)), 30),
+            // An unknown index falls back to Original, never to a bogus cap.
+            (1, 99, 1, None, 30),
         ];
 
-        for (index, (video_format, video_max_res, expected_max_res, expected_fps, extension)) in
+        for (index, (video_format, video_max_res, video_fps, expected_max_res, expected_fps)) in
             cases.into_iter().enumerate()
         {
             let request = RecordingRequest {
@@ -1123,7 +1128,7 @@ mod tests {
                 record_type: RecordingType::Video,
                 video_format,
                 video_max_res,
-                video_fps: index as u8,
+                video_fps,
                 ..RecordingRequest::default()
             };
 
@@ -1135,7 +1140,10 @@ mod tests {
                     .unwrap(),
             );
 
-            assert_eq!(prepared.recording_config.max_resolution, expected_max_res);
+            assert_eq!(
+                prepared.recording_config.max_resolution, expected_max_res,
+                "resolution index {video_max_res} must keep its cap"
+            );
             assert_eq!(prepared.recording_config.fps, expected_fps);
             assert_eq!(prepared.updated_app_config.rec_video_format, 0);
             assert_eq!(
@@ -1143,7 +1151,7 @@ mod tests {
                     .output_path
                     .extension()
                     .and_then(|ext| ext.to_str()),
-                Some(extension)
+                Some("mp4")
             );
         }
     }
