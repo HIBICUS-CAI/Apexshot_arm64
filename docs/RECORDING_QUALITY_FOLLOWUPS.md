@@ -10,9 +10,10 @@ are fixed (the `config.rs` Ultra comment on `main`, the estimate label in
 PR #57). Item 3 done on `main` (docs). Item 4 merged in PR #58 together with the
 three separate findings recorded under it; the maintainer confirmed it complete.
 Item 5 merged in PR #59. Next action: nothing under the items below is open.
-What remains in this file: the unclaimed lead at the bottom, the still-open
-`rec_video_fps` clamp finding under item 1, and the not-verified list in the
-verification log (X11 hand check, delivered frame rate, 4K60).
+What remains in this file: the unclaimed lead at the bottom and the
+not-verified list in the verification log (X11 hand check, delivered frame
+rate, 4K60). The last open code finding — the `rec_video_fps` clamp — was
+closed in PR #60.
 
 ## How to continue (read this first)
 
@@ -132,9 +133,15 @@ are fixed on `fix/overlay-resolution-options` and confirmed on a live recording.
   four-element list with `m_videoFps`, which also comes from the config
   (`CaptureOverlay.h:164`, `CaptureOverlay_RecordingSettingsDrawing.cpp:224`), and
   `rec_video_fps` is not clamped in `config.rs`; a hand-edited value indexes out
-  of range. **Still open** after item 5's merge: `sanitized()` clamps other
-  fields but not `rec_video_fps` (verified on `main` at `config.rs:66`, `:211`
-  and `CaptureOverlay_RecordingSettingsDrawing.cpp:209-210`).
+  of range. — **Fixed in PR #60** (`fix/video-fps-clamp`):
+  `rec_video_fps` is clamped in `sanitized()` via the new
+  `VIDEO_FPS_OPTION_COUNT` (unknown → 1 = 30 fps), and
+  `CaptureOverlay::setInitialVideoFps` clamps like `setInitialVideoFormat`.
+  Step-1 re-investigation corrected the finding: the out-of-bounds read itself
+  was never reachable — `main.cpp:753` bounds-checks `--video-fps` to `0..3`,
+  the ctor default is 2, and dropdown writes are list-bounded. The real symptom
+  was silent divergence: the rejected index made the overlay show 50 fps while
+  the encoder recorded the table default of 30.
 - `config.rs:67` documents the Ultra tier as CRF 17 where `crf_for_quality` uses
   16.
 

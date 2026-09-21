@@ -164,7 +164,12 @@ public:
     /// Settings (sanitized by the Rust config loader) and the overlay no longer
     /// offers a picker for it, so this only forwards the configured value.
     void setInitialVideoMaxRes(int v) { m_videoMaxRes = v; }
-    void setInitialVideoFps(int v) { m_videoFps = v; }
+    void setInitialVideoFps(int v) {
+        // Index into the frame-rate dropdown's four options. `main` already
+        // bounds-checks `--video-fps`; clamp here too so no future caller can
+        // push an index that `fpsOptions[m_videoFps]` cannot honour.
+        m_videoFps = std::clamp(v, 0, 3);
+    }
     void setInitialRecordMono(bool v) { m_recordMono = v; }
     void setInitialOpenEditor(bool v) { m_openEditor = v; }
 

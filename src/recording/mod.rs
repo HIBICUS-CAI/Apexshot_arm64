@@ -298,6 +298,13 @@ pub fn max_resolution_for_setting(value: u8) -> Option<(u32, u32)> {
     }
 }
 
+/// Number of options in Settings → "Frame rate". The index is the value
+/// stored in `rec_video_fps`, so the list order must match the frame-rate
+/// match in `RecordingConfig::from_app_config_at` (24 / 30 / 50 / 60).
+/// Settings is the only place that offers the list; `AppConfig::sanitized()`
+/// rejects anything outside it before an overlay or the encoder sees it.
+pub const VIDEO_FPS_OPTION_COUNT: usize = 4;
+
 /// x264 CRF for a Settings quality tier, inside the recommended 16–23
 /// recording range (sharpest tier = 16). Lower is sharper at file-size cost.
 /// The video editor's export picker maps through these same tiers.

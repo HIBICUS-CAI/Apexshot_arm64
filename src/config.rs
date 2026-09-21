@@ -331,6 +331,16 @@ impl AppConfig {
         if self.rec_video_max_res as usize >= crate::recording::VIDEO_MAX_RES_OPTION_COUNT {
             self.rec_video_max_res = 0;
         }
+        // Frame rate gets the same guard. The C++ overlay parses
+        // `--video-fps=<index>` against its four-option dropdown and silently
+        // keeps its own default when the index is out of range, so an
+        // unclamped config made the overlay show 50 fps while the encoder
+        // recorded 30. Unknown values fall back to 30 fps (index 1),
+        // matching `RecordingConfig::from_app_config_at` and the Settings
+        // save path.
+        if self.rec_video_fps as usize >= crate::recording::VIDEO_FPS_OPTION_COUNT {
+            self.rec_video_fps = 1;
+        }
         self.quick_access_overlay_size =
             sanitize_quick_access_overlay_size(self.quick_access_overlay_size);
         self.quick_access_position = match self.quick_access_position.as_str() {
@@ -810,6 +820,26 @@ mod tests {
         }
         .sanitized();
         assert_eq!(out_of_range.rec_video_max_res, 0);
+    }
+
+    #[test]
+    fn sanitize_keeps_video_fps_inside_the_option_table() {
+        for index in 0..crate::recording::VIDEO_FPS_OPTION_COUNT as u8 {
+            let kept = AppConfig {
+                rec_video_fps: index,
+                ..AppConfig::default()
+            }
+            .sanitized();
+            assert_eq!(kept.rec_video_fps, index);
+        }
+
+        // Unknown values read as 30 fps, the table default.
+        let out_of_range = AppConfig {
+            rec_video_fps: 99,
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(out_of_range.rec_video_fps, 1);
     }
 
     #[test]
