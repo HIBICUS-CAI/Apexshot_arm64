@@ -7,7 +7,9 @@ whose status is not done.
 Status: item 1 merged in PR #55. Item 2 done and verified on a live export,
 merged in PR #56, and its two orphan findings are fixed (the `config.rs` Ultra
 comment on `main`, the estimate label in PR #57). Item 3 done on `main` (docs).
-Items 4 and 5 not started. Next action: start item 4 on a fresh branch.
+Item 4 implemented on `fix/x11-resolution-cap` (PR #58) together with the three
+separate findings recorded under it; awaiting maintainer verification. Item 5
+not started. Next action: verify item 4, then start item 5 on a fresh branch.
 
 ## How to continue (read this first)
 
@@ -239,13 +241,49 @@ README and overlay caption promised quality editing that did not exist.
   settings". That claim depends on the Rust recording panel that item 5 retires,
   so it belongs to item 5's cleanup, not this docs pass.
 
-## Item 4: the X11 backend ignores the resolution cap
+## Item 4: DONE (PR #58, awaiting maintainer verification)
 
-**Not started. Confirmed** (code-level). `build_x11_gstreamer_pipeline`
-(`src/recording/backend/x11.rs:183`) has no `videoscale`, so `max_resolution`
-never reaches the pipeline on Xorg sessions. There is no test on that pipeline
-string today. Only worth doing if X11 stays supported. The maintainer's machine
-is Wayland, so this needs a code-level check plus a test, not a live recording.
+**Confirmed** (code-level). `build_x11_gstreamer_pipeline` had no
+`videoscale`, so `max_resolution` never reached the pipeline on Xorg
+sessions, and there was no test on that pipeline string. The maintainer's
+machine is Wayland, so this is a code-level check plus tests, not a live
+recording.
+
+**What landed** (branch `fix/x11-resolution-cap`)
+
+- The scale segment now computes the aspect-preserving fit with
+  `fit_within_max_resolution` and pins exact even caps (e.g. 768x480 under
+  the 854x480 box) with `pixel-aspect-ratio=1/1`, never upscaling. The
+  source size comes from the configured region, or an x11rb screen query for
+  fullscreen; if that query fails the old never-upscale caps range still
+  applies the ceiling.
+- The missing `!` separator between the framerate caps and `videorate`
+  (`framerate=30/1videorate` folded into the caps and broke the link) is
+  fixed, with a regression test.
+
+**Three findings from the pipeline review, fixed in the same PR**
+
+- `openh264enc` emits byte-stream but `mp4mux` only accepts `avc`/`avc3`, so
+  the link failed at runtime. Both H.264 encoders now get a `h264parse`
+  before the muxer (videoparsersbad is a hard dependency everywhere).
+- The raw caps pin `format=I420,colorimetry=bt709` (I420 alone negotiates
+  smpte170m) so the output matches the Wayland backend's yuv420p + bt709.
+  I420 forces even dimensions, so the scale caps are computed even sizes and
+  odd capture regions are stepped down to even.
+- `video_encoder_props` was `#[cfg(test)]` dead code, and its property names
+  did not exist on GStreamer 1.28: x264enc has no `preset`/`crf`/`profile`
+  (constant quality is `pass=qual` + `quantizer`), and `deadline` on
+  vp9enc/vp8enc is microseconds, so `deadline=good` never parsed. The
+  function is live now and injected after the encoder in the X11 pipeline,
+  with the x264 CRF compensated by `crf_resolution_reduction(output)` exactly
+  like the Wayland libx264 branch (e.g. 768x480 → quantizer 15 at tier 20).
+
+**Hand check for the maintainer** (needs an Xorg session, or `XDG_SESSION_TYPE=x11`):
+record a short clip on X11 with 480p maximum resolution saved in Settings,
+then `ffprobe` it: expect 768x480 (or the aspect fit), H.264, and a file
+larger than before at the same tier (the compensated CRF). Also confirm a
+fullscreen uncapped X11 recording still starts — that path exercises the
+x11rb screen query.
 
 ## Item 5: retire the dead Rust recording panel
 

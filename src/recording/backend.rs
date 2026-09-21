@@ -148,8 +148,9 @@ async fn build_pipeline(
         None
     };
 
-    // Encoder props are GStreamer-specific; ffmpeg has its own defaults.
-    // Only used by the X11 GStreamer fallback path.
+    // ffmpeg (the Wayland path) sets its own encoder arguments, and the X11
+    // GStreamer pipeline builds its element properties itself where it knows
+    // the final output size; nothing travels through this field today.
     let encoder_props = String::new();
 
     Ok(BuiltPipeline {
@@ -237,13 +238,19 @@ mod tests {
             ..x11_recording_config()
         };
 
-        let props = video_encoder_props(profile_by_encoder("x264enc"), &config);
-
-        // veryfast + crf 22 + main profile
-        assert!(props.contains("preset=veryfast"));
-        assert!(props.contains("crf=22"));
-        assert!(props.contains("profile=main"));
+        // GStreamer 1.28 x264enc has no `preset`, `crf` or `profile`
+        // property: constant quality is pass=qual with the CRF in
+        // `quantizer`.
+        let props = video_encoder_props(profile_by_encoder("x264enc"), &config, None);
+        assert!(props.contains("speed-preset=veryfast"));
+        assert!(props.contains("pass=qual"));
+        assert!(props.contains("quantizer=20"));
         assert!(props.contains("key-int-max=120"));
+
+        // A capped 640x480 output compensates with a lower CRF (tier 20
+        // minus the -6 resolution reduction), like the Wayland libx264 path.
+        let capped = video_encoder_props(profile_by_encoder("x264enc"), &config, Some((640, 480)));
+        assert!(capped.contains("quantizer=14"));
     }
 
     #[test]
@@ -253,22 +260,24 @@ mod tests {
             ..x11_recording_config()
         };
 
-        let vp9_props = video_encoder_props(profile_by_encoder("vp9enc"), &config);
+        // vp9enc's `deadline` is an Integer64 in microseconds, so
+        // `deadline=good` never parsed; 1000000 is libvpx's "good".
+        let vp9_props = video_encoder_props(profile_by_encoder("vp9enc"), &config, None);
         assert!(vp9_props.contains("end-usage=cq"));
         assert!(vp9_props.contains("cq-level=20"));
         assert!(vp9_props.contains("target-bitrate=0"));
         assert!(vp9_props.contains("cpu-used=2"));
         assert!(vp9_props.contains("keyframe-max-dist=120"));
-        assert!(vp9_props.contains("deadline=good"));
+        assert!(vp9_props.contains("deadline=1000000"));
 
-        let vp8_props = video_encoder_props(profile_by_encoder("vp8enc"), &config);
+        let vp8_props = video_encoder_props(profile_by_encoder("vp8enc"), &config, None);
         assert!(vp8_props.contains("end-usage=cq"));
         assert!(vp8_props.contains("target-bitrate=0"));
         assert!(vp8_props.contains("cpu-used=2"));
         assert!(vp8_props.contains("keyframe-max-dist=120"));
-        assert!(vp8_props.contains("deadline=good"));
+        assert!(vp8_props.contains("deadline=1000000"));
 
-        let openh264_props = video_encoder_props(profile_by_encoder("openh264enc"), &config);
+        let openh264_props = video_encoder_props(profile_by_encoder("openh264enc"), &config, None);
         assert!(openh264_props.contains("bitrate=8000000"));
         assert!(openh264_props.contains("complexity=medium"));
     }
