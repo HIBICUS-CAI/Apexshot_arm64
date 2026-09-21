@@ -5,9 +5,9 @@ handoff note for whoever continues it. Read this file, then take the first item
 whose status is not done.
 
 Status: item 1 merged to `main` in PR #55. Item 2 done and verified on a live
-export (PR #56, unmerged). Two orphan findings from item 2 are being fixed:
-the `config.rs` Ultra comment goes straight to `main`, the estimate label gets
-its own branch. Items 3 to 5 not started. Next action: check the estimate-label
+export, merged in PR #56. Its two orphan findings are handled: the `config.rs`
+Ultra comment is on `main` (`fd94d44`), the estimate label is fixed in PR #57
+(this branch). Items 3 to 5 not started. Next action: check the estimate-label
 branch, then start item 3 on a fresh branch.
 
 ## How to continue (read this first)
