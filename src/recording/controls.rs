@@ -1033,21 +1033,33 @@ mod tests {
         assert!(validate_saved_recording(&path).is_err());
         std::fs::write(&path, []).unwrap();
         assert!(validate_saved_recording(&path).is_err());
-        // Non-empty but not a container: ffprobe must reject it (this is the
-        // byte-count-only hole the audit's 261-byte sample fell through).
-        std::fs::write(&path, b"video").unwrap();
-        assert!(validate_saved_recording(&path).is_err());
 
         std::fs::remove_file(path).unwrap();
     }
 
+    fn tool_installed(tool: &str) -> bool {
+        std::process::Command::new(tool)
+            .arg("-version")
+            .output()
+            .is_ok()
+    }
+
     #[test]
-    fn validate_saved_recording_accepts_a_real_clip() {
+    fn validate_saved_recording_probes_container_structure() {
+        if !tool_installed("ffmpeg") || !tool_installed("ffprobe") {
+            eprintln!("skipping: ffmpeg/ffprobe not available");
+            return;
+        }
         let path = std::env::temp_dir().join(format!(
-            "apexshot-saved-recording-valid-{}.mp4",
+            "apexshot-saved-recording-structure-{}.mp4",
             std::process::id()
         ));
         let _ = std::fs::remove_file(&path);
+
+        // Non-empty but not a container: ffprobe must reject it (this is the
+        // byte-count-only hole the audit's 261-byte sample fell through).
+        std::fs::write(&path, b"video").unwrap();
+        assert!(validate_saved_recording(&path).is_err());
 
         let status = std::process::Command::new("ffmpeg")
             .args([
