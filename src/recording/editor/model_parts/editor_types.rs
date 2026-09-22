@@ -53,6 +53,18 @@ pub struct VideoMetadata {
     pub frame_rate: f64,
 }
 
+impl VideoMetadata {
+    /// The rate export animations sample at: the probed frame rate, clamped
+    /// to sane values, with [`DEFAULT_FRAME_RATE`] as the fallback.
+    pub fn export_frame_rate(&self) -> f64 {
+        if self.frame_rate.is_finite() && self.frame_rate > 0.0 {
+            self.frame_rate.clamp(1.0, 240.0)
+        } else {
+            DEFAULT_FRAME_RATE
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DimensionPreset {
     Original,

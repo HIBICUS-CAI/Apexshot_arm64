@@ -590,7 +590,7 @@ fn build_composite_convert_args(
             "-video_size".into(),
             format!("{video_w}x{video_h}"),
             "-framerate".into(),
-            format!("{:.0}", super::cursor_export::fps()),
+            format!("{:.6}", state.metadata.export_frame_rate()),
             "-i".into(),
             cursor_path.to_string_lossy().into_owned(),
         ]);
@@ -626,7 +626,7 @@ fn static_crop_prefix(state: &VideoEditState) -> String {
 }
 
 fn build_sendcmd(state: &VideoEditState, start: f64, end: f64) -> String {
-    let fps = export_frame_rate(state);
+    let fps = state.metadata.export_frame_rate();
     let duration = (end - start).max(0.0);
     let frames = ((duration * fps).ceil() as usize).max(1);
     let (crop_x, crop_y, eff_w, eff_h) = state.crop_or_full();
@@ -644,17 +644,6 @@ fn build_sendcmd(state: &VideoEditState, start: f64, end: f64) -> String {
         ));
     }
     lines
-}
-
-/// The source's frame rate drives the zoom command grid, so crop changes
-/// land on real frames instead of a hard-coded grid.
-fn export_frame_rate(state: &VideoEditState) -> f64 {
-    let frame_rate = state.metadata.frame_rate;
-    if frame_rate.is_finite() && frame_rate > 0.0 {
-        frame_rate.clamp(1.0, 240.0)
-    } else {
-        DEFAULT_FRAME_RATE
-    }
 }
 
 fn lead_in_tpad(state: &VideoEditState) -> Option<String> {
@@ -1095,6 +1084,48 @@ mod tests {
                 "cursor overlay must not blend in {rgb}"
             );
         }
+    }
+
+    #[test]
+    fn cursor_overlay_input_follows_the_source_frame_rate() {
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, CursorKind, PointerSample, PointerSidecar,
+        };
+
+        let mut state = VideoEditState::new(VideoMetadata {
+            path: PathBuf::from("/tmp/input.mp4"),
+            duration_seconds: 0.4,
+            width: 64,
+            height: 48,
+            file_size_bytes: 100,
+            has_audio: false,
+            frame_rate: 60.0,
+        });
+        state.trim_start_seconds = 0.0;
+        state.trim_end_seconds = 0.2;
+        let mut sidecar =
+            PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x: 10.0,
+            y: 10.0,
+            kind: CursorKind::Default,
+        });
+        state.sidecar = Some(sidecar);
+
+        let args = build_single_convert_args(
+            &state,
+            state.trim_start_seconds,
+            state.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        // The raw track is declared at the rate it was generated with, or
+        // its frames drift against the video.
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-framerate", "60.000000"]),
+            "cursor track must enter at its generation rate: {args:?}"
+        );
     }
 
     #[test]

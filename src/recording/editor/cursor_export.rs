@@ -5,8 +5,6 @@ use gtk4::cairo::{Context, Format, ImageSurface, Operator};
 use std::io::Write;
 use std::path::Path;
 
-const CURSOR_FPS: f64 = 30.0;
-
 pub fn write_rgba_track(
     state: &VideoEditState,
     start: f64,
@@ -24,7 +22,8 @@ pub fn write_rgba_track(
     let width = width.max(2);
     let height = height.max(2);
     let duration = (end - start).max(0.0);
-    let frames = ((duration * CURSOR_FPS).ceil() as usize).max(1);
+    let frame_rate = state.metadata.export_frame_rate();
+    let frames = ((duration * frame_rate).ceil() as usize).max(1);
     let (crop_x, crop_y, eff_w, eff_h) = state.crop_or_full();
     let src_w = eff_w.max(2.0) as u32;
     let src_h = eff_h.max(2.0) as u32;
@@ -42,7 +41,7 @@ pub fn write_rgba_track(
     let mut file = std::fs::File::create(path)?;
     let mut pixels = vec![0u8; (width * height * 4) as usize];
     for index in 0..frames {
-        let source_t = start + index as f64 / CURSOR_FPS;
+        let source_t = start + index as f64 / frame_rate;
         let cr = Context::new(&surface)?;
         cr.set_operator(Operator::Clear);
         let _ = cr.paint();
@@ -137,10 +136,6 @@ fn write_rgba_frame(
     Ok(())
 }
 
-pub fn fps() -> f64 {
-    CURSOR_FPS
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,9 +178,47 @@ mod tests {
         let path = dir.join("cursor.rgba");
         write_rgba_track(&state, 0.0, 0.2, 80, 60, &path).unwrap();
         let bytes = std::fs::read(&path).unwrap();
-        let frames = ((0.2 * CURSOR_FPS).ceil() as usize).max(1);
+        let frames = ((0.2 * state.metadata.export_frame_rate()).ceil() as usize).max(1);
         assert_eq!(bytes.len(), frames * 80 * 60 * 4);
         assert!(bytes.iter().any(|b| *b != 0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cursor_track_follows_the_source_frame_rate() {
+        let mut state = VideoEditState::new(VideoMetadata {
+            path: PathBuf::from("/tmp/cursor-export-hi-fps.mp4"),
+            duration_seconds: 0.2,
+            width: 80,
+            height: 60,
+            file_size_bytes: 8,
+            has_audio: false,
+            frame_rate: 60.0,
+        });
+        let mut sidecar =
+            PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x: 10.0,
+            y: 10.0,
+            kind: CursorKind::Default,
+        });
+        sidecar.pointer.push(PointerSample {
+            t: 0.2,
+            x: 40.0,
+            y: 20.0,
+            kind: CursorKind::Default,
+        });
+        state.sidecar = Some(sidecar);
+        let dir =
+            std::env::temp_dir().join(format!("apexshot-cursor-rgba-fps-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("cursor.rgba");
+        write_rgba_track(&state, 0.0, 0.2, 80, 60, &path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        // 0.2 s at the source's 60 fps is 12 frames — twice the old fixed
+        // 30 fps grid, so the cursor no longer steps in high-fps exports.
+        assert_eq!(bytes.len(), 12 * 80 * 60 * 4);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
