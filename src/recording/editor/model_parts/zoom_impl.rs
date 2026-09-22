@@ -266,7 +266,9 @@ impl VideoEditState {
                 scale,
                 center,
                 ease_ms: DEFAULT_ZOOM_EASE_MS,
-                easing: ZoomEasing::Glide,
+                // Auto zooms must launch and settle at zero velocity, or the
+                // pulse snaps at both clip edges.
+                easing: ZoomEasing::Smooth,
                 mode,
                 ..Default::default()
             });
