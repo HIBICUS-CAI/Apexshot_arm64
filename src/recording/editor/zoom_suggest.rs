@@ -377,10 +377,11 @@ fn suggestion_for_cluster(cluster: LandingCluster, total_seconds: f64) -> Option
     } else {
         clicks.clone()
     };
-    let center = (
-        median(focus.iter().map(|landing| landing.center.0).collect()),
-        median(focus.iter().map(|landing| landing.center.1).collect()),
-    );
+    // Focus the session's first interaction: the zoom arrives framed on
+    // where the action starts, and the Auto camera follows the recorded
+    // pointer to the rest. A median of a moving session lands between
+    // controls where nothing happened.
+    let center = focus.first()?.center;
     let center_time = median(focus.iter().map(|landing| landing.start).collect());
     let is_click_session = !clicks.is_empty();
     let pre_roll = if is_click_session {
@@ -663,7 +664,8 @@ mod tests {
         ]);
         let suggestions = suggest_zooms(&data, W, H, 10.0);
         assert_eq!(suggestions.len(), 1);
-        assert_eq!(suggestions[0].center, (801.0, 500.0));
+        // The session focuses its first click, not the midpoint of both.
+        assert_eq!(suggestions[0].center, (800.0, 500.0));
         assert_eq!(suggestions[0].scale, REPEATED_INTERACTION_ZOOM_SCALE);
     }
 
@@ -680,7 +682,9 @@ mod tests {
         assert_eq!(suggestions.len(), 1);
         assert!((suggestions[0].start - 0.866_893_129).abs() < 0.000_001);
         assert!((suggestions[0].end - 5.052_951_679).abs() < 0.000_001);
-        assert_eq!(suggestions[0].center, (877.0, 193.5));
+        // The zoom arrives framed on the first click instead of the point
+        // between the two controls; the Auto camera pans to the second one.
+        assert_eq!(suggestions[0].center, (1_313.0, 296.0));
         assert_eq!(suggestions[0].scale, REPEATED_INTERACTION_ZOOM_SCALE);
     }
 
