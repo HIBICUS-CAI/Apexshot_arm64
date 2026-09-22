@@ -1777,6 +1777,69 @@ fn eval_zoom_uses_easing_curve_during_ease_in() {
     assert!((at_hold - 2.0).abs() < 1e-9);
 }
 
+fn zoom_scale_steps(clips: &[ZoomClip], start: f64, end: f64, samples: usize) -> Vec<f64> {
+    let mut scales = Vec::with_capacity(samples + 1);
+    for index in 0..=samples {
+        let t = start + (end - start) * index as f64 / samples as f64;
+        scales.push(eval_zoom(clips, t, 1920.0, 1080.0).0);
+    }
+    scales
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .collect()
+}
+
+#[test]
+fn suggest_zoom_clips_ease_in_and_out_at_rest() {
+    let mut state = VideoEditState::new(metadata());
+    attach_sidecar_with_landings(&mut state, &[(3.0, 960.0, 540.0)]);
+    assert_eq!(state.suggest_zoom_clips(), 1);
+    let (start, end) = (state.zoom_clips[0].start, state.zoom_clips[0].end);
+    assert_eq!(state.zoom_clips[0].easing, ZoomEasing::Smooth);
+    assert_eq!(state.zoom_clips[0].ease_ms, DEFAULT_ZOOM_EASE_MS);
+
+    let steps = zoom_scale_steps(&state.zoom_clips, start, end, 90);
+    let max_step = steps.iter().copied().fold(0.0_f64, f64::max);
+    let (first, last) = (steps[0], steps[steps.len() - 1]);
+    assert!(
+        first < max_step * 0.05,
+        "auto zoom must launch from rest: first frame step {first} vs peak {max_step}"
+    );
+    assert!(
+        last < max_step * 0.05,
+        "auto zoom must settle to rest: last frame step {last} vs peak {max_step}"
+    );
+
+    // The measurement must be able to see a launch at speed: an unshaped ramp
+    // steps evenly from its very first frame.
+    state.zoom_clips[0].easing = ZoomEasing::Linear;
+    let linear = zoom_scale_steps(&state.zoom_clips, start, end, 90);
+    assert!(
+        linear[0] > first * 10.0,
+        "boundary-step measurement must detect fast launches: linear {} vs smooth {}",
+        linear[0],
+        first
+    );
+}
+
+#[test]
+fn suggested_zoom_easing_can_be_overridden() {
+    let mut state = VideoEditState::new(metadata());
+    attach_sidecar_with_landings(&mut state, &[(3.0, 960.0, 540.0)]);
+    assert_eq!(state.suggest_zoom_clips(), 1);
+    state.selected_zoom = Some(0);
+    state.set_selected_zoom_easing(ZoomEasing::Glide);
+    assert_eq!(state.zoom_clips[0].easing, ZoomEasing::Glide);
+    let steps = zoom_scale_steps(&state.zoom_clips, state.zoom_clips[0].start, state.zoom_clips[0].end, 90);
+    let max_step = steps.iter().copied().fold(0.0_f64, f64::max);
+    assert!(
+        steps[0] > max_step * 0.5,
+        "the chosen preset's shape must survive: first frame step {} vs peak {}",
+        steps[0],
+        max_step
+    );
+}
+
 #[test]
 fn eval_zoom_pose_eases_yaw_like_still_motion() {
     let mut state = VideoEditState::new(metadata());
