@@ -386,7 +386,12 @@ impl VideoEditState {
             .selected_zoom
             .and_then(|index| self.zoom_clips.get_mut(index))
         {
-            clip.easing = ZoomEasing::Glide;
+            // Auto zooms are created with Smooth; Reset must not bring back
+            // the edge snap. Manual zooms keep the classic Glide default.
+            clip.easing = match clip.mode {
+                ZoomMode::Auto => ZoomEasing::Smooth,
+                ZoomMode::Manual => ZoomEasing::Glide,
+            };
             clip.ease_ms = DEFAULT_ZOOM_EASE_MS;
             clip.rotation_x = 0.0;
             clip.rotation_y = 0.0;
