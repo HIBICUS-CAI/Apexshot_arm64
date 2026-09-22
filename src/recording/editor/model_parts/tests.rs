@@ -1862,6 +1862,26 @@ fn eval_zoom_pose_eases_yaw_like_still_motion() {
 }
 
 #[test]
+fn zoom_pose_follows_the_shared_easing_presets() {
+    for easing in ZoomEasing::ALL {
+        let mut state = VideoEditState::new(metadata());
+        assert!(state.add_zoom_at_playhead().is_some());
+        state.zoom_clips[0].start = 0.0;
+        state.zoom_clips[0].end = 2.0;
+        state.zoom_clips[0].ease_ms = 600;
+        state.zoom_clips[0].easing = easing;
+        state.set_selected_zoom_yaw(8.0);
+        let expected = 8.0 * easing.apply(0.5);
+        let mid = state.eval_zoom_pose(0.3);
+        assert!(
+            (mid.rotation_y - expected).abs() < 1e-9,
+            "{easing:?} pose must follow its own preset curve: got {} want {expected}",
+            mid.rotation_y
+        );
+    }
+}
+
+#[test]
 fn selected_zoom_easing_and_ease_ms_update_clip() {
     let mut state = VideoEditState::new(metadata());
     assert!(state.add_zoom_at_playhead().is_some());

@@ -523,7 +523,7 @@ impl VideoEditState {
         lerp_transform(
             MotionTransform::default(),
             target,
-            zoom_clip_easing(clip.easing, alpha),
+            clip.easing.apply(alpha),
         )
     }
 
@@ -560,24 +560,5 @@ impl VideoEditState {
             scale,
             recenter_if_near_edge(center, (cursor_x, cursor_y), scale, frame_w, frame_h),
         )
-    }
-}
-
-/// The video editor zoom curve. Deliberately separate from the Motion track's
-/// global Bézier timing: zoom clips keep per-clip easing presets.
-fn zoom_clip_easing(easing: ZoomEasing, t: f64) -> f64 {
-    let t = t.clamp(0.0, 1.0);
-    match easing {
-        ZoomEasing::Linear => t,
-        ZoomEasing::Glide => 1.0 - (1.0 - t).powi(3),
-        ZoomEasing::Smooth => {
-            if t < 0.5 {
-                4.0 * t * t * t
-            } else {
-                1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
-            }
-        }
-        // Opposite of Glide so the four buttons are readable on a short ease window.
-        ZoomEasing::Snappy => t.powi(3),
     }
 }
