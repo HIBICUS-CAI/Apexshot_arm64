@@ -159,6 +159,7 @@ mod tests {
             height: 60,
             file_size_bytes: 8,
             has_audio: false,
+            frame_rate: 30.0,
         });
         let mut sidecar =
             PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
@@ -197,6 +198,7 @@ mod tests {
             height: 60,
             file_size_bytes: 8,
             has_audio: false,
+            frame_rate: 30.0,
         });
         let mut sidecar =
             PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));

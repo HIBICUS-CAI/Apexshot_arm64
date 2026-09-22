@@ -20,7 +20,9 @@ pub(crate) mod tool_sidebar;
 mod toolbar;
 
 use super::ffmpeg;
-use super::model::{AudioMode, EditorTool, ExportQuality, VideoEditState, VideoMetadata};
+use super::model::{
+    AudioMode, EditorTool, ExportQuality, VideoEditState, VideoMetadata, DEFAULT_FRAME_RATE,
+};
 use super::project::{self, persist_video_session};
 use super::ui_support::install_recording_editor_css;
 use gtk4::{
@@ -394,6 +396,7 @@ fn placeholder_edit_state() -> VideoEditState {
         height: 1080,
         file_size_bytes: 0,
         has_audio: false,
+        frame_rate: DEFAULT_FRAME_RATE,
     });
     state.title = t("Drop a recording to begin");
     state
