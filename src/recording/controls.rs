@@ -242,7 +242,78 @@ fn validate_saved_recording(path: &Path) -> anyhow::Result<()> {
     if !metadata.is_file() || metadata.len() == 0 {
         anyhow::bail!("recording output is empty at {}", path.display());
     }
-    Ok(())
+    // A non-empty file is not proof of a recording: a finalized container with
+    // zero streams is only a few hundred bytes (the audit's sample was 261).
+    // Structural check so "Recording saved" cannot fire on an unplayable file.
+    match probe_recording_structure(path) {
+        ProbeOutcome::Playable => Ok(()),
+        ProbeOutcome::Unplayable(reason) => {
+            anyhow::bail!(
+                "recording output is not playable ({reason}): {}",
+                path.display()
+            )
+        }
+        ProbeOutcome::Unavailable => {
+            // The probe already logged why it could not run.
+            Ok(())
+        }
+    }
+}
+
+enum ProbeOutcome {
+    Playable,
+    Unplayable(String),
+    /// ffprobe could not run at all — not a verdict on the file.
+    Unavailable,
+}
+
+/// Ask ffprobe whether the container actually holds something: at least one
+/// stream and a positive duration. Catches finalized-but-streamless outputs
+/// that a byte-count check (or a clean ffmpeg exit) lets through.
+fn probe_recording_structure(path: &Path) -> ProbeOutcome {
+    let output = match std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=index",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1",
+        ])
+        .arg(path)
+        .output()
+    {
+        Ok(output) => output,
+        Err(err) => {
+            eprintln!(
+                "[recording] ffprobe could not run ({err}); skipping structural validation for {}",
+                path.display()
+            );
+            return ProbeOutcome::Unavailable;
+        }
+    };
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return ProbeOutcome::Unplayable(format!(
+            "ffprobe rejected the container: {}",
+            detail.trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.lines().any(|line| line.starts_with("index=")) {
+        return ProbeOutcome::Unplayable("container has no streams".into());
+    }
+    let duration_ok = stdout.lines().any(|line| {
+        line.strip_prefix("duration=")
+            .and_then(|value| value.parse::<f64>().ok())
+            .is_some_and(|seconds| seconds > 0.0)
+    });
+    if !duration_ok {
+        return ProbeOutcome::Unplayable("container reports no positive duration".into());
+    }
+    ProbeOutcome::Playable
 }
 
 #[derive(Debug)]
@@ -962,7 +1033,40 @@ mod tests {
         assert!(validate_saved_recording(&path).is_err());
         std::fs::write(&path, []).unwrap();
         assert!(validate_saved_recording(&path).is_err());
+        // Non-empty but not a container: ffprobe must reject it (this is the
+        // byte-count-only hole the audit's 261-byte sample fell through).
         std::fs::write(&path, b"video").unwrap();
+        assert!(validate_saved_recording(&path).is_err());
+
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn validate_saved_recording_accepts_a_real_clip() {
+        let path = std::env::temp_dir().join(format!(
+            "apexshot-saved-recording-valid-{}.mp4",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=0.2:size=64x64:rate=10",
+                "-c:v",
+                "mpeg4",
+            ])
+            .arg(&path)
+            .status()
+            .expect("ffmpeg should run");
+        assert!(status.success(), "ffmpeg must produce the probe fixture");
+
         assert!(validate_saved_recording(&path).is_ok());
 
         std::fs::remove_file(path).unwrap();
