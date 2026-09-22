@@ -1885,6 +1885,29 @@ fn selected_zoom_easing_and_ease_ms_update_clip() {
 }
 
 #[test]
+fn reset_zoom_animation_restores_the_modes_default() {
+    let mut auto = VideoEditState::new(metadata());
+    attach_pointer(&mut auto, 960.0, 540.0);
+    assert!(auto.add_zoom_at_playhead().is_some());
+    assert_eq!(auto.selected_zoom_clip().unwrap().mode, ZoomMode::Auto);
+    auto.set_selected_zoom_easing(ZoomEasing::Snappy);
+    auto.set_selected_zoom_yaw(8.0);
+    auto.reset_zoom_animation();
+    let clip = auto.selected_zoom_clip().unwrap();
+    // Reset must not bring the edge snap back to an auto-placed zoom.
+    assert_eq!(clip.easing, ZoomEasing::Smooth);
+    assert_eq!(clip.ease_ms, DEFAULT_ZOOM_EASE_MS);
+    assert_eq!(clip.rotation_y, 0.0);
+
+    let mut manual = VideoEditState::new(metadata());
+    assert!(manual.add_zoom_at_playhead().is_some());
+    assert_eq!(manual.selected_zoom_clip().unwrap().mode, ZoomMode::Manual);
+    manual.set_selected_zoom_easing(ZoomEasing::Snappy);
+    manual.reset_zoom_animation();
+    assert_eq!(manual.selected_zoom_clip().unwrap().easing, ZoomEasing::Glide);
+}
+
+#[test]
 fn crop_selection_is_clamped_and_even() {
     let mut state = VideoEditState::new(metadata());
     state.set_crop(-50.0, -20.0, 99999.0, 333.0);
