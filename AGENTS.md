@@ -57,10 +57,11 @@ apply to either path:
 
 - Re-run step 1's reproduction and show the before and after behaviour.
 - Anything user-visible (windows, overlays, hotkeys, portals, recording,
-  clipboard) needs a manual check on the running app: launch it, trigger the
-  path, and describe what you saw. If the machine cannot do that (no display, no
-  compositor, no hardware), say so, mark it unverified, and let the maintainer
-  confirm before you push.
+  clipboard) needs a manual check on the running app — and the maintainer is
+  the one who runs it. Never launch, drive, or script the app yourself: this
+  is a live Linux desktop, and app runs here are disruptive and unreliable.
+  List what needs checking under "Not verified" as "manual check: deferred to
+  the maintainer" and leave it for the maintainer to confirm before merge.
 - Then CI's gates:
 
 ```bash
