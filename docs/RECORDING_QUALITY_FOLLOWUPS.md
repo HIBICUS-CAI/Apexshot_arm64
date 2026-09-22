@@ -13,7 +13,7 @@ Item 5 merged in PR #59. Next action: nothing under the items below is open.
 What remains in this file: the unclaimed lead at the bottom and the
 not-verified list in the verification log (X11 hand check, delivered frame
 rate, 4K60). The last open code finding — the `rec_video_fps` clamp — was
-closed in PR #60.
+closed in PR #60, and the empty-file lead's residual gap in PR #61.
 
 ## How to continue (read this first)
 
@@ -385,15 +385,18 @@ it is not part of the items above.
   no frames. The screen share ended before capture started."), and
   `validate_saved_recording` gating the success notification (2026-09-10,
   `controls.rs:235`).
-- **Residual gap (still unclaimed):** `validate_saved_recording` only checks
-  `metadata.len() > 0`, so a 261-byte streamless file like this sample would
-  still pass and notify success. The upstream wayland guards catch the common
-  cases first, but they count frames *submitted to ffmpeg*, not what the
-  container ended up holding, and the X11 backend has no zero-frame guard at
-  all. A fix would be an ffprobe structural check (`nb_streams > 0` and a
-  positive duration) inside `validate_saved_recording`, with tests next to the
-  existing ones at `controls.rs:962-966`.
-- Not verified: no session end could be reproduced here (no display).
+- **Residual gap — closed in PR #61** (`fix/recording-structure-validation`).
+  `validate_saved_recording` only checked `metadata.len() > 0`, so a 261-byte
+  streamless file like this sample would still have passed and notified
+  success; the upstream wayland guards count frames *submitted to ffmpeg*, not
+  what the container ended up holding, and the X11 backend had no zero-frame
+  guard at all. The PR adds an ffprobe structural check (at least one stream,
+  positive duration; ffprobe rejecting the container also fails) inside that
+  single validation point every backend funnels through, degrading to the size
+  check if ffprobe cannot run. Verified against this very sample: ffprobe exits
+  0 with no stream lines and `duration=N/A`, so both checks reject it.
+- Not verified: no session end could be reproduced here (no display); the live
+  stop-and-notify path needs a manual check on the maintainer's machine.
 
 ## Verification log for the audit
 
