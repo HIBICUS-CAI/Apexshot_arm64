@@ -9,6 +9,7 @@ fn metadata() -> VideoMetadata {
         height: 1080,
         file_size_bytes: 100 * 1024 * 1024,
         has_audio: true,
+        frame_rate: 30.0,
     }
 }
 
@@ -455,6 +456,7 @@ fn dimension_preset_scales_source_up_into_the_frame() {
         height: 744,
         file_size_bytes: 1024,
         has_audio: false,
+        frame_rate: 30.0,
     });
     state.dimension_preset = DimensionPreset::P1080;
     let (w, h) = state.video_rect_dimensions();
@@ -479,6 +481,7 @@ fn frame_pick_holds_output_size_and_insets_the_video() {
         height: 960,
         file_size_bytes: 1024,
         has_audio: false,
+        frame_rate: 30.0,
     });
     state.apply_aspect_ratio(1920, 1080);
     state.background = VideoBackground::Plain { r: 0, g: 0, b: 0 };

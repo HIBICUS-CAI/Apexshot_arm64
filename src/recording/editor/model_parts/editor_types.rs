@@ -37,6 +37,9 @@ pub const CLIP_SPEED_PRESETS: [(&str, f64); 16] = [
 pub const MIN_CLIP_SPEED: f64 = 0.25;
 pub const MAX_CLIP_SPEED: f64 = 30.0;
 
+/// Frame rate assumed for sources whose probe cannot report one.
+pub const DEFAULT_FRAME_RATE: f64 = 30.0;
+
 #[derive(Debug, Clone)]
 pub struct VideoMetadata {
     pub path: PathBuf,
@@ -45,6 +48,21 @@ pub struct VideoMetadata {
     pub height: u32,
     pub file_size_bytes: u64,
     pub has_audio: bool,
+    /// Average source frames per second as reported by ffprobe; falls back
+    /// to [`DEFAULT_FRAME_RATE`] when the source does not say.
+    pub frame_rate: f64,
+}
+
+impl VideoMetadata {
+    /// The rate export animations sample at: the probed frame rate, clamped
+    /// to sane values, with [`DEFAULT_FRAME_RATE`] as the fallback.
+    pub fn export_frame_rate(&self) -> f64 {
+        if self.frame_rate.is_finite() && self.frame_rate > 0.0 {
+            self.frame_rate.clamp(1.0, 240.0)
+        } else {
+            DEFAULT_FRAME_RATE
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

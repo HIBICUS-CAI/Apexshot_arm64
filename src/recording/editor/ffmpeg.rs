@@ -1,4 +1,6 @@
-use super::model::{even_crop_rect, AudioMode, VideoBackground, VideoEditState, VideoMetadata};
+use super::model::{
+    even_crop_rect, AudioMode, VideoBackground, VideoEditState, VideoMetadata, DEFAULT_FRAME_RATE,
+};
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -40,6 +42,8 @@ struct ProbeRoot {
 struct ProbeStream {
     width: Option<u32>,
     height: Option<u32>,
+    avg_frame_rate: Option<String>,
+    r_frame_rate: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,7 +61,7 @@ pub fn probe_metadata(path: &Path) -> anyhow::Result<VideoMetadata> {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=width,height",
+            "stream=width,height,avg_frame_rate,r_frame_rate",
             "-show_entries",
             "format=duration",
             "-of",
@@ -87,6 +91,12 @@ pub fn probe_metadata(path: &Path) -> anyhow::Result<VideoMetadata> {
     let height = stream
         .height
         .ok_or_else(|| anyhow!("unsupported video: missing height"))?;
+    let frame_rate = stream
+        .avg_frame_rate
+        .as_deref()
+        .and_then(parse_frame_rate)
+        .or_else(|| stream.r_frame_rate.as_deref().and_then(parse_frame_rate))
+        .unwrap_or(DEFAULT_FRAME_RATE);
     let duration_seconds = root
         .format
         .and_then(|format| format.duration)
@@ -109,7 +119,24 @@ pub fn probe_metadata(path: &Path) -> anyhow::Result<VideoMetadata> {
         height,
         file_size_bytes,
         has_audio,
+        frame_rate,
     })
+}
+
+/// Parse ffprobe's `avg_frame_rate` / `r_frame_rate` value, usually a
+/// fraction like "30000/1001" but sometimes a bare number. Unknowns such
+/// as "0/0" yield `None` so callers can fall back.
+fn parse_frame_rate(value: &str) -> Option<f64> {
+    let value = value.trim();
+    let frame_rate = match value.split_once('/') {
+        Some((numerator, denominator)) => {
+            let numerator: f64 = numerator.trim().parse().ok()?;
+            let denominator: f64 = denominator.trim().parse().ok()?;
+            numerator / denominator
+        }
+        None => value.parse().ok()?,
+    };
+    (frame_rate.is_finite() && frame_rate > 0.0).then_some(frame_rate)
 }
 
 fn probe_has_audio(path: &Path) -> anyhow::Result<bool> {
@@ -563,7 +590,7 @@ fn build_composite_convert_args(
             "-video_size".into(),
             format!("{video_w}x{video_h}"),
             "-framerate".into(),
-            format!("{:.0}", super::cursor_export::fps()),
+            format!("{:.6}", state.metadata.export_frame_rate()),
             "-i".into(),
             cursor_path.to_string_lossy().into_owned(),
         ]);
@@ -599,7 +626,7 @@ fn static_crop_prefix(state: &VideoEditState) -> String {
 }
 
 fn build_sendcmd(state: &VideoEditState, start: f64, end: f64) -> String {
-    let fps = 30.0;
+    let fps = state.metadata.export_frame_rate();
     let duration = (end - start).max(0.0);
     let frames = ((duration * fps).ceil() as usize).max(1);
     let (crop_x, crop_y, eff_w, eff_h) = state.crop_or_full();
@@ -818,6 +845,7 @@ mod tests {
             height: 1080,
             file_size_bytes: 100,
             has_audio: true,
+            frame_rate: 30.0,
         };
         let mut state = VideoEditState::new(metadata);
         state.trim_start_seconds = 1.25;
@@ -962,6 +990,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_frame_rate_understands_ffprobe_values() {
+        assert!((parse_frame_rate("30000/1001").unwrap() - 30_000.0 / 1001.0).abs() < 1e-9);
+        assert_eq!(parse_frame_rate("60/1"), Some(60.0));
+        assert_eq!(parse_frame_rate("25"), Some(25.0));
+        assert_eq!(parse_frame_rate("0/0"), None);
+        assert_eq!(parse_frame_rate("0/1"), None);
+        assert_eq!(parse_frame_rate("n/a"), None);
+    }
+
+    #[test]
+    fn zoom_command_grid_follows_the_source_frame_rate() {
+        let mut state = state();
+        state.metadata.frame_rate = 60.0;
+        let cmd = build_sendcmd(&state, 1.25, 2.25);
+        let timestamps: Vec<&str> = cmd.lines().step_by(4).collect();
+        assert_eq!(timestamps.len(), 60);
+        assert!(timestamps[0].starts_with("0.000 "));
+        assert!(
+            timestamps[1].starts_with("0.017 "),
+            "second command must land one frame in: {:?}",
+            timestamps[1]
+        );
+    }
+
+    #[test]
+    fn zoom_command_grid_falls_back_and_clamps_the_frame_rate() {
+        let grid_lines = |frame_rate: f64| {
+            let mut state = state();
+            state.metadata.frame_rate = frame_rate;
+            build_sendcmd(&state, 1.25, 2.25).lines().count()
+        };
+        // Unknown rates fall back to the 30 fps default.
+        assert_eq!(grid_lines(0.0), 30 * 4);
+        assert_eq!(grid_lines(f64::NAN), 30 * 4);
+        // Absurd rates are clamped so the command file stays small.
+        assert_eq!(grid_lines(10_000.0), 240 * 4);
+    }
+
+    #[test]
     fn cursor_overlay_blends_in_yuv420_never_through_rgb() {
         use crate::recording::editor::sidecar::{
             CaptureRegion, CursorKind, PointerSample, PointerSidecar,
@@ -975,6 +1042,7 @@ mod tests {
             height: 48,
             file_size_bytes: 100,
             has_audio: false,
+            frame_rate: 30.0,
         });
         state.trim_start_seconds = 0.0;
         state.trim_end_seconds = 0.2;
@@ -1016,6 +1084,48 @@ mod tests {
                 "cursor overlay must not blend in {rgb}"
             );
         }
+    }
+
+    #[test]
+    fn cursor_overlay_input_follows_the_source_frame_rate() {
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, CursorKind, PointerSample, PointerSidecar,
+        };
+
+        let mut state = VideoEditState::new(VideoMetadata {
+            path: PathBuf::from("/tmp/input.mp4"),
+            duration_seconds: 0.4,
+            width: 64,
+            height: 48,
+            file_size_bytes: 100,
+            has_audio: false,
+            frame_rate: 60.0,
+        });
+        state.trim_start_seconds = 0.0;
+        state.trim_end_seconds = 0.2;
+        let mut sidecar =
+            PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x: 10.0,
+            y: 10.0,
+            kind: CursorKind::Default,
+        });
+        state.sidecar = Some(sidecar);
+
+        let args = build_single_convert_args(
+            &state,
+            state.trim_start_seconds,
+            state.trim_end_seconds,
+            Path::new("/tmp/output.mp4"),
+        );
+        // The raw track is declared at the rate it was generated with, or
+        // its frames drift against the video.
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-framerate", "60.000000"]),
+            "cursor track must enter at its generation rate: {args:?}"
+        );
     }
 
     #[test]
@@ -1200,6 +1310,7 @@ mod tests {
             height: 960,
             file_size_bytes: 100,
             has_audio: true,
+            frame_rate: 30.0,
         });
         s.trim_start_seconds = 1.25;
         s.trim_end_seconds = 8.5;
@@ -1298,6 +1409,7 @@ mod tests {
             height: 48,
             file_size_bytes: 100,
             has_audio: false,
+            frame_rate: 30.0,
         });
         s.trim_start_seconds = 0.0;
         s.trim_end_seconds = 0.2;

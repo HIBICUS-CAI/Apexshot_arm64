@@ -755,6 +755,7 @@ mod tests {
             height: 120,
             file_size_bytes: std::fs::metadata(&path).unwrap().len(),
             has_audio: false,
+            frame_rate: 30.0,
         })
         .unwrap();
         assert_eq!(

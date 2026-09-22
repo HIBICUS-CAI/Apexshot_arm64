@@ -837,6 +837,7 @@ mod tests {
             height: 1080,
             file_size_bytes: size,
             has_audio: true,
+            frame_rate: 30.0,
         }
     }
 
