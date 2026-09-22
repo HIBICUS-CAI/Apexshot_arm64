@@ -599,6 +599,118 @@ fn eval_zoom_eases_in_and_out() {
 }
 
 #[test]
+fn adjacent_auto_zooms_morph_instead_of_pulsing() {
+    let clips = [
+        ZoomClip {
+            start: 0.0,
+            end: 2.0,
+            scale: 1.5,
+            center: (400.0, 300.0),
+            ease_ms: 600,
+            easing: ZoomEasing::Smooth,
+            mode: ZoomMode::Auto,
+            ..Default::default()
+        },
+        ZoomClip {
+            start: 2.0,
+            end: 4.0,
+            scale: 1.8,
+            center: (1_500.0, 800.0),
+            ease_ms: 600,
+            easing: ZoomEasing::Smooth,
+            mode: ZoomMode::Auto,
+            ..Default::default()
+        },
+    ];
+
+    // The first zoom holds its framing instead of easing back out.
+    let (held_scale, held_center) = eval_zoom(&clips, 1.9, 1920.0, 1080.0);
+    assert!((held_scale - 1.5).abs() < 1e-9);
+    assert!((held_center.0 - 400.0).abs() < 1e-9);
+    assert!((held_center.1 - 300.0).abs() < 1e-9);
+
+    // The second zoom morphs scale and framing from the first.
+    let (morph_scale, morph_center) = eval_zoom(&clips, 2.3, 1920.0, 1080.0);
+    assert!(morph_scale > 1.5 && morph_scale < 1.8);
+    assert!(morph_center.0 > 400.0 && morph_center.0 < 1_500.0);
+    assert!(morph_center.1 > 300.0 && morph_center.1 < 800.0);
+
+    // With no neighbour after it, the last zoom settles back to full frame.
+    let (end_scale, _) = eval_zoom(&clips, 4.0, 1920.0, 1080.0);
+    assert!((end_scale - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn zoom_gaps_hold_the_framing_for_the_next_auto_zoom() {
+    let clips = [
+        ZoomClip {
+            start: 0.0,
+            end: 2.0,
+            scale: 1.5,
+            center: (400.0, 300.0),
+            ease_ms: 600,
+            easing: ZoomEasing::Smooth,
+            mode: ZoomMode::Auto,
+            ..Default::default()
+        },
+        ZoomClip {
+            start: 2.3,
+            end: 4.3,
+            scale: 1.5,
+            center: (1_500.0, 800.0),
+            ease_ms: 600,
+            easing: ZoomEasing::Smooth,
+            mode: ZoomMode::Auto,
+            ..Default::default()
+        },
+    ];
+
+    let (gap_scale, gap_center) = eval_zoom(&clips, 2.15, 1920.0, 1080.0);
+    assert!((gap_scale - 1.5).abs() < 1e-9);
+    assert!((gap_center.0 - 400.0).abs() < 1e-9);
+
+    let (_, morph_center) = eval_zoom(&clips, 2.6, 1920.0, 1080.0);
+    assert!(morph_center.0 > 400.0 && morph_center.0 < 1_500.0);
+}
+
+#[test]
+fn manual_zooms_keep_independent_transitions() {
+    let clips = [
+        ZoomClip {
+            start: 0.0,
+            end: 2.0,
+            scale: 2.0,
+            center: (400.0, 300.0),
+            ease_ms: 600,
+            easing: ZoomEasing::Smooth,
+            mode: ZoomMode::Manual,
+            ..Default::default()
+        },
+        ZoomClip {
+            start: 2.3,
+            end: 4.3,
+            scale: 2.0,
+            center: (1_500.0, 800.0),
+            ease_ms: 600,
+            easing: ZoomEasing::Smooth,
+            mode: ZoomMode::Manual,
+            ..Default::default()
+        },
+    ];
+
+    // Manual zooms still ease back out to the full frame...
+    let (out_scale, _) = eval_zoom(&clips, 1.7, 1920.0, 1080.0);
+    assert!(out_scale > 1.0 && out_scale < 2.0);
+    // ...show the full frame between them...
+    let (gap_scale, _) = eval_zoom(&clips, 2.15, 1920.0, 1080.0);
+    assert!((gap_scale - 1.0).abs() < 1e-9);
+    // ...and open around their own focus without morphing.
+    let (in_scale, in_center) = eval_zoom(&clips, 2.6, 1920.0, 1080.0);
+    assert!(in_scale > 1.0 && in_scale < 2.0);
+    assert!((in_center.0 - 1_500.0).abs() < 1e-9);
+}
+
+#[test]
 fn auto_zoom_camera_feathers_edge_following() {
     let center = (960.0, 540.0);
     let inner_right = center.0 + 1920.0 / 2.0 / 2.0 - 1920.0 / 2.0 * 0.22;

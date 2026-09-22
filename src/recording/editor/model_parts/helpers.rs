@@ -43,6 +43,10 @@ pub fn snap_range_to_target(start: f64, duration: f64, target: f64, threshold: f
     }
 }
 
+/// Auto zooms at most this far apart morph into one another instead of
+/// returning to the full frame between their clips.
+const ZOOM_MORPH_GAP_SECONDS: f64 = 0.5;
+
 pub fn eval_zoom(
     clips: &[ZoomClip],
     t: f64,
@@ -50,20 +54,97 @@ pub fn eval_zoom(
     frame_height: f64,
 ) -> (f64, (f64, f64)) {
     let frame_center = (frame_width / 2.0, frame_height / 2.0);
-    let Some(clip) = clips.iter().find(|clip| t >= clip.start && t <= clip.end) else {
-        return (1.0, frame_center);
+    let Some(index) = clips
+        .iter()
+        .position(|clip| t >= clip.start && t <= clip.end)
+    else {
+        // Hold the earlier framing across a morph gap so the next auto zoom
+        // continues from it instead of flashing the full frame between them.
+        return match morph_gap_predecessor(clips, t)
+            .filter(|&previous| morphs_into_neighbour(clips, previous))
+        {
+            Some(previous) => (clips[previous].scale.max(1.0), clips[previous].center),
+            None => (1.0, frame_center),
+        };
     };
+    let clip = &clips[index];
+    let to_scale = clip.scale.max(1.0);
     let ease = (clip.ease_ms as f64 / 1000.0).clamp(0.0, clip.duration() / 2.0);
-    let scale = eased_value(
-        t,
-        clip.start,
-        clip.end,
-        ease,
-        1.0,
-        clip.scale.max(1.0),
-        clip.easing,
-    );
-    (scale, clip.center)
+    if ease <= f64::EPSILON {
+        return (to_scale, clip.center);
+    }
+    if t < clip.start + ease {
+        let progress = clip.easing.apply(((t - clip.start) / ease).clamp(0.0, 1.0));
+        // A zoom that morphs from a neighbour starts at the neighbour's
+        // framing; a standalone zoom opens around its own focus point.
+        let (from_scale, from_center) = match morph_predecessor(clips, index) {
+            Some(previous) => (clips[previous].scale.max(1.0), clips[previous].center),
+            None => (1.0, clip.center),
+        };
+        return (
+            lerp(from_scale, to_scale, progress),
+            (
+                lerp(from_center.0, clip.center.0, progress),
+                lerp(from_center.1, clip.center.1, progress),
+            ),
+        );
+    }
+    if t > clip.end - ease {
+        // Hold the framing for a neighbour that morphs from this zoom;
+        // alone, settle back to the full frame as before.
+        if morphs_into_neighbour(clips, index) {
+            return (to_scale, clip.center);
+        }
+        let progress = clip.easing.apply(((clip.end - t) / ease).clamp(0.0, 1.0));
+        return (lerp(1.0, to_scale, progress), clip.center);
+    }
+    (to_scale, clip.center)
+}
+
+/// The closest earlier auto zoom that clip `index` can morph from.
+fn morph_predecessor(clips: &[ZoomClip], index: usize) -> Option<usize> {
+    let clip = &clips[index];
+    if clip.mode != ZoomMode::Auto {
+        return None;
+    }
+    clips
+        .iter()
+        .enumerate()
+        .filter(|(other, previous)| {
+            *other != index
+                && previous.mode == ZoomMode::Auto
+                && previous.end <= clip.start
+                && clip.start - previous.end <= ZOOM_MORPH_GAP_SECONDS
+        })
+        .max_by(|(_, a), (_, b)| a.end.total_cmp(&b.end))
+        .map(|(previous, _)| previous)
+}
+
+/// True when a later auto zoom morphs from clip `index`, so it must hold
+/// its framing through its own ease-out instead of returning to full frame.
+fn morphs_into_neighbour(clips: &[ZoomClip], index: usize) -> bool {
+    let clip = &clips[index];
+    clip.mode == ZoomMode::Auto
+        && clips.iter().enumerate().any(|(other, next)| {
+            other != index
+                && next.mode == ZoomMode::Auto
+                && next.start >= clip.end
+                && next.start - clip.end <= ZOOM_MORPH_GAP_SECONDS
+        })
+}
+
+/// The closest auto zoom whose framing is held while `t` sits in a gap.
+fn morph_gap_predecessor(clips: &[ZoomClip], t: f64) -> Option<usize> {
+    clips
+        .iter()
+        .enumerate()
+        .filter(|(_, clip)| {
+            clip.mode == ZoomMode::Auto
+                && clip.end <= t
+                && t - clip.end <= ZOOM_MORPH_GAP_SECONDS
+        })
+        .max_by(|(_, a), (_, b)| a.end.total_cmp(&b.end))
+        .map(|(previous, _)| previous)
 }
 
 fn recenter_if_near_edge(
@@ -112,29 +193,6 @@ fn feathered_camera_offset(offset: f64, feather: f64) -> f64 {
     let amount = (offset.abs() / feather.max(1.0)).clamp(0.0, 1.0);
     let smoothstep = amount * amount * (3.0 - 2.0 * amount);
     offset * smoothstep
-}
-
-fn eased_value(
-    t: f64,
-    start: f64,
-    end: f64,
-    ease: f64,
-    from: f64,
-    to: f64,
-    easing: ZoomEasing,
-) -> f64 {
-    if ease <= f64::EPSILON {
-        return to;
-    }
-    if t < start + ease {
-        let alpha = ((t - start) / ease).clamp(0.0, 1.0);
-        return lerp(from, to, easing.apply(alpha));
-    }
-    if t > end - ease {
-        let alpha = ((end - t) / ease).clamp(0.0, 1.0);
-        return lerp(from, to, easing.apply(alpha));
-    }
-    to
 }
 
 fn lerp(from: f64, to: f64, alpha: f64) -> f64 {
