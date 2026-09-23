@@ -1,8 +1,6 @@
 name: Ubuntu 26.04 ARM64 build
 
 on:
-  push:
-    branches: ['chore/ubuntu-26.04-arm64-build']
   pull_request:
     branches: [main]
     paths:
@@ -28,6 +26,10 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Bindgen must discover headers from the same LLVM version as libclang.
+  # Hosted runners also contain other Clang versions earlier in PATH.
+  CLANG_PATH: /usr/bin/clang-21
+  LIBCLANG_PATH: /usr/lib/llvm-21/lib
 
 jobs:
   build:
@@ -61,7 +63,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake clang libclang-dev pkg-config binutils file \
+            build-essential cmake clang-21 libclang-21-dev pkg-config binutils file \
             libgtk-4-dev libgtk4-layer-shell-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libgstreamer-plugins-bad1.0-dev \
@@ -71,6 +73,14 @@ jobs:
             qtbase5-dev libqt5x11extras5-dev gettext
           pkg-config --modversion gtk4 gtk4-layer-shell-0 Qt5Widgets \
             gstreamer-1.0 libpipewire-0.3 tesseract | tee verification/dependency-versions.txt
+
+      - name: Verify matching Clang headers
+        run: |
+          "$CLANG_PATH" --version | tee verification/clang.txt
+          "$CLANG_PATH" -print-resource-dir | tee -a verification/clang.txt
+          printf '#include <leptonica/allheaders.h>\n' | \
+            "$CLANG_PATH" -x c -fsyntax-only -
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-resource-dir=$("$CLANG_PATH" -print-resource-dir)" >> "$GITHUB_ENV"
 
       - name: Install stable Rust
         run: |
