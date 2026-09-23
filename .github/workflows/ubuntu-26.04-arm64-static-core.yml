@@ -1,0 +1,56 @@
+name: Ubuntu 26.04 ARM64 static core
+
+on:
+  push:
+    branches: [chore/ubuntu-26.04-arm64-static]
+    paths:
+      - '.github/workflows/ubuntu-26.04-arm64-static-core.yml'
+      - 'scripts/ci/build-static-core.sh'
+      - 'scripts/ci/meson-static.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-core-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install source build dependencies
+        run: |
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo apt-get build-dep -y --no-install-recommends \
+            gtk4 gtk4-layer-shell pixman cairo harfbuzz pango1.0 gdk-pixbuf graphene
+          sudo apt-get install -y --no-install-recommends cmake ninja-build meson libgraphite2-dev
+      - uses: actions/cache/restore@v4
+        id: core-cache
+        with:
+          path: /opt/apexshot-static/core
+          key: core-static-ubuntu2604-arm64-${{ hashFiles('scripts/ci/build-static-core.sh', 'scripts/ci/meson-static.py') }}
+      - name: Build static GTK dependency chain
+        if: steps.core-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo mkdir -p /opt/apexshot-static/core
+          sudo chown -R "$(id -u):$(id -g)" /opt/apexshot-static
+          mkdir -p verification
+          bash scripts/ci/build-static-core.sh 2>&1 | tee verification/core-build.log
+      - uses: actions/cache/save@v4
+        if: success() && steps.core-cache.outputs.cache-hit != 'true'
+        with:
+          path: /opt/apexshot-static/core
+          key: ${{ steps.core-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: static-core-${{ github.sha }}
+          path: |
+            verification/
+            /opt/apexshot-static/core/lib/pkgconfig/
+            /opt/apexshot-static/core/share/static-sources/

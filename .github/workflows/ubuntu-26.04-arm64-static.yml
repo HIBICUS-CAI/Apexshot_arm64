@@ -3,6 +3,10 @@ name: Ubuntu 26.04 ARM64 static build
 on:
   push:
     branches: [chore/ubuntu-26.04-arm64-static]
+    paths:
+      - '.github/workflows/ubuntu-26.04-arm64-static.yml'
+      - 'scripts/ci/build-static-qt.sh'
+      - 'capture-overlay/**'
   workflow_dispatch:
 
 permissions:
@@ -14,6 +18,7 @@ concurrency:
 
 jobs:
   inventory:
+    if: ${{ !contains(github.event.head_commit.message, '[core-only]') }}
     name: Inspect native static dependencies
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 15
@@ -39,6 +44,7 @@ jobs:
           path: verification/
 
   qt:
+    if: ${{ !contains(github.event.head_commit.message, '[core-only]') }}
     name: Build static Qt and capture helper
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 90
