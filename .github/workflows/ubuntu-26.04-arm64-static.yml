@@ -1,0 +1,89 @@
+name: Ubuntu 26.04 ARM64 static build
+
+on:
+  push:
+    branches: [chore/ubuntu-26.04-arm64-static]
+    paths:
+      - '.github/workflows/ubuntu-26.04-arm64-static.yml'
+      - 'scripts/ci/build-static-qt.sh'
+      - 'capture-overlay/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu-26.04-arm64-static-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: ${{ !contains(github.event.head_commit.message, '[core-only]') }}
+    name: Inspect native static dependencies
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang-21 libclang-21-dev pkg-config binutils file \
+            libgtk-4-dev libgtk4-layer-shell-dev libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
+            libpipewire-0.3-dev libtesseract-dev libxkbcommon-dev libx11-dev \
+            libxtst-dev libwayland-dev libdbus-1-dev qtbase5-dev libqt5x11extras5-dev
+      - name: Inventory archives and static pkg-config closure
+        run: |
+          mkdir -p verification
+          bash scripts/ci/static-inventory.sh | tee verification/static-inventory.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: static-inventory-${{ github.sha }}
+          path: verification/
+
+  qt:
+    if: ${{ !contains(github.event.head_commit.message, '[core-only]') }}
+    name: Build static Qt and capture helper
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable Ubuntu source packages
+        run: |
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo apt-get build-dep -y --no-install-recommends qtbase-opensource-src qtx11extras-opensource-src
+          sudo apt-get install -y --no-install-recommends cmake ninja-build libxtst-dev
+      - uses: actions/cache@v4
+        id: qt-cache
+        with:
+          path: /opt/apexshot-static/qt
+          key: qt-static-ubuntu2604-arm64-${{ hashFiles('scripts/ci/build-static-qt.sh') }}
+      - name: Build static Qt from Ubuntu source
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo mkdir -p /opt/apexshot-static/qt
+          sudo chown -R "$(id -u):$(id -g)" /opt/apexshot-static
+          mkdir -p verification
+          bash scripts/ci/build-static-qt.sh 2>&1 | tee verification/qt-build.log
+      - name: Build capture helper with static Qt
+        run: |
+          mkdir -p verification
+          cmake -S capture-overlay -B build-static-capture -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/opt/apexshot-static/qt \
+            -DCMAKE_EXE_LINKER_FLAGS='-static-libstdc++ -static-libgcc'
+          cmake --build build-static-capture --parallel 4
+          file build-static-capture/apexshot-capture | tee verification/capture-file.txt
+          ldd build-static-capture/apexshot-capture | tee verification/capture-ldd.txt
+          readelf -d build-static-capture/apexshot-capture | tee verification/capture-dynamic.txt
+          ! grep -E 'NEEDED.*libQt5' verification/capture-dynamic.txt
+          ! grep -F 'not found' verification/capture-ldd.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: static-qt-${{ github.sha }}
+          path: |
+            verification/
+            build-static-capture/apexshot-capture
