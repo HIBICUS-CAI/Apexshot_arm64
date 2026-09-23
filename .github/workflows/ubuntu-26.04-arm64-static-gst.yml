@@ -1,0 +1,61 @@
+name: Ubuntu 26.04 ARM64 static GStreamer
+
+on:
+  push:
+    branches: [chore/ubuntu-26.04-arm64-static]
+    paths:
+      - '.github/workflows/ubuntu-26.04-arm64-static-gst.yml'
+      - 'scripts/ci/build-static-gst.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-gst-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gstreamer:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install source build dependencies
+        run: |
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential meson ninja-build pkg-config flex bison gettext \
+            libglib2.0-dev liborc-0.4-dev libdrm-dev libgraphene-1.0-dev \
+            libx11-dev libxext-dev libxfixes-dev libxdamage-dev libxv-dev \
+            libgl-dev libegl-dev libgles-dev libwayland-dev wayland-protocols \
+            libpulse-dev libogg-dev libopus-dev libvorbis-dev libtheora-dev \
+            libvpx-dev libx264-dev libopenh264-dev libvo-aacenc-dev \
+            libwebrtc-audio-processing-1-dev libpng-dev libjpeg-dev \
+            libavcodec-dev libavformat-dev libavfilter-dev libswscale-dev libswresample-dev
+      - uses: actions/cache/restore@v4
+        id: gst-cache
+        with:
+          path: /opt/apexshot-static/gst
+          key: gst-static-ubuntu2604-arm64-${{ hashFiles('scripts/ci/build-static-gst.sh') }}
+      - name: Build GStreamer with built-in plugins
+        if: steps.gst-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo mkdir -p /opt/apexshot-static/gst
+          sudo chown -R "$(id -u):$(id -g)" /opt/apexshot-static
+          mkdir -p verification
+          bash scripts/ci/build-static-gst.sh 2>&1 | tee verification/gst-build.log
+      - uses: actions/cache/save@v4
+        if: success() && steps.gst-cache.outputs.cache-hit != 'true'
+        with:
+          path: /opt/apexshot-static/gst
+          key: ${{ steps.gst-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: static-gst-${{ github.sha }}
+          path: |
+            verification/
+            /opt/apexshot-static/gst/lib/pkgconfig/
+            /opt/apexshot-static/gst/share/static-sources/
