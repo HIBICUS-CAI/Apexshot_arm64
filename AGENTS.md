@@ -70,9 +70,11 @@ cargo clippy --workspace --all-targets      # must not add warnings
 cargo test --jobs 2 -- --test-threads=1     # every target, as CI runs it
 ```
 
-  Start narrow (`cargo test --lib <module>`, or `./scripts/test.sh --test NAME`),
-  then run the full command above before pushing. `./scripts/test.sh` is the
-  OOM-safe local runner.
+  Test narrow by default (`cargo test --lib <module>`, or
+  `./scripts/test.sh --test NAME`); `./scripts/test.sh` is the OOM-safe local
+  runner. Run the full `cargo test` command above only when the change touches
+  shared/test infrastructure, or when marking a PR merge-ready. CI already runs
+  the full suite on every PR, so do not duplicate it locally on every change.
 - Only if you touched that subsystem:
   - UI strings: `python3 scripts/check-i18n-catalogs.py`
   - GNOME extension: `pnpm check:gnome` (or `node --check gnome-extension/*.js`)
@@ -112,6 +114,10 @@ gh pr create --base main --fill                # then make the body follow the t
 - If `gh pr edit --body` fails with a Projects (classic) GraphQL error, patch it
   with `gh api -X PATCH repos/:owner/:repo/pulls/<n> -F body=@body.md`.
 - CI red on your branch? Fix it there. Never merge a red PR.
+- Do not watch CI in-session. After pushing, report the PR URL and which CI
+  jobs will run, then stop — never run `gh pr checks --watch` or poll CI in a
+  loop. A red CI becomes a new follow-up task, not a wait: GitHub CI is slow
+  and sessions have parked ~30 min watching it finish.
 
 ### 5. After the merge
 
