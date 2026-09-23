@@ -110,7 +110,9 @@ gh pr create --base main --fill                # then make the body follow the t
   **How was this tested** with the real commands, subsystem checklist, and
   screenshots for visual changes.
 - Stage only what belongs to the change: no debug prints, personal paths,
-  commented-out code, or secrets.
+  commented-out code, or secrets. Stage by explicit path — under a sandbox
+  `git status` invents untracked root dotfiles, so `git add -A` / `git add .`
+  records junk (see the phantom-files trap under Repository traps).
 - If `gh pr edit --body` fails with a Projects (classic) GraphQL error, patch it
   with `gh api -X PATCH repos/:owner/:repo/pulls/<n> -F body=@body.md`.
 - CI red on your branch? Fix it there. Never merge a red PR.
@@ -126,6 +128,20 @@ unrelated work to an already-merged branch or to an old long-lived one.
 
 ## Repository traps
 
+- **Phantom untracked files (sandbox):** inside a sandboxed Bash session,
+  `git status` lists root dotfiles — `.bashrc`, `.bash_profile`, `.zshrc`,
+  `.zprofile`, `.profile`, `.gitconfig`, `.gitmodules`, `.mcp.json`,
+  `.ripgreprc`, `.idea`, `.vscode`, and the entries under `.claude/` — as
+  untracked. They are not real files here: `ls -la` shows them as character
+  devices (`1,3` = `/dev/null`, owner `nobody:nogroup`) and they do not exist in
+  the maintainer's terminal. What a tool reports for them is unstable — `stat`
+  may call them "regular empty file" — which is also why `.idea/` and `.vscode/`
+  slip past their directory-only rules in `.gitignore`. So "commit and push all
+  the changes" means the tracked modified files only: stage by name
+  (`git add path/to/file.rs`), never `git add -A` or `git add .`, which would
+  record the phantom entries. `git commit -a` is safe (it only stages tracked
+  files) but naming paths stays clearer. Trust `git diff` for content and the
+  maintainer's terminal for what actually exists.
 - **GTK tests:** GTK may only be initialized once per process, on one thread.
   Tests that need it must call `crate::test_support::with_gtk`, not
   `gtk4::init()`; a second init panics with "Attempted to initialize GTK from
