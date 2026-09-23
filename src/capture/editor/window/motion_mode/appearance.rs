@@ -20,7 +20,8 @@ use crate::recording::editor::model::{
 use crate::recording::editor::window::tool_sidebar::FillSlider;
 
 use super::widgets::{
-    motion_appearance_slider, motion_color_control, motion_gradient_color_control, motion_rgba,
+    motion_appearance_slider, motion_color_control, motion_gradient_color_control,
+    motion_reference_percent_slider, motion_rgba,
 };
 use super::MotionSession;
 
@@ -663,7 +664,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
     });
     background_section.append(&fill_section);
 
-    let padding = motion_appearance_slider("Padding", 0.0, 200.0, initial_padding, "px");
+    let padding = motion_reference_percent_slider("Padding", 0.0, 200.0, initial_padding);
     padding.connect_value_changed({
         let runtime = session.runtime.clone();
         let preview = preview.clone();
@@ -888,7 +889,7 @@ pub(in crate::capture::editor::window) fn build_motion_appearance_panel(
 
     // The radius rounds the captured image card itself; the background
     // scene stays a full rectangle. It applies on top of the Style preset.
-    let radius = motion_appearance_slider("Border Radius", 0.0, 40.0, initial_border_radius, "px");
+    let radius = motion_reference_percent_slider("Border Radius", 0.0, 40.0, initial_border_radius);
     *radius_slider_slot.borrow_mut() = Some(radius.clone());
     radius.connect_value_changed({
         let runtime = session.runtime.clone();

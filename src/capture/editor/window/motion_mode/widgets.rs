@@ -399,6 +399,25 @@ pub(super) fn motion_appearance_slider(
     slider
 }
 
+/// Slider for values stored as "reference px against a 400px long edge"
+/// (padding, corner radius). The stored unit is a fraction of the long edge,
+/// so the honest readout is a percentage of it: a stored 40 renders as 10% per
+/// side on any image size. Labelling these values "px" reads as literal pixels,
+/// which is wrong for every image whose long edge is not exactly 400px.
+pub(super) fn motion_reference_percent_slider(
+    title: &str,
+    min: f64,
+    max: f64,
+    value: f64,
+) -> FillSlider {
+    let slider =
+        FillSlider::new_with_value_text(&t(title), |value, _, _| format!("{:.0}%", value / 4.0));
+    slider.set_range(min, max);
+    slider.set_increments((max - min) / 100.0, (max - min) / 10.0);
+    slider.set_value(value);
+    slider
+}
+
 pub(super) fn format_duration_label(duration: f64) -> String {
     format!("{duration:.1}s")
 }

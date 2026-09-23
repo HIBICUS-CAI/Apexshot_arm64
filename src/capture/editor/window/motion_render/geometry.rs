@@ -72,9 +72,12 @@ struct CardLayout {
 
 /// Reference scale shared with the Static canvas: slider units are defined
 /// against a 400px long edge, so a padding of 40 means 10% surround per side
-/// no matter how large the screenshot is.
+/// no matter how large the screenshot is. Deliberately unclamped, exactly like
+/// `BackgroundComposition`'s `scale_factor`: a clamp here would make Motion
+/// (preview and export) render a different surround than Static for the same
+/// stored value on very large or very small images.
 pub(super) fn motion_reference_scale(img_w: f64, img_h: f64) -> f64 {
-    (img_w.max(img_h) / 400.0).clamp(0.25, 8.0)
+    img_w.max(img_h) / 400.0
 }
 
 /// Fit the padded canvas (screenshot + surround) into the stage, matching the
