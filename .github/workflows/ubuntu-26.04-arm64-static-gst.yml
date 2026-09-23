@@ -32,7 +32,7 @@ jobs:
             libgl-dev libegl-dev libgles-dev libwayland-dev wayland-protocols \
             libpulse-dev libogg-dev libopus-dev libvorbis-dev libtheora-dev \
             libvpx-dev libx264-dev libopenh264-dev libvo-aacenc-dev \
-            libwebrtc-audio-processing-1-dev libpng-dev libjpeg-dev \
+            libwebrtc-audio-processing-dev libpng-dev libjpeg-dev \
             libavcodec-dev libavformat-dev libavfilter-dev libswscale-dev libswresample-dev
       - uses: actions/cache/restore@v4
         id: gst-cache
